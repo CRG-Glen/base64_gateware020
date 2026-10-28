@@ -165,6 +165,16 @@ module base64_top #(
     // other than to reproduce the fault.
     parameter         VMA_HOLD   = 1'b1,
 
+    // Length of the /RESET pulse we drive for a RESET instruction, in 7M
+    // clocks. The 68000 spec is 124 (~17.5 us) and 132 is a small margin on
+    // top. A parameter so it can be swept on hardware: some expansion boards
+    // (DMAC-based controllers, IDE CPLDs) want a longer pulse than the CPU
+    // itself does, and the counter is now wide enough to go to ~144 us.
+    //
+    // Note this is NOT the fix for a machine that drops to the insert-disk
+    // screen after a warm reset -- see slave_reset in section 10c for that.
+    parameter integer RST_HOLD_7M = 132,
+
     // 1 = terminate IACK cycles internally with 24+level (recommended).
     parameter         IACK_AV    = 1'b1,
 
@@ -474,19 +484,20 @@ module base64_top #(
     wire core_oreset_n, core_ohalted_n;
 
     // Stretch the RESET instruction to >=124 real 7M clocks (~17.5 us).
-    localparam [7:0] RST_HOLD_7M = 8'd132;
+    // Length is the RST_HOLD_7M parameter; the counter is 10 bits so it can
+    // be raised well past the default without another edit here.
     reg        rst_stretch = 1'b0;
-    reg  [7:0] rst_cnt     = 8'd0;
+    reg  [9:0] rst_cnt     = 10'd0;
     always @(posedge clk) begin
         if (!pwrup_done) begin
             rst_stretch <= 1'b0;
-            rst_cnt     <= 8'd0;
+            rst_cnt     <= 10'd0;
         end else if (!core_oreset_n) begin
             rst_stretch <= 1'b1;
-            rst_cnt     <= 8'd0;
+            rst_cnt     <= 10'd0;
         end else if (rst_stretch && tick_r) begin
-            if (rst_cnt >= RST_HOLD_7M) rst_stretch <= 1'b0;
-            else                        rst_cnt <= rst_cnt + 8'd1;
+            if (rst_cnt >= RST_HOLD_7M[9:0]) rst_stretch <= 1'b0;
+            else                             rst_cnt <= rst_cnt + 10'd1;
         end
     end
 
@@ -1302,7 +1313,46 @@ module base64_top #(
     wire [15:0] sd_wdata, sd_rdata;
     wire [1:0]  sd_byte_en;
 
-    wire slave_reset = ext_reset;
+    // ------------------------------------------------------------------
+    // SLAVE RESET IS NOT THE CORE RESET. Do not collapse these again.
+    //
+    // ext_reset needs /RESET *and* /HALT together, which is right for the
+    // CPU: a RESET instruction drives /RESET alone and must not reset the
+    // processor that issued it. It is WRONG for the three autoconfig boards.
+    // A Zorro II board resets from /RESET; /HALT is not even on the
+    // connector, and Kickstart re-runs the whole expansion configuration
+    // from scratch after a RESET instruction.
+    //
+    // With the two tied together, a warm reset left fastmem, turbomem and
+    // the SD board still `configured`, still shut up, and still decoding
+    // their old bases. Kickstart then re-enumerated, found them silent, and
+    // handed the first free Zorro II base to whatever board came next -- on
+    // top of a window fastmem was still claiming. The reported symptom was
+    // an A500+ with a Ripple IDE card dropping to the insert-disk screen
+    // after every loadmodule or software reset, needing Ctrl-A-A to boot,
+    // which is exactly this: Ctrl-A-A pulls /HALT too, so ext_reset fires
+    // and the chain comes back clean.
+    //
+    // Our own rst_stretch pulls the /RESET pin, so s_reset_n[1] sees it and
+    // our boards reset alongside every other board on the bus. That also
+    // drops the Zorro II window and mapROM for the duration, which is what
+    // a real board does -- ColdReboot runs from ROM with no stack between
+    // the RESET and the JMP for exactly that reason, and the mapROM shadow
+    // is a verbatim copy, so instruction fetch continues unchanged.
+    //
+    // REGISTERED, and it has to stay that way. As a plain wire this is a LUT
+    // output feeding 111 loads across the three slaves and the SDRAM
+    // controller, all inside one 85 MHz clock. The build that introduced it
+    // needed SIX place-and-route seeds, five of which failed setup
+    // (-0.043, -0.089, -0.216, -0.010, -0.389 ns) before one closed at
+    // +0.322 -- against v1.2.1 closing on the first seed. One flop costs a
+    // single clock of latency on a reset, which is nothing, and turns the
+    // path into s_reset_n -> LUT -> flop (short, low fanout) followed by
+    // flop -> 111 loads with no logic in between, which P&R can also
+    // replicate if it wants to. Do not collapse it back into the wire.
+    // ------------------------------------------------------------------
+    reg slave_reset = 1'b1;
+    always @(posedge clk) slave_reset <= ext_reset | ~s_reset_n[1];
 
     // -----------------------------------------------------------------
     // AUTOCONFIG ID ALLOCATION -- manufacturer 5194 ($144A), OAHR
