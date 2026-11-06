@@ -139,7 +139,8 @@ Boots from SD exactly like the fx68k build. Same `Mask` advice applies
   verifies it and switches over, so it is normally already on. Both caches
   are flushed whenever it is switched. `sw/maprom/` has a command to check
   and control it: `maprom STATUS`, `maprom OFF`, and `maprom` to copy and
-  switch on again (`sw/maprom/maprom`, or the floppy image `maprom.adf`).
+  switch on again. The ready-built command is attached to each release;
+  copy it to C:.
   It is a 68000-assembly port of the original project's untested
   `maprom.c`, with the same procedure and checks, and builds with GNU
   binutils alone (`sw/maprom/build.sh`). Tested under the vamos emulator
@@ -324,8 +325,7 @@ rtl/base64_fx68k/               the fx68k build's slaves; changes marked "TG68:"
                                 (fastmem_zii: direct SDRAM port, BUS_RAM; the
                                 slaves also export their windows for int_win)
 sim/                            test benches (Verilator), see sim/README.md
-sw/maprom/                      maprom command (68000 asm), its build script,
-                                and a floppy image (maprom.adf)
+sw/maprom/                      maprom command (68000 asm) and its build script
 ```
 
 ### Why the CPU is pre-converted Verilog
