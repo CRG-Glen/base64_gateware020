@@ -112,6 +112,11 @@ STATIC = re.compile(r'^(g_(fastmem|sd)\.u_\w+\.(maprom_active|maprom_load|config
                     r'tm_configured|sd_configured|base|base_sd|tm_base|base_addr\w*|cpu_base\w*)'
                     # the same MapROM bits, named after the adapter's ports
                     r'|cpu\.mr_(active|load)'
+                    # fastmem_zii's configured/addr_match (above), when yosys
+                    # names the flip-flops after the top-level wires they
+                    # drive (fm_cfg_on = configured, fm_cfg_match = addr_match;
+                    # seen in the step 6 build)
+                    r'|fm_cfg_(on|match)'
                     r'|g_sdram\.u_sdram\.init_done)(_|\[|$)')
 # Instruction cache RAM and its registers: ordinary single-cycle logic, but
 # listed separately because a cache hit loads k_din one clock after ic_qd,

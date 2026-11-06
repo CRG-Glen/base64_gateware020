@@ -27,7 +27,8 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
-| `bitstreams/step5_pairbuf/` | + pair buffers: the other half of a cached pair in 5 clocks, not 7 | **Latest. `full` known good on hardware**, SD card included: 6720 Dhrystones, MemTest 7.46 MB/s. `min` not run on hardware |
+| `bitstreams/step6_earlylookup/` | + early cache lookup: every cache hit in 5 clocks, not 7 (replaces the pair buffers) | **Newest, not yet run on hardware.** `full` only. Simulated and timing-checked |
+| `bitstreams/step5_pairbuf/` | + pair buffers: the other half of a cached pair in 5 clocks, not 7 | **Latest known good. `full` on hardware**, SD card included: 6720 Dhrystones, MemTest 7.46 MB/s. `min` not run on hardware |
 | `bitstreams/step4_dcache/` | + 8 KB data cache, cache hits overlap SDRAM writes; SD card pin fix | **Known good on hardware**, SD card included |
 | `bitstreams/step3_direct/` | + direct CPU → SDRAM path for fast RAM, posted writes, word prefetch | **Known good on hardware**: MemTest 6.46 MB/s |
 | `bitstreams/step2_icache/` | + 8 KB instruction cache | **Known good on hardware**: 4833 Dhrystones, 5.04 MIPS |
@@ -303,6 +304,21 @@ actually provides:
 it gets `RESULT: PASS`, and writes `timing.txt`. Expect the 1T classes to
 pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
+
+Step 6 (early lookup) builds as supplied (not yet run on hardware; `full`
+only, as from this step on):
+
+| Build | Seed | Worst 1T slack | Worst multicycle slack |
+| --- | --- | --- | --- |
+| full | 12 | +0.10 ns | +4.0 ns |
+
+The early read itself has plenty of room: kernel → cache RAM needs 15.1 ns
+of its 23.3 ns. The first build failed every seed by 1.5–3.5 ns because the
+looked-up word went into `k_din` through its wide input mux; it now has its
+own register (`k_din_c`). The second failed on a path from `fm_cfg_match`:
+that is fastmem_zii's `addr_match` (static after autoconfig, already in the
+checker's config class) under the name of the top-level wire it drives, so
+`check_timing.py` now knows that name too.
 
 Step 5 (pair buffers) builds as supplied (`full` known good on hardware):
 
