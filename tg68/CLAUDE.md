@@ -151,6 +151,17 @@ that gives the "_fast" files.
   - The CPU is the only writer of fast RAM (the SD controller is CPU-driven,
     no DMA), so no software cache management is needed.
   - Both flush on reset and when MapROM changes state.
+- **Pair buffers (step 5, not yet tested on hardware):** the CLOOK clock
+  reads the neighbouring word of the pair (address bit 1 flipped) from the
+  same RAMs, and the clock after CCMP keeps it in `ib_*` (fetches) or `db_*`
+  (data reads) if its tag matches. A cycle for exactly that word is answered
+  at DECIDE like a prefetch hit: 5 clocks instead of 7, no bus or SDRAM
+  port needed. Dropped by any write to the address (compared every clock
+  while a write's `a_r`/`eRWn` are held), reset, and the cache flushes;
+  used only while its cache is on. A cache slot reading "invalid" does NOT
+  mean the buffer is stale (the I-cache drops a slot on a write to any
+  aliasing address). `PAIRBUF=0` removes it. tb_top.sv checks every buffer
+  hit against a shadow of the CPU's writes.
 - **Cache enable:** both caches follow CACR EI. The data cache must NOT get
   the 68030 CACR bit 8: software tells an 020 from an 030 by setting that bit
   and reading it back, so storing it would make the CPU detect as a 68030 and
@@ -213,7 +224,9 @@ that gives the "_fast" files.
 ## Ideas not yet done (Glen decides the order)
 
 - Two words per cache entry, so sequential hits cost 5 clocks instead of 7
-  (est. 10-20%).
+  (est. 10-20%). Done in the step 5 branch as pair buffers instead (the RAM
+  layout is unchanged); measured in simulation at +10% sequential reads,
+  +14% scattered, +3% copy. Waiting for Glen's hardware test.
 - A 2-4 entry write queue (copies are write-bound).
 - Bigger caches: 16 more block RAMs, which would crowd out RTG.
 - RTG framebuffer in SDRAM: discussed as a future add-on, no design yet.

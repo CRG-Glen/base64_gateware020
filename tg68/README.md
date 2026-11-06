@@ -134,6 +134,25 @@ Boots from SD exactly like the fx68k build. Same `Mask` advice applies
   data) no longer waits for a posted write or prefetch to finish. In
   simulation: sequential reads 7.29 → 8.03 MB/s, scattered reads
   8.50 → 11.66 MB/s, the 1 KB copy unchanged at 4.85 MB/s.
+* **Pair buffers (step 5).** A longword is two 16-bit bus cycles and code
+  runs word by word, so a cache hit on one word of an aligned pair is nearly
+  always followed by a hit on the other. A lookup costs 7 clocks per step; a
+  word already sitting in a register costs 5. The cycle that looks the first
+  word up also reads its neighbour from the same cache RAMs (no extra
+  clock) and, if that is a valid cached word, keeps it in a small buffer,
+  one for instruction fetches and one for data reads. If the next cycle asks
+  for exactly that word it is answered from the buffer, the way the
+  prefetch buffer already answers. Cache size and layout are unchanged. A
+  buffered word is dropped by any write to its address (byte writes and
+  writes with the caches off included), by a reset, and by the cache flush
+  when MapROM switches, and it is only used while its cache is enabled, so
+  it can never return what a normal lookup would not. `PAIRBUF=0` in
+  `tg68_bus.v` removes it. In simulation, second pass from the caches:
+  sequential reads 8.03 → 8.87 MB/s (+10%), scattered reads 11.66 → 13.28
+  MB/s (+14%), the 1 KB copy 4.85 → 5.00 MB/s (+3%; it is write-bound).
+  **Not yet run on hardware.** The testbench checks every buffer hit
+  against a shadow copy of what the CPU wrote, so a stale buffer shows up in
+  any test, not only the ones aimed at it.
 * **MapROM.** The board's boot ROM (`turbomem.mem`, built with
   `DIAG_MAPROM=1`) copies Kickstart into the SDRAM shadow at every boot,
   verifies it and switches over, so it is normally already on. Both caches
