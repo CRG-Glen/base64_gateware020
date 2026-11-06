@@ -10,6 +10,11 @@ and MapROM.
 **The 68020 build is in [`tg68/`](tg68/README.md).** It covers the design,
 how to build it, the timing method and the test benches.
 
+> **If you use this build, read the
+> [original project's README](https://github.com/jbilander/base64_gateware#readme)
+> as well.** It covers the Base64 hardware, the iCESugar-Pro module,
+> programming it, and the other two gateware designs this one builds on.
+
 | | |
 | --- | --- |
 | CPU | TG68K.C, 68020 mode, about 25 MHz 68030 class in AIBB |
@@ -34,10 +39,22 @@ Measured on an A500+ (Kickstart 3.x):
    For normal use, take `bitstreams/step4_dcache/base64_tg68_full_plain.bit`.
    `min` is a cut-down build for diagnosing faults: it has no fast RAM and
    no SD card.
-2. **With the module out of the Amiga** (see the 5V warning below), copy
-   the `.bit` file onto the iCELink USB drive the module shows up as.
+2. **With the module out of the Amiga** (see the warning below), plug it
+   into your PC by USB-C and copy the `.bit` file onto the iCELink drive it
+   shows up as. Wait a few seconds while it writes the flash.
 3. Fit the module and boot. ShowConfig should list the Base64 boards, and
    SysInfo reports a 68020.
+
+> ### Program the module OUT of the Amiga
+>
+> Nothing on the module protects its 5V rail from USB 5V. If you plug in
+> USB while the module is fitted, the Amiga's 5V and your PC's 5V are tied
+> together directly, and whichever is higher back-drives the other (usually
+> your PC ends up powering the Amiga). Program the module before seating it
+> in the socket.
+>
+> If USB must stay connected while the module is fitted, use a **data-only
+> cable** with the 5V wire cut, keeping D+, D- and GND.
 
 The release also has `maprom`, a Shell command for checking and switching
 MapROM (the board's boot ROM already turns it on at every boot).
@@ -65,139 +82,7 @@ agreed with their author.
 
 This repository is a fork of
 [jbilander/base64_gateware](https://github.com/jbilander/base64_gateware).
-Everything outside `tg68/` is upstream's, unchanged. Its README follows.
-
----
-
-# Gateware for jbilander's Base64 MC68000 accelerator project
-by Alastair M. Robinson
-making use of the TG68k CPU core by Tobias Gubener
-
-> **This fork also contains a second, independent gateware implementation
-> built around the fx68k cycle-accurate 68000 core, in
-> [`fx68k/`](fx68k/README.md).** It targets the same hardware and is a
-> separate design rather than a modification of the one described below,
-> which is unchanged and still builds as documented here.
->
-> The fx68k build boots AmigaOS from SD card on Kickstart 1.3 and above with
-> fast RAM in both Zorro II and 32-bit CPU space. See
-> [fx68k/README.md](fx68k/README.md) for its architecture, autoconfig
-> layout, build notes and current status.
-
-## Hardware
-
-The Base64 is a carrier board that fits the MC68000 socket and hosts an
-[iCESugar-Pro](https://github.com/wuxx/icesugar-pro) FPGA module by Muse Lab.
-The module is open hardware, with the schematic published as a PDF in that
-repository, and carries:
-
-* a Lattice **LFE5U-25F-6BG256C** ECP5 in DDR2 SODIMM form factor, 106 usable IOs
-* **32MB SDRAM** (IS42S16160B)
-* 32MB SPI flash (W25Q256JV)
-* a 25MHz crystal, a micro-SD slot and an RGB LED
-
-Modules can be bought from Muse Lab's store on AliExpress, Tindie or Amazon.
-
-Carrier board design, schematics and gerbers:
-[github.com/jbilander/Base64](https://github.com/jbilander/Base64)
-
-## Programming the module
-
-Bitstreams go on over the module's USB-C connector. The on-board iCELink
-debugger appears as a virtual disk — drop the `.bit` file onto it and wait a
-few seconds while it writes the SPI flash. No adapter, no drivers, no extra
-tools.
-
-> ### Do this with the module OUT of the Amiga
->
-> Program it before seating it in the SO-DIMM socket.
->
-> There is **no protection on the module between its 5V rail and USB 5V**, so
-> plugging in USB while it is installed ties the Amiga's 5V to the host's with
-> nothing in between, and whichever is higher back-drives the other. In
-> practice USB is closer to a true 5.0V while the Amiga usually sits nearer
-> 4.9V, so what happens is your PC powering the Amiga's 5V rail rather than
-> the reverse — which is not what you want either. Two unprotected supplies
-> tied together is not a state to leave a machine in, whichever way the
-> current flows.
->
-> If USB has to stay attached while the module is installed, use a **data-only
-> cable** with the 5V conductor cut, leaving D+, D- and GND.
-
-Building from source is covered below for this implementation, and in
-[fx68k/BUILD.md](fx68k/BUILD.md) for the fx68k one. The external-JTAG route —
-needed only for Reveal Analyzer, and requiring the iCELink to be disabled by a
-hardware modification — is described there too.
-
-## General structure:
-The prj directory contains subprojects which can be built using their respective Makefiles.
-
-### Clock recovery:
-The Rev B board provides a clock-doubled version of the incoming 7MHz Amiga clock,
-in order to supply a synchronous clock fast enough for the ECP5's PLLs.
-The Rev C board supplies a x12 version of the clock, around 85MHz, synchronous 
-with the 7MHz clock. This project doesn't currently use the faster clocks.
-
-Instead, a high-frequency internal clock is generated from the IceSugar-Pro's
-own 25MHz clock, then _pos and _neg strobe signals are generated to mark the 
-rising and falling edges of the 7MHz clock.
-
-### MC68000 bus state machine
-Has responsibility for the 24-bit address space
-Handles communication with the motherboard
-Can intercept Autoconfig accesses in order to configure 32-bit Fast RAM and potentially
-other devices such as SD card.
-  
-### CPU Wrapper
-A shim around TG68K which does basic address decoding, directing addresses in 24-bit space
-to the bus state machine, and addresses in 32-bit space to the SDRAM controller / cache.
-Potentially reserve some RAM space for a kickstart ROM, in which case some of the 24-bit address
-will have to be decoded too.
-  
-### SDRAM controller and cache
-SDRAM controller will run in burst mode - either 4 words or 8 words
-
-## Building
-
-There are a few paths that need to be set so that the project can find the
-required tools - this is done by copying the "site.template" file to "site.mk"
-then editing site.mk to set the paths.
-
-The following tools are required to build this project:
-
-### Lattice Diamond
-To build bitstreams for the FPGA you'll need Lattice Diamond. Version 3.11 is
-recommended (newer versions may work, but have been known to cause problems
-with the Minimig core on ECP5-based boards, so 3.11 is the safest option.)
-
-Lattice Diamond is provided as a .rpm file, which is a bit awkward to install
-on .deb-based distributions such as Ubuntu or Mint (or Debian, of course!) -
-some information on the subject can be found at
-https://retroramblings.net/?p=1917
-
-### openFPGALoader
-You can use whichever tool you like to load bitstreams onto the FPGA, but the
-makefiles expect to use openFPGALoader.
-
-### Verilator
-Makefiles with a "sim" target will expect to use Verilator for simulation. It
-will need to be at least version 5.
-In order to build with verilator, it's necessary to set the path to
-Verilator's  includes in the site.mk file.  (If Verilator is installed 
-systemwide this will probably be /usr/share/verilator/include - or if you're
-using oss-cad-suite,  it will likely be
-/path/to/oss-cad-suite/share/verilator/include
-
-### OpenOCD
-Some projects are able to capture data from the running design over JTAG.
-This is done using OpenOCD.
-
-The easiest way to obtain openFPGALoader, Verilator and OpenOCD (if your
-distro of choice doesn't supply new enough versions) is to install
-oss-cad-suite from https://github.com/YosysHQ/oss-cad-suite-build
-
-### Open-source tooling
-While yosys and nextpnr have mature and dependable support for the Lattice
-ECP5 FPGAs, the last time I checked they struggled to build the TG68K CPU,
-which is why this project uses Diamond.
-
+Everything outside `tg68/` apart from this README is upstream's,
+unchanged: Alastair M. Robinson's
+original gateware at the top level and jbilander's fx68k build in
+[`fx68k/`](fx68k/README.md).
