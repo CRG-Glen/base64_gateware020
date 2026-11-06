@@ -10,8 +10,9 @@ and the SD card. An adapter, `tg68_bus.v`, makes TG68K look like fx68k's
 ports and adds the caches and the direct SDRAM path. Changes to the fx68k
 build's own files are few and marked `TG68:`.
 
-> **Status:** steps 1-4 run on an A500+ (step 4: 6076 Dhrystones,
-> AIBB MemTest 7.28 MB/s with the caches on, SD card 2.18 MB/s).
+> **Status:** steps 1-5 run on an A500+ (step 5 `full`: 6720 Dhrystones,
+> 7.01 MIPS, AIBB MemTest 7.46 MB/s with the caches on; step 4: SD card
+> 2.18 MB/s).
 >
 > **SD card: only the step 4 `full` bitstream reads the card.** Every
 > earlier yosys build drove the card's data-out line (MISO) low, so the
@@ -27,8 +28,8 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
-| `bitstreams/step5_pairbuf/` | + pair buffers: the other half of a cached pair in 5 clocks, not 7 | **Newest, not yet run on hardware.** Simulated and timing-checked |
-| `bitstreams/step4_dcache/` | + 8 KB data cache, cache hits overlap SDRAM writes; SD card pin fix | **Latest known good on hardware**, SD card included |
+| `bitstreams/step5_pairbuf/` | + pair buffers: the other half of a cached pair in 5 clocks, not 7 | **Latest. `full` known good on hardware**: 6720 Dhrystones, MemTest 7.46 MB/s. `min` not run on hardware |
+| `bitstreams/step4_dcache/` | + 8 KB data cache, cache hits overlap SDRAM writes; SD card pin fix | **Known good on hardware**, SD card included |
 | `bitstreams/step3_direct/` | + direct CPU → SDRAM path for fast RAM, posted writes, word prefetch | **Known good on hardware**: MemTest 6.46 MB/s |
 | `bitstreams/step2_icache/` | + 8 KB instruction cache | **Known good on hardware**: 4833 Dhrystones, 5.04 MIPS |
 | `bitstreams/step1_no_cache/` | 2 clocks less per bus access (4/3/1/1 pacing) | Simulated and timing-checked |
@@ -151,7 +152,13 @@ Boots from SD exactly like the fx68k build. Same `Mask` advice applies
   `tg68_bus.v` removes it. In simulation, second pass from the caches:
   sequential reads 8.03 → 8.87 MB/s (+10%), scattered reads 11.66 → 13.28
   MB/s (+14%), the 1 KB copy 4.85 → 5.00 MB/s (+3%; it is write-bound).
-  **Not yet run on hardware.** The testbench checks every buffer hit
+  On an A500+ (`full`), with the caches on: 6076 → 6720 Dhrystones
+  (+11%), AIBB MemTest 7.28 → 7.46 MB/s. With the caches off the run gave
+  3717 Dhrystones against step 4's 4007, although the caches-off path is
+  unchanged (the same code takes the same number of clocks on step 4 and
+  step 5 in simulation) and MemTest with the caches off is identical
+  (5.71 MB/s); not yet explained, most likely a difference in test
+  conditions. The testbench checks every buffer hit
   against a shadow copy of what the CPU wrote, so a stale buffer shows up in
   any test, not only the ones aimed at it.
 * **MapROM.** The board's boot ROM (`turbomem.mem`, built with
@@ -279,7 +286,7 @@ it gets `RESULT: PASS`, and writes `timing.txt`. Expect the 1T classes to
 pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
 
-Step 5 (pair buffers) builds as supplied (not yet run on hardware):
+Step 5 (pair buffers) builds as supplied (`full` known good on hardware):
 
 | Build | Seed | Worst 1T slack | Worst multicycle slack |
 | --- | --- | --- | --- |

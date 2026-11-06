@@ -151,7 +151,7 @@ that gives the "_fast" files.
   - The CPU is the only writer of fast RAM (the SD controller is CPU-driven,
     no DMA), so no software cache management is needed.
   - Both flush on reset and when MapROM changes state.
-- **Pair buffers (step 5, not yet tested on hardware):** the CLOOK clock
+- **Pair buffers (step 5, `full` known good on hardware):** the CLOOK clock
   reads the neighbouring word of the pair (address bit 1 flipped) from the
   same RAMs, and the clock after CCMP keeps it in `ib_*` (fetches) or `db_*`
   (data reads) if its tag matches. A cycle for exactly that word is answered
@@ -216,17 +216,18 @@ that gives the "_fast" files.
 | step 2 (I-cache) | 4833 / 3208 | 4.38 / 3.91 |
 | step 3 (direct path) | - | 6.46 / 5.71 |
 | step 4 (D-cache) | 6076 / 4007 | 7.28 / 5.71 |
+| step 5 (pair buffers, `full`) | 6720 / 3717 | 7.46 / 5.71 |
 
 - SD card (sfsd.device 2.4) on step 4: 2.18 MB/s in SysInfo; fx68k gets
   1.76 MB/s.
+- Step 5 caches-off Dhrystones (3717) are below step 4's (4007), but the
+  caches-off logic is unchanged: identical clock counts for both in the
+  read and copy benches with CACR=0. Probably different test conditions;
+  re-run step 4 and step 5 back to back on the same setup to settle it.
 - SysInfo reports "66 MHz" by timing loops. AIBB: close to a 25 MHz 68030.
 
 ## Ideas not yet done (Glen decides the order)
 
-- Two words per cache entry, so sequential hits cost 5 clocks instead of 7
-  (est. 10-20%). Done in the step 5 branch as pair buffers instead (the RAM
-  layout is unchanged); measured in simulation at +10% sequential reads,
-  +14% scattered, +3% copy. Waiting for Glen's hardware test.
 - A 2-4 entry write queue (copies are write-bound).
 - Bigger caches: 16 more block RAMs, which would crowd out RTG.
 - RTG framebuffer in SDRAM: discussed as a future add-on, no design yet.
