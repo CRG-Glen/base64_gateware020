@@ -54,7 +54,10 @@ Toolchain: yowasp-yosys 0.70 and yowasp-nextpnr-ecp5 0.11 (pip), ecppack
 from Ubuntu's fpga-trellis, Verilator 5.020, binutils-m68k-linux-gnu, or
 oss-cad-suite on Windows (build.bat). `scripts/setup_cloud.sh` installs the
 exact versions; with them, `build.py full --seed 3 --seeds 1` reproduces
-the released step 4 `full` bitstream bit for bit. Synthesis uses `synth_ecp5 -abc9`,
+the released step 4 `full` bitstream bit for bit. `build.py` uses
+`yowasp-yosys` / `yowasp-nextpnr-ecp5` by itself when plain `yosys` /
+`nextpnr-ecp5` are not on PATH, so no `YOSYS` / `NEXTPNR` variables are
+needed (they still override). Synthesis uses `synth_ecp5 -abc9`,
 keep_hierarchy on the TG68 modules then flatten, and deletes `$scopeinfo`
 cells. nextpnr runs with `--placer static --router router2`.
 
@@ -168,8 +171,13 @@ that gives the "_fast" files.
 - **yosys turns a constant `1'bz` on an inout into a constant-0 driver.** The
   SD card's MISO was driven low in every build up to the step 4 rebuild.
   Inputs on inout pins are now ECP5 `BB` buffers with T=1 under `ifdef
-  YOSYS`. build.py refuses a netlist with inout bits tied to constants.
-  Verilator honours `1'bz`, so sims cannot catch this.
+  YOSYS`: the SD card's DAT0-2, and `sdram_dq` when there is no fast RAM
+  (the `min` build). build.py refuses a netlist with inout bits tied to
+  constants. The one allowed exception is `sd_cmd[0]=0` and `sd_d[3]=1` in
+  a config without the SD block (real outputs, idle on purpose). A new
+  inout that is constant in some config needs a `BB` or an entry in
+  `tied_ok` in build.py, with a reason. Verilator honours `1'bz`, so sims
+  cannot catch this.
 - `syn_useioff` can't go on registers that are also read internally
   (rt_as_n, rt_vma_n): packing fails.
 - `pkill -f build.py` from a shell whose command line contains "build.py"

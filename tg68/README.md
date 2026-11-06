@@ -152,6 +152,10 @@ Boots from SD exactly like the fx68k build. Same `Mask` advice applies
   are now explicit ECP5 `BB` buffers with the output permanently off (yosys
   only; Diamond keeps the original code), and `build.py` stops with an
   error if any bidirectional pin comes out of synthesis tied to a constant.
+  The SDRAM data pins get the same treatment when the build has no fast
+  RAM (`min`), where they were driven low before. The only constant bits
+  `build.py` accepts are the SD card's MOSI and chip select in a build
+  without the SD block.
 * **16-bit data bus.** TG68's bus port is 16 bits, so every longword is two
   transfers, as on the 68000.
 * **Direct SDRAM path (step 3).** On-board fast RAM (the Zorro II window
@@ -206,7 +210,10 @@ either way.
    ```
 
    On Linux/macOS: `python3 scripts/build.py min` with oss-cad-suite's
-   `bin` on your PATH. A build takes a few minutes per seed.
+   `bin` on your PATH, or with the `yowasp-yosys` and
+   `yowasp-nextpnr-ecp5` pip packages installed (`build.py` falls back to
+   them when plain `yosys` / `nextpnr-ecp5` are missing). A build takes a
+   few minutes per seed.
 3. The bitstream lands in `build\<config>\base64_tg68_<config>.bit`.
    The design uses ~8.8k (min) to ~10.3k (full) of the FPGA's 24k LUTs,
 and 16 (min) or 35 (full) of its 56 block RAMs.

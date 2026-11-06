@@ -1718,7 +1718,18 @@ module base64_tg68_top #(
     end else begin : g_no_sdram
     assign sd_ack = 1'b0; assign sd_ack_early = 1'b0; assign sd_ready = 1'b0;
     assign sd_rdata_live = 16'd0; assign sd_rdata = 16'd0;
-    assign sdram_a = 13'd0; assign sdram_ba = 2'd0; assign sdram_dq = 16'bz;
+    assign sdram_a = 13'd0; assign sdram_ba = 2'd0;
+`ifdef YOSYS
+    // TG68: the same trap as the SD card pins above: yosys turns a constant
+    // 1'bz into a constant 0 driver, so DQ was driven LOW in the min build.
+    // Bidirectional buffers with the output permanently off make the pins
+    // true inputs. (Diamond honours 1'bz, so the other branch is the original.)
+    for (genvar dqi = 0; dqi < 16; dqi = dqi + 1) begin : g_dq
+        BB u_dq (.I(1'b0), .T(1'b1), .O(), .B(sdram_dq[dqi]));
+    end
+`else
+    assign sdram_dq = 16'bz;
+`endif
     assign sdram_dqm = 2'b11; assign sdram_cke = 1'b0; assign sdram_cs_n = 1'b1;
     assign sdram_ras_n = 1'b1; assign sdram_cas_n = 1'b1; assign sdram_we_n = 1'b1;
     end endgenerate
