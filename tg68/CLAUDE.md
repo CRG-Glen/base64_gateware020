@@ -50,8 +50,11 @@ python3 scripts/check_timing.py build/full/base64_tg68.sdf --paths 4
 sh sw/maprom/build.sh                           # needs binutils-m68k-linux-gnu
 ```
 
-Toolchain: yowasp-yosys 0.70 and yowasp-nextpnr-ecp5 0.11 (pip), or
-oss-cad-suite on Windows (build.bat). Synthesis uses `synth_ecp5 -abc9`,
+Toolchain: yowasp-yosys 0.70 and yowasp-nextpnr-ecp5 0.11 (pip), ecppack
+from Ubuntu's fpga-trellis, Verilator 5.020, binutils-m68k-linux-gnu, or
+oss-cad-suite on Windows (build.bat). `scripts/setup_cloud.sh` installs the
+exact versions; with them, `build.py full --seed 3 --seeds 1` reproduces
+the released step 4 `full` bitstream bit for bit. Synthesis uses `synth_ecp5 -abc9`,
 keep_hierarchy on the TG68 modules then flatten, and deletes `$scopeinfo`
 cells. nextpnr runs with `--placer static --router router2`.
 
@@ -85,6 +88,30 @@ that gives the "_fast" files.
 5. Changes to rtl/base64_fx68k files are marked `TG68:` with the reason.
 6. Update README.md (status, table, feature text, timing table) along with
    the code.
+
+## Working in Claude Code
+
+- **Tools:** if `verilator` or `yowasp-yosys` is missing, run
+  `sudo bash tg68/scripts/setup_cloud.sh` (or `bash` as root) before
+  anything else.
+- **One change per branch and pull request.** Name branches after the
+  change, for example `step5-two-word-cache`. Each PR says what changed, the
+  sim results, the timing-check result (worst slack per class that moved),
+  and what Glen should test on the Amiga.
+- **Getting test bitstreams to Glen:** he flashes them from GitHub. Commit
+  them to the PR branch under `tg68/bitstreams/stepN_name/` with
+  `git add -f` (the folder is gitignored), together with timing.txt. Use
+  both `_plain` and `_fast` (`ecppack --compress --freq 38.8`) and
+  `full` + `min`. Glen downloads them from the branch on GitHub. PRs are
+  squash-merged, and the bitstream commit is dropped before merging, so no
+  binaries land in `main`. Released bitstreams go on GitHub Releases, which
+  Glen creates by hand.
+- **Commit author:** Glen Milford <casualretrogamer@outlook.com>, and end
+  commit messages with the Co-Authored-By line for Claude.
+- **No force-pushes to `main`**, and no rewriting history that is already
+  on GitHub, unless Glen asks for it.
+- Glen tests on hardware and reports back. Don't mark anything done, or
+  update the results table, until he has.
 
 ## How the design works (short version; details are in README and comments)
 
