@@ -1,0 +1,20 @@
+# build outputs (bitstreams go on the GitHub Releases page)
+/build/
+/build_*/
+/bitstreams/
+/bitstreams_prev/
+*.bit
+# simulation
+sim/obj_dir/
+sim/*.o
+sim/*.elf
+sim/*.bin
+sim/*.mem
+sim/build_*.log
+# maprom outputs (sw/maprom/build.sh)
+sw/maprom/maprom
+sw/maprom/*.adf
+sw/maprom/*.o
+sw/maprom/*.elf
+sw/maprom/*.bin
+__pycache__/

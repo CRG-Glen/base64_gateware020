@@ -1,0 +1,79 @@
+# Synplify constraints for base64_tg68_top (Diamond flow).
+# Clock, false paths and I/O-flop attributes are the fx68k build's
+# (fx68k/constraints/base64.fdc). The fx68k multicycle paths are gone with
+# fx68k; the TG68 ones below replace them.
+
+create_clock -name clk_12x -period 11.640 [get_ports clk_12x]
+set_false_path -from [get_ports clk_7m]
+set_false_path -from [get_ports {cpu_dtack_n cpu_vpa_n cpu_berr_n}]
+set_false_path -from [get_ports {cpu_br_n cpu_bgack_n cpu_reset_n cpu_halt_n}]
+set_false_path -from [get_ports {cpu_ipl_n[*] cfgin_n}]
+
+define_attribute {i:rt_a[*]}    {syn_useioff} {1}
+define_attribute {i:rt_d[*]}    {syn_useioff} {1}
+define_attribute {i:rt_fc[*]}   {syn_useioff} {1}
+define_attribute {i:rt_rw}      {syn_useioff} {1}
+define_attribute {i:rt_as_n}    {syn_useioff} {1}
+define_attribute {i:rt_uds_n}   {syn_useioff} {1}
+define_attribute {i:rt_lds_n}   {syn_useioff} {1}
+define_attribute {i:rt_vma_n}   {syn_useioff} {1}
+
+# ---------------------------------------------------------------------------
+# TG68 multicycle paths -- see rtl/base64_tg68/tg68_bus.v, TIMING MODEL.
+# Every kernel register is gated by clkena; the adapter guarantees
+#   kernel -> kernel            >= STEP   (4) clocks between clkena pulses
+#   adapter inputs -> kernel    >= DIN+1  (2) clocks of setup
+#   kernel -> adapter           >= SETTLE (3) clocks before sampling
+# cpu.k_clkena is never a -from: it is the single-cycle path. (As a -to it
+# is fine: the kernel output that triggers a step is only used >= SETTLE
+# clocks after the previous step.)
+# -hold N-1 keeps the hold check on the launch edge.
+# If you change TG_STEP / TG_SETTLE / TG_DIN in the top level, change these.
+# ---------------------------------------------------------------------------
+set_multicycle_path -setup 4 -hold 3 \
+    -from [get_cells {cpu.core.*}] -to [get_cells {cpu.core.*}]
+set_multicycle_path -setup 2 -hold 1 \
+    -from [get_cells {cpu.k_din* cpu.k_ipl* cpu.k_berr cpu.k_nreset}] \
+    -to   [get_cells {cpu.core.*}]
+set_multicycle_path -setup 3 -hold 2 \
+    -from [get_cells {cpu.core.*}] \
+    -to   [get_cells {cpu.a_r* cpu.fc_r* cpu.oEdb* cpu.eRWn cpu.uds_want cpu.lds_want cpu.oRESETn cpu.q* cpu.tmr*
+                   cpu.k_clkena cpu.cnt* cpu.k_ipl* cpu.k_berr}]
+
+# Read-data latch: tg68_bus latches iEdb DATA_DELAY (2) clocks after it
+# sees DTACK, and every slave holds its read data from DTACK until AS
+# rises. (Its paths start in the SD ROM / fast RAM output muxes.)
+set_multicycle_path -setup 2 -hold 1 -to [get_cells {cpu.k_din*}]
+
+# Bus outputs: address, FC, R/W and write data change only at DECIDE, with AS
+# high, and the AS pin falls ADDR_SETUP+1 (2) clocks later.
+set_multicycle_path -setup 2 -hold 1 \
+    -from [get_cells {cpu.a_r* cpu.fc_r* cpu.eRWn cpu.oEdb*}]
+# The instruction-cache fill register captures iEdb on the same edge as k_din.
+set_multicycle_path -setup 2 -hold 1 -to [get_cells {cpu.ic_wd*}]
+
+# Direct SDRAM path. Its write data/byte enables/direction are set at DECIDE,
+# two clocks before the controller samples them.
+set_multicycle_path -setup 2 -hold 1 -from [get_cells {cpu.dp_we cpu.dp_wdata* cpu.dp_be*}]
+# The prefetch address is written when a prefetch is issued and first used
+# at the next DECIDE or the fill after its ack, >= 4 clocks later.
+set_multicycle_path -setup 2 -hold 1 -from [get_cells {cpu.pf_a*}]
+# The SDRAM word address is formed from the CPU's early address and held
+# while a request is outstanding: stable 2 clocks before the controller uses it.
+set_multicycle_path -setup 2 -hold 1 -from [get_cells {*u_fastmem*saddr_r*}]
+# The cache, direct-path and prefetch data registers load k_din ONE clock
+# later. The blanket -to k_din 2 above must not apply to them.
+set_multicycle_path -setup 1 -hold 0 \
+    -from [get_cells {cpu.ic_qd* cpu.dp_q* cpu.pf_d*}] -to [get_cells {cpu.k_din* cpu.ic_wd* cpu.dc_wd*}]
+# The data cache: its fill register captures iEdb like ic_wd (2 clocks),
+# and its write-side registers take the kernel's address/data at DECIDE.
+set_multicycle_path -setup 2 -hold 1 -to [get_cells {cpu.dc_wd*}]
+set_multicycle_path -setup 3 -hold 2 \
+    -from [get_cells {cpu.core.*}] \
+    -to   [get_cells {cpu.dc_we cpu.dc_wa* cpu.dc_wt* cpu.dc_wd* cpu.dp_req_i cpu.dp_busy cpu.dp_kind* cpu.dp_spec cpu.dp_fast cpu.cyc_fetch cpu.ic_we cpu.ic_wa* cpu.ic_wt* cpu.pf_valid cpu.k_din*}]
+# The adapter's own control registers steer k_din/ic_wd/dc_wd on single-
+# cycle transitions (cache hit at CCMP, direct data at DDATA, prefetch hit
+# at DECIDE): the blanket 2-clock budgets above must not apply to them.
+set_multicycle_path -setup 1 -hold 0 \
+    -from [get_cells {cpu.q* cpu.tmr* cpu.cnt* cpu.bus_berr* cpu.dp_busy* cpu.dp_kind* cpu.dp_spec* cpu.dp_fast* cpu.pf_valid* cpu.pf_fill* cpu.pf_dc* cpu.ic_flush* cpu.ic_fcnt* cpu.cyc_fetch* cpu.uds_want* cpu.lds_want* cpu.mr_act_d*}] \
+    -to   [get_cells {cpu.k_din* cpu.ic_wd* cpu.dc_wd*}]
