@@ -145,8 +145,8 @@ that gives the "_fast" files.
   per entry, in block RAM.
   - Cacheable: fast RAM and Kickstart $F80000-$FFFFFF. Never Chip RAM.
   - Both share one lookup pipeline: the RAMs read the kernel's address on
-    the edge into DECIDE, DECIDE loads the word into k_din and the tag into
-    ic_qt, CCMP compares (EARLY LOOKUP, step 6).
+    the edge into DECIDE, DECIDE loads the word into k_din_c and the tag
+    into ic_qt, CCMP compares (EARLY LOOKUP, step 6).
   - Write-through. The data cache allocates on whole-word writes to fast RAM
     and drops the entry otherwise. The instruction cache drops the entry on
     any write.
@@ -156,9 +156,12 @@ that gives the "_fast" files.
 - **Early lookup (step 6, not yet tested on hardware):** the kernel's
   address is final ~21 ns after its registers move (the cache index bits
   ~15 ns), well inside 2 clocks, while busstate and FC need nearly 3. So the
-  cache RAMs read on the edge INTO DECIDE; DECIDE loads k_din and ic_qt
-  from the RAM outputs unconditionally; CCMP compares (`cc_hit`) and a hit
-  calls step() right there. Hit: 5 clocks (was 7). check_timing.py class
+  cache RAMs read on the edge INTO DECIDE; DECIDE loads `k_din_c` (the
+  word, its own register: the RAM output through k_din's wide mux failed
+  timing by ~2 ns on every seed) and ic_qt from the RAM outputs, and sets
+  `k_din_sel` so the kernel's data input (`k_dat`) takes k_din_c; CCMP
+  compares (`cc_hit`) and a hit calls step() right there. A miss clears
+  k_din_sel; so does the end of the clkena clock. Hit: 5 clocks (was 7). check_timing.py class
   "kernel -> cache RAM" gets SETTLE-1 = 2T. CCMP uses `ic_ok_d` (window
   decode of k_addr registered at DECIDE), not `ic_ok`: `icache_win` lags
   a_r by a clock and is stale in CCMP (breaking that collapses D-cache hits

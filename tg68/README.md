@@ -166,9 +166,9 @@ Boots from SD exactly like the fx68k build. Same `Mask` advice applies
   address alone is final much sooner (about 21 ns routed, and the cache
   index bits by about 15 ns), so the cache RAMs now read it a clock earlier,
   on the edge into the clock where the adapter decides what the cycle is.
-  That clock already loads the looked-up word into the CPU's data register
-  and the tag into the compare register, and the next clock compares and,
-  on a hit, steps the CPU. A cache hit costs 5 clocks instead of 7, and a
+  That clock already loads the looked-up word into a register of its own
+  that feeds the CPU's data input, and the tag into the compare register,
+  and the next clock compares and, on a hit, steps the CPU. A cache hit costs 5 clocks instead of 7, and a
   miss reaches the bus or the SDRAM a clock sooner. The step 5 pair buffers,
   which only made the second word of a pair cost 5 clocks, gained nothing
   after that and were removed. `check_timing.py` gives the kernel-to-cache-RAM

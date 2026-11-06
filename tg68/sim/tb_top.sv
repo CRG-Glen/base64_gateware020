@@ -128,10 +128,10 @@ module tb;
             if (shadow.exists(pb_k)) begin
                 hit_chk = hit_chk + 1;
                 pb_s = shadow[pb_k];
-                if ((pb_s[17] && dut.cpu.k_din[15:8] !== pb_s[15:8]) ||
-                    (pb_s[16] && dut.cpu.k_din[7:0]  !== pb_s[7:0])) begin
+                if ((pb_s[17] && dut.cpu.k_dat[15:8] !== pb_s[15:8]) ||
+                    (pb_s[16] && dut.cpu.k_dat[7:0]  !== pb_s[7:0])) begin
                     $display("FAIL cache hit: stale data at %h: CPU gets %h, last written %h",
-                             {dut.cpu.a_r, 1'b0}, dut.cpu.k_din, pb_s[15:0]);
+                             {dut.cpu.a_r, 1'b0}, dut.cpu.k_dat, pb_s[15:0]);
                     hit_bad = hit_bad + 1;
                 end
             end

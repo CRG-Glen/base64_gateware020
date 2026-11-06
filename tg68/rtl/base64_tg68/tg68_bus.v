@@ -122,6 +122,15 @@ module tg68_bus #(
     reg         k_clkena = 1'b0;
     reg         k_nreset = 1'b0;
     reg  [15:0] k_din    = 16'hFFFF;
+    // EARLY LOOKUP (step 6): a cache hit's word goes to the kernel from its
+    // own register, k_din_c, loaded in DECIDE from the RAM output through a
+    // 2-way mux only; k_din_sel picks it. Loading the RAM output into k_din
+    // itself put it through k_din's wide input mux (-2 ns on every seed).
+    // Both feed the kernel as k_din does (adapter -> kernel budget), and both
+    // are stable from the DECIDE edge, two clocks before the kernel samples.
+    reg  [15:0] k_din_c  = 16'hFFFF;
+    reg         k_din_sel = 1'b0;
+    wire [15:0] k_dat    = k_din_sel ? k_din_c : k_din;
     reg  [2:0]  k_ipl    = 3'b111;
     reg         k_berr   = 1'b0;
 
@@ -137,7 +146,7 @@ module tg68_bus #(
         .clk        (clk),
         .nreset     (k_nreset),
         .clkena_in  (k_clkena),
-        .data_in    (k_din),
+        .data_in    (k_dat),
         .ipl        (k_ipl),
         .berr       (k_berr),
         .addr_out   (k_addr),
@@ -205,7 +214,7 @@ module tg68_bus #(
     // Timing: the cache RAM's read address is the kernel's own address
     // output, read on the edge INTO DECIDE (EARLY LOOKUP, step 6: a kernel
     // -> cache RAM path with SETTLE-1 clocks). DECIDE registers the RAM
-    // output (word into k_din, tag into ic_qt) and CCMP compares, so the
+    // output (word into k_din_c, tag into ic_qt) and CCMP compares, so the
     // hit decision and the hit data are ordinary single-cycle paths. A hit
     // costs 5 clocks from one kernel step to the next, against 7+ for fast
     // RAM and ~45 for the ROM over the 7M bus.
@@ -274,7 +283,7 @@ module tg68_bus #(
     // Kickstart ROM), in its own block RAM, for data reads (busstate 10).
     // It shares the lookup pipeline (EARLY LOOKUP below): both RAMs are read
     // from the kernel's address on the edge into DECIDE, DECIDE loads the
-    // word of the kind this cycle uses into k_din and its tag into ic_qt,
+    // word of the kind this cycle uses into k_din_c and its tag into ic_qt,
     // and CCMP compares.
     //
     // Write-through. Every CPU write reaches memory as before. A whole-word
@@ -373,13 +382,13 @@ module tg68_bus #(
     // function-code outputs need nearly three. So the cache RAMs are read on
     // the edge into DECIDE, a clock before DECIDE's own decision, and DECIDE
     // already has both caches' word and tag for the address:
-    //   * DECIDE loads the word of this cycle's kind into k_din (the RAM
-    //     output goes straight into the data register, whatever the compare
-    //     will say: data registers load unconditionally) and its tag into
-    //     ic_qt;
+    //   * DECIDE loads the word of this cycle's kind into k_din_c (its own
+    //     register, through a 2-way mux only, whatever the compare will say:
+    //     data registers load unconditionally) and its tag into ic_qt, and
+    //     sets k_din_sel so the kernel's data input takes k_din_c;
     //   * CCMP, the next clock, compares, and a hit steps the kernel there
-    //     and then: k_din has been stable for a clock, which is all DIN_SETUP
-    //     asks.
+    //     and then: k_din_c has been stable for a clock, which is all
+    //     DIN_SETUP asks. A miss sets k_din_sel back to k_din.
     // A hit costs 5 clocks from one step to the next instead of 7 (3 settle,
     // DECIDE, CCMP), the same as a prefetch hit. That made the step 5 pair
     // buffers, which bought 5 clocks for the second word of a pair, worth
@@ -513,6 +522,13 @@ module tg68_bus #(
         // and CCMP is always the clock straight after it), so no enable sits
         // in the RAM -> register path.
         ic_qt    <= (k_bs == 2'b00) ? ic_tq : dc_tq;
+        // Loaded on every DECIDE clock (the last one counts) and then HELD:
+        // re-reading after DECIDE could hand the kernel a word that a fill
+        // put there after the tag was checked.
+        if (q == Q_DECIDE) k_din_c <= (k_bs == 2'b00) ? ic_dq : dc_dq;
+        // The kernel samples data_in at the end of the clkena clock; the
+        // select goes back to k_din on that same edge.
+        if (k_clkena) k_din_sel <= 1'b0;
         ic_ok_d  <= (ICACHE != 0) && (k_rom || k_z2 || k_cpuw || icache_win_k);
         mr_act_d <= mr_active;
         ic_on_r  <= (ICACHE != 0) && k_cacr[0] && !flush_nxt;
@@ -529,6 +545,7 @@ module tg68_bus #(
             // Hold the kernel in reset, but keep stepping it: its internal
             // synchronous Reset only advances on clkena.
             k_nreset <= 1'b0;
+            k_din_sel <= 1'b0;
             as_i  <= 1'b1; uds_i <= 1'b1; lds_i <= 1'b1; eRWn <= 1'b1;
             oRESETn  <= 1'b1;
             k_berr   <= 1'b0;
@@ -612,8 +629,9 @@ module tg68_bus #(
                     if (k_look) begin
                         q <= Q_CCMP;             // look in the cache first
                         // EARLY LOOKUP: the RAMs read this address on the
-                        // edge into DECIDE; take the word now, CCMP decides
-                        k_din <= (k_bs == 2'b00) ? ic_dq : dc_dq;
+                        // edge into DECIDE; k_din_c takes the word on this
+                        // edge (see below), CCMP decides
+                        k_din_sel <= 1'b1;
                         if (k_bs == 2'b10 && k_fast && !dp_busy) begin
                             dp_req_i <= 1'b1;    // speculative read
                             dp_busy  <= 1'b1; dp_kind <= 2'd1;
@@ -645,24 +663,29 @@ module tg68_bus #(
             Q_CCMP: begin
                 tmr <= 6'd0;
                 dp_spec <= 1'b0;
-                // k_din already holds the looked-up word (DECIDE loaded it),
-                // so a hit steps the kernel now. On a miss it is overwritten
-                // before the kernel steps.
+                // k_din_c already holds the looked-up word (loaded in DECIDE)
+                // and k_din_sel picks it, so a hit steps the kernel now. On a
+                // miss the select goes back to k_din, which the miss path
+                // loads before the kernel steps.
                 if (cc_hit) begin
                     bus_berr <= 1'b0;        // hit: no bus cycle at all
                     if (cnt >= STEP - 1 && DIN_SETUP <= 1) step();
                     else q   <= Q_FINISH;
                     if (dp_spec) dp_kind <= 2'd2;   // drop the speculative read
                 end else if (dp_spec) begin
+                    k_din_sel <= 1'b0;
                     q        <= Q_DWAIT;     // miss: the read is already out
                 end else if (dp_busy) begin
+                    k_din_sel <= 1'b0;
                     q        <= Q_CFREE;     // miss: port still busy
                 end else if (dp_fast) begin
+                    k_din_sel <= 1'b0;
                     dp_req_i <= 1'b1;        // miss in fast RAM: direct
                     dp_busy  <= 1'b1; dp_kind <= 2'd1;
                     dp_we    <= 1'b0;
                     q        <= Q_DWAIT;
                 end else begin
+                    k_din_sel <= 1'b0;
                     q        <= Q_SETUP;     // miss: address is already out
                 end
             end
