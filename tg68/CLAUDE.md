@@ -218,8 +218,8 @@ that gives the "_fast" files.
 | step 4 (D-cache) | 6076 / 4007 | 7.28 / 5.71 |
 | step 5 (pair buffers, `full`) | 6720 / 3717 | 7.46 / 5.71 |
 
-- SD card (sfsd.device 2.4) on step 4: 2.18 MB/s in SysInfo; fx68k gets
-  1.76 MB/s.
+- SD card (sfsd.device 2.4): 2.18 MB/s in SysInfo on step 4 and step 5
+  (2184533 bytes/s); fx68k gets 1.76 MB/s.
 - Step 5 caches-off Dhrystones (3717) are below step 4's (4007), but the
   caches-off logic is unchanged: identical clock counts for both in the
   read and copy benches with CACR=0. Probably different test conditions;
