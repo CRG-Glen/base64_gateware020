@@ -27,7 +27,8 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
-| `bitstreams/step4_dcache/` | + 8 KB data cache, cache hits overlap SDRAM writes; SD card pin fix | **Latest. Known good on hardware**, SD card included |
+| `bitstreams/step5_pairbuf/` | + pair buffers: the other half of a cached pair in 5 clocks, not 7 | **Newest, not yet run on hardware.** Simulated and timing-checked |
+| `bitstreams/step4_dcache/` | + 8 KB data cache, cache hits overlap SDRAM writes; SD card pin fix | **Latest known good on hardware**, SD card included |
 | `bitstreams/step3_direct/` | + direct CPU → SDRAM path for fast RAM, posted writes, word prefetch | **Known good on hardware**: MemTest 6.46 MB/s |
 | `bitstreams/step2_icache/` | + 8 KB instruction cache | **Known good on hardware**: 4833 Dhrystones, 5.04 MIPS |
 | `bitstreams/step1_no_cache/` | 2 clocks less per bus access (4/3/1/1 pacing) | Simulated and timing-checked |
@@ -277,6 +278,22 @@ actually provides:
 it gets `RESULT: PASS`, and writes `timing.txt`. Expect the 1T classes to
 pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
+
+Step 5 (pair buffers) builds as supplied (not yet run on hardware):
+
+| Build | Seed | Worst 1T slack | Worst multicycle slack |
+| --- | --- | --- | --- |
+| min | 12 | +0.21 ns | +3.7 ns |
+| full | 2 | +0.22 ns | +3.2 ns |
+
+The pair buffers cost timing at first: the first version failed every seed of
+every build. The tag check is now pipelined over three clocks, the cache RAM
+outputs go straight into registers, the prefetch hit and the buffer hits
+share one branch of the bridge's decision, and `ib_a`/`ib_d`/`db_a`/`db_d`
+are classed like `pf_a` in `check_timing.py` (loaded at least 3 clocks before
+they are read; the testbench asserts that). The `fastmem` configuration (fast
+RAM, no SD card) did not pass in 12 seeds (best -1.36 ns), so no `fastmem`
+bitstream is supplied for step 5.
 
 Step 4 (data cache) builds as supplied:
 
