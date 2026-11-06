@@ -386,8 +386,10 @@ module tg68_bus #(
     // Stage 1 (every clock, no enable): the cache RAMs' output, as the
     // neighbour of the lookup in a_r. Only meaningful in the clock after
     // CCMP, which is when sb_pi/sb_pd say so.
-    reg  [15:0]      sb_qd = 16'd0;
-    reg  [TAGW-1:0]  sb_qt = {TAGW{1'b0}};
+    // One raw register per cache, straight from its RAM output (no mux in
+    // the RAM -> flip-flop path); stage 2 picks the one that matters.
+    reg  [15:0]      sb_qdi = 16'd0, sb_qdd = 16'd0;
+    reg  [TAGW-1:0]  sb_qti = {TAGW{1'b0}}, sb_qtd = {TAGW{1'b0}};
     reg  [31:1]      sb_a  = 31'd0;
     reg              sb_en = 1'b0;       // the cache could be used for this lookup
     reg              sb_pi = 1'b0, sb_pd = 1'b0;   // CCMP was last clock: fetch / data
@@ -483,6 +485,7 @@ module tg68_bus #(
     // prefetched, that address now belongs to the motherboard ROM again.
     wire k_pf_hit = (DIRECT != 0) && pf_valid && (k_bs == 2'b10) && k_nwr
                     && (k_addr[31:1] == pf_a) && k_fast;
+    wire k_pf_ok  = k_pf_hit && !dp_busy;
 
     // ------------------------------------------------------------------
     // STROBE PIPELINE
@@ -529,8 +532,10 @@ module tg68_bus #(
         sib_sel  <= 1'b0;
         // PAIR BUFFERS stage 1: loaded every clock, qualified by sb_pi/sb_pd
         // (keeps the cache RAM outputs' path to one mux and a flip-flop)
-        sb_qd    <= cyc_fetch ? ic_dq : dc_dq;
-        sb_qt    <= cyc_fetch ? ic_tq : dc_tq;
+        sb_qdi   <= ic_dq;
+        sb_qdd   <= dc_dq;
+        sb_qti   <= ic_tq;
+        sb_qtd   <= dc_tq;
         sb_a     <= {a_r[31:2], ~a_r[1]};
         sb_en    <= ic_ok && (cyc_fetch ? ic_on : dc_on);
         sb_pi    <= 1'b0;
@@ -605,19 +610,18 @@ module tg68_bus #(
                 oRESETn <= k_nresetout;
                 if (internal_step) begin
                     if (cnt >= STEP - 1) step();
-                end else if (k_pf_hit && !dp_busy) begin
-                    // second half of a longword / next sequential word:
-                    // already fetched, no SDRAM access at all
-                    k_din    <= pf_d;
-                    bus_berr <= 1'b0;
-                    tmr      <= 6'd0;
-                    q        <= Q_FINISH;
-                end else if (k_ib_hit || k_db_hit) begin
-                    // the other half of a pair the last lookup found in the
-                    // cache (PAIR BUFFERS). Like the prefetch hit it starts
-                    // no cycle, so it needs neither the bus nor the SDRAM
-                    // port, and it leaves a_r/eRWn alone.
-                    k_din    <= k_ib_hit ? ib_d : db_d;
+                end else if (k_pf_ok || k_ib_hit || k_db_hit) begin
+                    // No cycle to start, the word is already in a register:
+                    //  * k_pf_ok: second half of a longword / next sequential
+                    //    word, prefetched from the SDRAM (needs the port
+                    //    idle, as before);
+                    //  * k_ib_hit / k_db_hit: the other half of a pair the
+                    //    last cache lookup found (PAIR BUFFERS), which needs
+                    //    neither the bus nor the SDRAM port.
+                    // One branch, so the three share the state change and a
+                    // priority chain no deeper than the prefetch hit alone
+                    // had. a_r/eRWn are left alone.
+                    k_din    <= k_pf_ok ? pf_d : (k_bs[1] ? db_d : ib_d);
                     bus_berr <= 1'b0;
                     tmr      <= 6'd0;
                     q        <= Q_FINISH;
@@ -825,11 +829,11 @@ module tg68_bus #(
             // region) and load the buffer of that kind, as INVALID: it is
             // replaced whether or not the neighbour is usable. a_r is still
             // the lookup's address: the next DECIDE is >= SETTLE clocks away.
-            sb_m  <= (sb_qt == ic_want) && sb_en;
+            sb_m  <= ((sb_pi ? sb_qti : sb_qtd) == ic_want) && sb_en;
             sb_fi <= sb_pi;
             sb_fd <= sb_pd;
-            if (sb_pi) begin ib_valid <= 1'b0; ib_a <= sb_a; ib_d <= sb_qd; end
-            if (sb_pd) begin db_valid <= 1'b0; db_a <= sb_a; db_d <= sb_qd; end
+            if (sb_pi) begin ib_valid <= 1'b0; ib_a <= sb_a; ib_d <= sb_qdi; end
+            if (sb_pd) begin db_valid <= 1'b0; db_a <= sb_a; db_d <= sb_qdd; end
             // stage 3: valid, if the tag matched
             if (sb_fi && sb_m) ib_valid <= 1'b1;
             if (sb_fd && sb_m) db_valid <= 1'b1;

@@ -149,7 +149,7 @@ module tb;
             if (!dut.cpu.lds_want) begin pb_s[16] = 1'b1; pb_s[7:0]  = dut.cpu.oEdb[7:0];  end
             shadow[pb_k] = pb_s;
         end
-        if (dut.cpu.q == 4'd1 && !dut.cpu.internal_step && !(dut.cpu.k_pf_hit && !dut.cpu.dp_busy)
+        if (dut.cpu.q == 4'd1 && !dut.cpu.internal_step && !dut.cpu.k_pf_ok
             && (dut.cpu.k_ib_hit || dut.cpu.k_db_hit)) begin
             pair_hits = pair_hits + 1;
             if (dut.cpu.k_ib_hit) begin
