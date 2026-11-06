@@ -40,6 +40,8 @@ ap.add_argument('--din', type=int, default=1)
 ap.add_argument('--data', type=int, default=2, help='tg68_bus DATA_DELAY')
 ap.add_argument('--asu', type=int, default=1, help='tg68_bus ADDR_SETUP')
 ap.add_argument('--paths', type=int, default=3, help='paths to print per class')
+ap.add_argument('--strip', default='', help='hierarchy prefix to remove from every instance name '
+                '(the dev-board harness has base64_tg68_top as "dut.")')
 args = ap.parse_args()
 T = 1e6 / args.freq                      # ps
 
@@ -73,11 +75,14 @@ def cells(txt):
         m = re.match(r'\s*\(CELLTYPE\s+"([^"]*)"\)\s*\(INSTANCE\s*((?:\\.|[^)\\])*)\)', chunk)
         if m: yield m.group(1), m.group(2), chunk[m.end():]
 
+def strip(name):
+    return name[len(args.strip):] if args.strip and name.startswith(args.strip) else name
+
 for ctype, inst, body in cells(txt):
-    inst = unesc(inst.strip())
+    inst = strip(unesc(inst.strip()))
     if inst == '':
         for a, b, d in ic_re.findall(body):
-            a, b = unesc(a), unesc(b)
+            a, b = strip(unesc(a)), strip(unesc(b))
             edges[a].append((b, dmax(d)))
             if b.endswith('/CLK'):
                 clkpin_delay[b[:-4]] = dmax(d)
@@ -104,6 +109,13 @@ KIN = re.compile(r'(^|\.)(k_din|data_in|k_ipl|ipl|IPL|k_berr|berr|k_nreset|nRese
 # the address changes, so they have 3T; 2T is used).
 BUSOUT = re.compile(r'^(cpu\.(a_r|fc_r|eRWn|oEdb|eab|FC\d)|core_a|core_fc|core_rw|core_dout|hi_null_r'
                     r'|cpu\.dp_(we|wdata|be)|cpu\.pf_a'
+                    # TG68_PREDICT: the predicted addresses and their kill
+                    # flags are written only on a DECIDE edge, like pf_a. They
+                    # are next used >= 2 clocks later: the speculative cache
+                    # read in the first SETTLE clock (DECIDE -> FINISH -> step
+                    # at the earliest), the tag compare at SETTLE-1, and the
+                    # next DECIDE. (pr_fd/dd/ft/dt/fh/dh and pr_rs stay 1T.)
+                    r'|cpu\.pr_(f|d|fk|dk)'
                     # a_r bits that yosys named after the slave port they drive
                     r'|g_\w+\.u_\w+\.(a|a_high|a_low|region)'
                     r'|g_fastmem\.u_fastmem\.(owns_r|cpu_win_r|mr_win_r|saddr_r|saddr)'
@@ -112,6 +124,13 @@ STATIC = re.compile(r'^(g_(fastmem|sd)\.u_\w+\.(maprom_active|maprom_load|config
                     r'tm_configured|sd_configured|base|base_sd|tm_base|base_addr\w*|cpu_base\w*)'
                     # the same MapROM bits, named after the adapter's ports
                     r'|cpu\.mr_(active|load)'
+                    # fastmem_zii's addr_match, named after its port
+                    # fm_cfg_match ("owned Zorro II slots (static)")
+                    r'|g_fastmem\.u_fastmem\.fm_cfg_match'
+                    # pwrup_done rises once, ~0.4 s after configuration, while
+                    # cold_armed still holds ext_reset (core in reset, caches
+                    # flushing; the flush sweep restarts after ext_reset)
+                    r'|pwrup_done'
                     r'|g_sdram\.u_sdram\.init_done)(_|\[|$)')
 # Instruction cache RAM and its registers: ordinary single-cycle logic, but
 # listed separately because a cache hit loads k_din one clock after ic_qd,
