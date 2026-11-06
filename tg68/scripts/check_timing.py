@@ -104,6 +104,10 @@ KIN = re.compile(r'(^|\.)(k_din|data_in|k_ipl|ipl|IPL|k_berr|berr|k_nreset|nRese
 # the address changes, so they have 3T; 2T is used).
 BUSOUT = re.compile(r'^(cpu\.(a_r|fc_r|eRWn|oEdb|eab|FC\d)|core_a|core_fc|core_rw|core_dout|hi_null_r'
                     r'|cpu\.dp_(we|wdata|be)|cpu\.pf_a'
+                    # pair buffers: loaded in the clock after a lookup's CCMP,
+                    # read at DECIDE >= 3 clocks later (SETTLE), like pf_a.
+                    # tb_top.sv asserts that gap on every DECIDE.
+                    r'|cpu\.(ib_a|ib_d|db_a|db_d)'
                     # a_r bits that yosys named after the slave port they drive
                     r'|g_\w+\.u_\w+\.(a|a_high|a_low|region)'
                     r'|g_fastmem\.u_fastmem\.(owns_r|cpu_win_r|mr_win_r|saddr_r|saddr)'

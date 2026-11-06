@@ -383,13 +383,21 @@ module tg68_bus #(
     // different line does not matter: the buffer still holds the right data
     // for its own address.
     // ------------------------------------------------------------------
-    reg  [15:0]      sb_qd = 16'd0;      // the neighbour, as the RAMs gave it
+    // Stage 1 (every clock, no enable): the cache RAMs' output, as the
+    // neighbour of the lookup in a_r. Only meaningful in the clock after
+    // CCMP, which is when sb_pi/sb_pd say so.
+    reg  [15:0]      sb_qd = 16'd0;
     reg  [TAGW-1:0]  sb_qt = {TAGW{1'b0}};
     reg  [31:1]      sb_a  = 31'd0;
-    reg              sb_pend = 1'b0;     // sb_q* are waiting to be sorted
-    reg              sb_isf  = 1'b0;     //   ...they came from the I-cache
-    reg              sb_en   = 1'b0;     //   ...and the cache was usable
+    reg              sb_en = 1'b0;       // the cache could be used for this lookup
+    reg              sb_pi = 1'b0, sb_pd = 1'b0;   // CCMP was last clock: fetch / data
+    // Stage 2: tag compared and buffer loaded (invalid); stage 3: valid set.
+    reg              sb_m  = 1'b0;       // the neighbour's tag matched
+    reg              sb_fi = 1'b0, sb_fd = 1'b0;   // stage 2 was last clock
     reg              ib_valid = 1'b0, db_valid = 1'b0;
+    // ib_a/ib_d/db_a/db_d change only in the clock after CCMP's, and are
+    // read at DECIDE, which is >= 3 clocks later (SETTLE): check_timing.py
+    // treats them like pf_a. The testbench checks the gap.
     reg  [31:1]      ib_a = 31'd0, db_a = 31'd0;
     reg  [15:0]      ib_d = 16'd0, db_d = 16'd0;
     wire k_ib_hit = (PAIRBUF != 0) && ib_valid && (k_bs == 2'b00) && ic_on
@@ -519,6 +527,14 @@ module tg68_bus #(
         ic_we    <= 1'b0;
         dc_we    <= 1'b0;
         sib_sel  <= 1'b0;
+        // PAIR BUFFERS stage 1: loaded every clock, qualified by sb_pi/sb_pd
+        // (keeps the cache RAM outputs' path to one mux and a flip-flop)
+        sb_qd    <= cyc_fetch ? ic_dq : dc_dq;
+        sb_qt    <= cyc_fetch ? ic_tq : dc_tq;
+        sb_a     <= {a_r[31:2], ~a_r[1]};
+        sb_en    <= ic_ok && (cyc_fetch ? ic_on : dc_on);
+        sb_pi    <= 1'b0;
+        sb_pd    <= 1'b0;
         mr_act_d <= mr_active;
         ic_on_r  <= (ICACHE != 0) && k_cacr[0] && !flush_nxt;
         dc_on_r  <= (DCACHE != 0) && k_cacr[0] && !flush_nxt;
@@ -544,7 +560,6 @@ module tg68_bus #(
             pf_fill  <= 1'b0; pf_dc <= 1'b0;
             pw_upd   <= 1'b0;
             dp_spec  <= 1'b0;
-            sb_pend  <= 1'b0;
             ib_valid <= 1'b0; db_valid <= 1'b0;
             stalled  <= 1'b0;
             wd       <= 24'd0;
@@ -665,14 +680,9 @@ module tg68_bus #(
                 tmr <= 6'd0;
                 dp_spec <= 1'b0;
                 // The RAMs now show the neighbour of the pair (read in the
-                // CLOOK clock). Keep it for the next clock, which sorts it
-                // into a pair buffer; loaded whether or not this is a hit.
-                sb_qd   <= cyc_fetch ? ic_dq : dc_dq;
-                sb_qt   <= cyc_fetch ? ic_tq : dc_tq;
-                sb_a    <= {a_r[31:2], ~a_r[1]};
-                sb_isf  <= cyc_fetch;
-                sb_en   <= ic_ok && (cyc_fetch ? ic_on : dc_on);
-                sb_pend <= (PAIRBUF != 0);
+                // CLOOK clock); stage 1 above captures it on this edge.
+                sb_pi   <= (PAIRBUF != 0) && cyc_fetch;
+                sb_pd   <= (PAIRBUF != 0) && (DCACHE != 0) && !cyc_fetch;
                 // k_din is loaded whether or not this is a hit, so the tag
                 // compare only steers the state, not the data register. On
                 // a miss it is overwritten before the kernel steps.
@@ -810,25 +820,29 @@ module tg68_bus #(
             default: q <= Q_SETTLE;
             endcase
 
-            // PAIR BUFFERS: sort the neighbour found by the last lookup. Its
-            // tag must equal the first word's (same line, valid, same
-            // region). a_r is still the lookup's address: the next DECIDE
-            // is >= SETTLE clocks away.
-            if (sb_pend) begin
-                sb_pend <= 1'b0;
-                if (sb_en && sb_qt == ic_want) begin
-                    if (sb_isf) begin ib_valid <= 1'b1; ib_a <= sb_a; ib_d <= sb_qd; end
-                    else        begin db_valid <= 1'b1; db_a <= sb_a; db_d <= sb_qd; end
-                end
-            end
+            // PAIR BUFFERS stage 2 (the clock after CCMP): compare the
+            // neighbour's tag with the lookup's (same line, valid, same
+            // region) and load the buffer of that kind, as INVALID: it is
+            // replaced whether or not the neighbour is usable. a_r is still
+            // the lookup's address: the next DECIDE is >= SETTLE clocks away.
+            sb_m  <= (sb_qt == ic_want) && sb_en;
+            sb_fi <= sb_pi;
+            sb_fd <= sb_pd;
+            if (sb_pi) begin ib_valid <= 1'b0; ib_a <= sb_a; ib_d <= sb_qd; end
+            if (sb_pd) begin db_valid <= 1'b0; db_a <= sb_a; db_d <= sb_qd; end
+            // stage 3: valid, if the tag matched
+            if (sb_fi && sb_m) ib_valid <= 1'b1;
+            if (sb_fd && sb_m) db_valid <= 1'b1;
             // ...and drop a buffered word the CPU writes. eRWn/a_r hold the
             // last cycle's R/W and address until the next one is set up, so
             // this fires on every clock after a write; harmless, as the
-            // lookup that loads a buffer is always a read. After the load
-            // above, so a drop wins.
+            // lookup that loads a buffer is always a read. Only the cache
+            // index is compared: a write to an aliasing address drops the
+            // buffer too, which costs nothing but a reload and keeps the
+            // compare short. After the loads above, so a drop wins.
             if (!eRWn) begin
-                if (a_r == ib_a) ib_valid <= 1'b0;
-                if (a_r == db_a) db_valid <= 1'b0;
+                if (a_r[IC_AW:1] == ib_a[IC_AW:1]) ib_valid <= 1'b0;
+                if (a_r[IC_AW:1] == db_a[IC_AW:1]) db_valid <= 1'b0;
             end
 
             // Posted writes and prefetches complete in the background. (A
@@ -865,7 +879,7 @@ module tg68_bus #(
         // The pair buffers go too (MapROM switching changes what the ROM
         // addresses return).
         if (flush_trig || ic_flush) begin
-            ib_valid <= 1'b0; db_valid <= 1'b0; sb_pend <= 1'b0;
+            ib_valid <= 1'b0; db_valid <= 1'b0;
         end
         if (flush_trig) begin
             ic_flush <= 1'b1;

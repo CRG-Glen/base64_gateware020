@@ -117,6 +117,24 @@ module tb;
     wire [11:0] pb_idx  = dut.cpu.k_addr[12:1];
     wire [13:0] pb_want = {1'b1, dut.cpu.k_addr[31:24] == 8'h08, dut.cpu.k_addr[31:24] == 8'h00,
                            dut.cpu.k_addr[23:13]};
+    // Timing assumption behind check_timing.py's class for ib_a/ib_d/db_a/db_d
+    // (like pf_a): they change only in the clock after a lookup's CCMP, so at
+    // every DECIDE they have been stable for at least 3 clocks.
+    integer pb_cyc = 0, pb_chg = -10, gap_bad = 0, gap_min = 99;
+    reg [31:1] pb_ia = 0, pb_da = 0; reg [15:0] pb_id = 0, pb_dd2 = 0;
+    always @(posedge dut.clk) begin
+        pb_cyc = pb_cyc + 1;
+        if (dut.cpu.ib_a !== pb_ia || dut.cpu.db_a !== pb_da ||
+            dut.cpu.ib_d !== pb_id || dut.cpu.db_d !== pb_dd2) pb_chg = pb_cyc;
+        pb_ia = dut.cpu.ib_a; pb_da = dut.cpu.db_a; pb_id = dut.cpu.ib_d; pb_dd2 = dut.cpu.db_d;
+        if (dut.cpu.q == 4'd1) begin
+            if (pb_cyc - pb_chg < gap_min) gap_min = pb_cyc - pb_chg;
+            if (pb_cyc - pb_chg < 3) begin
+                $display("FAIL pair buffer: ib_*/db_* changed %0d clock(s) before a DECIDE", pb_cyc - pb_chg);
+                gap_bad = gap_bad + 1;
+            end
+        end
+    end
     always @(posedge dut.clk) begin
         pb_pq <= dut.cpu.q;
         pb_mr <= dut.cpu.mr_active;
@@ -262,8 +280,8 @@ module tb;
 `ifdef MEMBENCH
         $display("kernel steps %0d: internal %0d, cache hits %0d, direct %0d, bus %0d; clocks %0d",
                  n_step, n_int, n_hit, n_dir, n_bus, n_clk);
-        $display("pair-buffer hits (whole run) %0d, stale %0d", pair_hits, pair_bad);
-        if (pair_bad) errors = errors + 1;
+        $display("pair-buffer hits (whole run) %0d, stale %0d, min load->DECIDE gap %0d", pair_hits, pair_bad, gap_min);
+        if (pair_bad || gap_bad) errors = errors + 1;
         $display("1 KB: %0.1f us -> %0.2f MB/s; %0d CPU bus cycles", (t1-t0)/1000.0, 1024.0/((t1-t0)/1000.0), n_fm);
         $display("per cycle, in 11.75 ns clocks: AS->DTACK %0.1f, DTACK->AS up %0.1f, AS up->next AS %0.1f",
                  sum_as2dt/n_fm/11.746, sum_dt2up/n_fm/11.746, sum_up2as/n_fm/11.746);
@@ -321,7 +339,8 @@ module tb;
         check(24'h8190, 32'h00000000, "pair: MapROM flush");
         $display("data cache hits: %0d; pair-buffer hits %0d (stale: %0d); shortest direct request->ack %0d clocks",
                  dc_hits, pair_hits, pair_bad, dp_min);
-        if (pair_bad) errors = errors + 1;
+        if (pair_bad || gap_bad) errors = errors + 1;
+        $display("pair buffers: smallest load->DECIDE gap %0d clocks (check_timing.py assumes >= 3)", gap_min);
         if (pair_hits < 64) begin $display("FAIL: pair buffers barely used"); errors = errors + 1; end
         // tg68_bus's speculative read relies on no answer before CCMP
         if (dp_min < 3) begin $display("FAIL: SDRAM answered in %0d clocks", dp_min); errors = errors + 1; end
@@ -329,8 +348,8 @@ module tb;
         check(24'h8130, 32'h33333333, "IRQ3 via VPA autovec");
 `else
         check(24'h8120, 32'h33333333, "IRQ3 via VPA autovec");
-        $display("pair-buffer hits %0d (stale: %0d)", pair_hits, pair_bad);
-        if (pair_bad) errors = errors + 1;
+        $display("pair-buffer hits %0d (stale: %0d), smallest load->DECIDE gap %0d", pair_hits, pair_bad, gap_min);
+        if (pair_bad || gap_bad) errors = errors + 1;
 `endif
         check(24'h8140, 32'h00000055, "ROM code via cache");
         check(24'h8FF0, 32'h600DC0DE, "done marker");
