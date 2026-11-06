@@ -8,8 +8,10 @@
   full     + SD card (sfsd.device)
 
 Needs yosys, nextpnr-ecp5 and ecppack on PATH -- all three are in
-oss-cad-suite (https://github.com/YosysHQ/oss-cad-suite-build). Set the
-environment variables YOSYS / NEXTPNR / ECPPACK to override.
+oss-cad-suite (https://github.com/YosysHQ/oss-cad-suite-build). Without
+plain yosys / nextpnr-ecp5 on PATH it uses the pip packages' yowasp-yosys /
+yowasp-nextpnr-ecp5 instead (scripts/setup_cloud.sh installs those). Set the
+environment variables YOSYS / NEXTPNR / ECPPACK to override either.
 
 --seeds N tries placement seeds 1..N and keeps the first that passes the
 multicycle timing check (scripts/check_timing.py).
@@ -29,8 +31,18 @@ ap.add_argument('--seeds', type=int, default=8, help='try up to this many seeds 
 ap.add_argument('--skip-synth', action='store_true', help='reuse an existing yosys netlist')
 a = ap.parse_args()
 
-YOSYS = os.environ.get('YOSYS', 'yosys')
-NEXTPNR = os.environ.get('NEXTPNR', 'nextpnr-ecp5')
+def find_tool(var, *candidates):
+    """$var if set, else the first candidate found on PATH, else the first
+    candidate (run() then reports it as missing)."""
+    if os.environ.get(var):
+        return os.environ[var]
+    for c in candidates:
+        if shutil.which(c):
+            return c
+    return candidates[0]
+
+YOSYS = find_tool('YOSYS', 'yosys', 'yowasp-yosys')
+NEXTPNR = find_tool('NEXTPNR', 'nextpnr-ecp5', 'yowasp-nextpnr-ecp5')
 ECPPACK = os.environ.get('ECPPACK', 'ecppack')
 fm, sd = CFGS[a.cfg]
 name = a.cfg
@@ -41,7 +53,11 @@ for f in ('turbomem.mem', 'sfsd.mem'):        # $readmemh looks in the cwd
 
 def run(cmd):
     print('  $ ' + ' '.join(cmd[:3]) + (' ...' if len(cmd) > 3 else ''), flush=True)
-    r = subprocess.run(cmd, cwd=out)
+    try:
+        r = subprocess.run(cmd, cwd=out)
+    except FileNotFoundError:
+        sys.exit('%s not found on PATH -- install oss-cad-suite or run '
+                 'scripts/setup_cloud.sh (see the docstring in this file)' % cmd[0])
     if r.returncode != 0:
         sys.exit('%s failed (exit %d) -- see the log in %s' % (cmd[0], r.returncode, out))
 
@@ -81,12 +97,21 @@ if not a.skip_synth:
     # turns a constant 1'bz into a 0 driver): the FPGA would fight whatever
     # drives that pin. This is how the SD card's MISO went dead in the first
     # TG68 builds. Refuse to go on.
+    #
+    # One exception: the SD card's MOSI (sd_cmd) and chip select (sd_d[3]) are
+    # real outputs, driven by the SD block, so with ENABLE_SD=0 they are
+    # constant on purpose (MOSI low, card deselected). Only those two bits,
+    # only at those values, and only in a config without the SD block.
+    # Every other inout bit must be driven by logic or a BB buffer.
     import json
     top = json.load(open(os.path.join(out, 'base64_tg68.json')))['modules']['base64_tg68_top']
+    tied_ok = {} if sd else {('sd_cmd', 0): '0', ('sd_d', 3): '1'}
     lost = ['%s[%d]=%s' % (p, i, b) for p, v in top['ports'].items() if v['direction'] == 'inout'
-            for i, b in enumerate(v['bits']) if isinstance(b, str)]
+            for i, b in enumerate(v['bits'])
+            if isinstance(b, str) and tied_ok.get((p, i)) != b]
     if lost:
-        sys.exit('ERROR: inout pins tied to constants (tristate lost): ' + ', '.join(lost))
+        sys.exit('ERROR: inout pins tied to constants (tristate lost) in the %s config: ' % a.cfg
+                 + ', '.join(lost))
 
 lpf = os.path.join(ROOT, 'constraints', 'base64_tg68.lpf')
 for seed in range(a.seed, a.seed + a.seeds):

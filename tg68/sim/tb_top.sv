@@ -97,6 +97,82 @@ module tb;
     always @(posedge dut.clk)
         if (dut.cpu.q == 4'd8 && !dut.cpu.cyc_fetch && dut.cpu.ic_ok
             && dut.cpu.ic_qt == dut.cpu.ic_want && dut.cpu.dc_on) dc_hits = dc_hits + 1;
+    // ---- pair buffers (tg68_bus PAIR BUFFERS) -----------------------------
+    // Two checks on every buffer hit, in every test (benches included), so a
+    // stale buffer cannot hide behind a test that happens not to look at it:
+    //  1. If the cache RAM entry still holds the same line, its data must be
+    //     identical (a normal lookup would have returned that).
+    //  2. The data must equal what the CPU last wrote to that word. A shadow
+    //     copy records every CPU write, byte lane by byte lane; words the CPU
+    //     never wrote have no shadow and are not checked. The shadow is
+    //     dropped when MapROM switches, which changes what the ROM addresses
+    //     return. (An entry whose cache tag reads "invalid" proves nothing: the
+    //     instruction cache also drops a slot for a write to an aliasing
+    //     address, and the buffer rightly keeps its own word then.)
+    integer pair_hits = 0, pair_bad = 0;
+    reg [13:0] pb_tg; reg [15:0] pb_dd, pb_got;
+    reg [17:0] pb_s; reg [31:1] pb_k;      // {known hi, known lo, data}
+    reg [17:0] shadow [int unsigned];
+    reg [3:0]  pb_pq = 0; reg pb_mr = 0;
+    wire [11:0] pb_idx  = dut.cpu.k_addr[12:1];
+    wire [13:0] pb_want = {1'b1, dut.cpu.k_addr[31:24] == 8'h08, dut.cpu.k_addr[31:24] == 8'h00,
+                           dut.cpu.k_addr[23:13]};
+    // Timing assumption behind check_timing.py's class for ib_a/ib_d/db_a/db_d
+    // (like pf_a): they change only in the clock after a lookup's CCMP, so at
+    // every DECIDE they have been stable for at least 3 clocks.
+    integer pb_cyc = 0, pb_chg = -10, gap_bad = 0, gap_min = 99;
+    reg [31:1] pb_ia = 0, pb_da = 0; reg [15:0] pb_id = 0, pb_dd2 = 0;
+    always @(posedge dut.clk) begin
+        pb_cyc = pb_cyc + 1;
+        if (dut.cpu.ib_a !== pb_ia || dut.cpu.db_a !== pb_da ||
+            dut.cpu.ib_d !== pb_id || dut.cpu.db_d !== pb_dd2) pb_chg = pb_cyc;
+        pb_ia = dut.cpu.ib_a; pb_da = dut.cpu.db_a; pb_id = dut.cpu.ib_d; pb_dd2 = dut.cpu.db_d;
+        if (dut.cpu.q == 4'd1) begin
+            if (pb_cyc - pb_chg < gap_min) gap_min = pb_cyc - pb_chg;
+            if (pb_cyc - pb_chg < 3) begin
+                $display("FAIL pair buffer: ib_*/db_* changed %0d clock(s) before a DECIDE", pb_cyc - pb_chg);
+                gap_bad = gap_bad + 1;
+            end
+        end
+    end
+    always @(posedge dut.clk) begin
+        pb_pq <= dut.cpu.q;
+        pb_mr <= dut.cpu.mr_active;
+        if (dut.cpu.mr_active !== pb_mr) shadow.delete();
+        // a write cycle has just been accepted: a_r, oEdb and the strobes
+        // were latched on the edge that left DECIDE. (An internal step or a
+        // buffer hit leaves DECIDE too, and re-applies the last write: harmless.)
+        if (pb_pq == 4'd1 && dut.cpu.q != 4'd1 && !dut.cpu.eRWn) begin
+            pb_k = dut.cpu.a_r;
+            pb_s = shadow.exists(pb_k) ? shadow[pb_k] : 18'd0;
+            if (!dut.cpu.uds_want) begin pb_s[17] = 1'b1; pb_s[15:8] = dut.cpu.oEdb[15:8]; end
+            if (!dut.cpu.lds_want) begin pb_s[16] = 1'b1; pb_s[7:0]  = dut.cpu.oEdb[7:0];  end
+            shadow[pb_k] = pb_s;
+        end
+        if (dut.cpu.q == 4'd1 && !dut.cpu.internal_step && !dut.cpu.k_pf_ok
+            && (dut.cpu.k_ib_hit || dut.cpu.k_db_hit)) begin
+            pair_hits = pair_hits + 1;
+            if (dut.cpu.k_ib_hit) begin
+                pb_tg = dut.cpu.ic_tag[pb_idx]; pb_dd = dut.cpu.ic_data[pb_idx]; pb_got = dut.cpu.ib_d;
+            end else begin
+                pb_tg = dut.cpu.g_dcache.dc_tag[pb_idx]; pb_dd = dut.cpu.g_dcache.dc_data[pb_idx];
+                pb_got = dut.cpu.db_d;
+            end
+            if (pb_tg == pb_want && pb_dd !== pb_got) begin
+                $display("FAIL pair buffer: %h: buffer %h, cache %h", {dut.cpu.k_addr[31:1], 1'b0}, pb_got, pb_dd);
+                pair_bad = pair_bad + 1;
+            end
+            pb_k = dut.cpu.k_addr[31:1];
+            if (shadow.exists(pb_k)) begin
+                pb_s = shadow[pb_k];
+                if ((pb_s[17] && pb_got[15:8] !== pb_s[15:8]) || (pb_s[16] && pb_got[7:0] !== pb_s[7:0])) begin
+                    $display("FAIL pair buffer: stale at %h: buffer %h, last written %h",
+                             {dut.cpu.k_addr[31:1], 1'b0}, pb_got, pb_s[15:0]);
+                    pair_bad = pair_bad + 1;
+                end
+            end
+        end
+    end
     always @(negedge as_n) if (ba[23:19] == 5'b11111) romf = romf + 1;
     reg [2:0] w = 0;
     reg       busy = 0;
@@ -204,6 +280,8 @@ module tb;
 `ifdef MEMBENCH
         $display("kernel steps %0d: internal %0d, cache hits %0d, direct %0d, bus %0d; clocks %0d",
                  n_step, n_int, n_hit, n_dir, n_bus, n_clk);
+        $display("pair-buffer hits (whole run) %0d, stale %0d, min load->DECIDE gap %0d", pair_hits, pair_bad, gap_min);
+        if (pair_bad || gap_bad) errors = errors + 1;
         $display("1 KB: %0.1f us -> %0.2f MB/s; %0d CPU bus cycles", (t1-t0)/1000.0, 1024.0/((t1-t0)/1000.0), n_fm);
         $display("per cycle, in 11.75 ns clocks: AS->DTACK %0.1f, DTACK->AS up %0.1f, AS up->next AS %0.1f",
                  sum_as2dt/n_fm/11.746, sum_dt2up/n_fm/11.746, sum_up2as/n_fm/11.746);
@@ -255,13 +333,23 @@ module tb;
         check(24'h8178, 32'h00002222, "dcache: write while off");
         check(24'h817C, 32'h02040608, "dcache: ROM data");
         check(24'h8180, 32'h00002F40, "dcache: two-pass sum");
-        $display("data cache hits: %0d; shortest direct request->ack %0d clocks", dc_hits, dp_min);
+        check(24'h8184, 32'h00007777, "pair: word write");
+        check(24'h8188, 32'h0000BBCC, "pair: byte write");
+        check(24'h818C, 32'h00001515, "pair: write, caches off");
+        check(24'h8190, 32'h00000000, "pair: MapROM flush");
+        $display("data cache hits: %0d; pair-buffer hits %0d (stale: %0d); shortest direct request->ack %0d clocks",
+                 dc_hits, pair_hits, pair_bad, dp_min);
+        if (pair_bad || gap_bad) errors = errors + 1;
+        $display("pair buffers: smallest load->DECIDE gap %0d clocks (check_timing.py assumes >= 3)", gap_min);
+        if (pair_hits < 64) begin $display("FAIL: pair buffers barely used"); errors = errors + 1; end
         // tg68_bus's speculative read relies on no answer before CCMP
         if (dp_min < 3) begin $display("FAIL: SDRAM answered in %0d clocks", dp_min); errors = errors + 1; end
         if (dc_hits < 64) begin $display("FAIL: data cache barely used"); errors = errors + 1; end
         check(24'h8130, 32'h33333333, "IRQ3 via VPA autovec");
 `else
         check(24'h8120, 32'h33333333, "IRQ3 via VPA autovec");
+        $display("pair-buffer hits %0d (stale: %0d), smallest load->DECIDE gap %0d", pair_hits, pair_bad, gap_min);
+        if (pair_bad || gap_bad) errors = errors + 1;
 `endif
         check(24'h8140, 32'h00000055, "ROM code via cache");
         check(24'h8FF0, 32'h600DC0DE, "done marker");

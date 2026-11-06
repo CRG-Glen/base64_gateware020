@@ -10,8 +10,8 @@ and the SD card. An adapter, `tg68_bus.v`, makes TG68K look like fx68k's
 ports and adds the caches and the direct SDRAM path. Changes to the fx68k
 build's own files are few and marked `TG68:`.
 
-> **Status:** steps 1-4 run on an A500+ (step 4: 6076 Dhrystones,
-> AIBB MemTest 7.28 MB/s with the caches on, SD card 2.18 MB/s).
+> **Status:** steps 1-5 run on an A500+ (step 5 `full`: 6720 Dhrystones,
+> 7.01 MIPS, AIBB MemTest 7.46 MB/s with the caches on, SD card 2.18 MB/s).
 >
 > **SD card: only the step 4 `full` bitstream reads the card.** Every
 > earlier yosys build drove the card's data-out line (MISO) low, so the
@@ -27,7 +27,8 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
-| `bitstreams/step4_dcache/` | + 8 KB data cache, cache hits overlap SDRAM writes; SD card pin fix | **Latest. Known good on hardware**, SD card included |
+| `bitstreams/step5_pairbuf/` | + pair buffers: the other half of a cached pair in 5 clocks, not 7 | **Latest. `full` known good on hardware**, SD card included: 6720 Dhrystones, MemTest 7.46 MB/s. `min` not run on hardware |
+| `bitstreams/step4_dcache/` | + 8 KB data cache, cache hits overlap SDRAM writes; SD card pin fix | **Known good on hardware**, SD card included |
 | `bitstreams/step3_direct/` | + direct CPU → SDRAM path for fast RAM, posted writes, word prefetch | **Known good on hardware**: MemTest 6.46 MB/s |
 | `bitstreams/step2_icache/` | + 8 KB instruction cache | **Known good on hardware**: 4833 Dhrystones, 5.04 MIPS |
 | `bitstreams/step1_no_cache/` | 2 clocks less per bus access (4/3/1/1 pacing) | Simulated and timing-checked |
@@ -134,6 +135,31 @@ Boots from SD exactly like the fx68k build. Same `Mask` advice applies
   data) no longer waits for a posted write or prefetch to finish. In
   simulation: sequential reads 7.29 → 8.03 MB/s, scattered reads
   8.50 → 11.66 MB/s, the 1 KB copy unchanged at 4.85 MB/s.
+* **Pair buffers (step 5).** A longword is two 16-bit bus cycles and code
+  runs word by word, so a cache hit on one word of an aligned pair is nearly
+  always followed by a hit on the other. A lookup costs 7 clocks per step; a
+  word already sitting in a register costs 5. The cycle that looks the first
+  word up also reads its neighbour from the same cache RAMs (no extra
+  clock) and, if that is a valid cached word, keeps it in a small buffer,
+  one for instruction fetches and one for data reads. If the next cycle asks
+  for exactly that word it is answered from the buffer, the way the
+  prefetch buffer already answers. Cache size and layout are unchanged. A
+  buffered word is dropped by any write to its address (byte writes and
+  writes with the caches off included), by a reset, and by the cache flush
+  when MapROM switches, and it is only used while its cache is enabled, so
+  it can never return what a normal lookup would not. `PAIRBUF=0` in
+  `tg68_bus.v` removes it. In simulation, second pass from the caches:
+  sequential reads 8.03 → 8.87 MB/s (+10%), scattered reads 11.66 → 13.28
+  MB/s (+14%), the 1 KB copy 4.85 → 5.00 MB/s (+3%; it is write-bound).
+  On an A500+ (`full`), with the caches on: 6076 → 6720 Dhrystones
+  (+11%), AIBB MemTest 7.28 → 7.46 MB/s. With the caches off the run gave
+  3717 Dhrystones against step 4's 4007, although the caches-off path is
+  unchanged (the same code takes the same number of clocks on step 4 and
+  step 5 in simulation) and MemTest with the caches off is identical
+  (5.71 MB/s); not yet explained, most likely a difference in test
+  conditions. The testbench checks every buffer hit
+  against a shadow copy of what the CPU wrote, so a stale buffer shows up in
+  any test, not only the ones aimed at it.
 * **MapROM.** The board's boot ROM (`turbomem.mem`, built with
   `DIAG_MAPROM=1`) copies Kickstart into the SDRAM shadow at every boot,
   verifies it and switches over, so it is normally already on. Both caches
@@ -152,6 +178,10 @@ Boots from SD exactly like the fx68k build. Same `Mask` advice applies
   are now explicit ECP5 `BB` buffers with the output permanently off (yosys
   only; Diamond keeps the original code), and `build.py` stops with an
   error if any bidirectional pin comes out of synthesis tied to a constant.
+  The SDRAM data pins get the same treatment when the build has no fast
+  RAM (`min`), where they were driven low before. The only constant bits
+  `build.py` accepts are the SD card's MOSI and chip select in a build
+  without the SD block.
 * **16-bit data bus.** TG68's bus port is 16 bits, so every longword is two
   transfers, as on the 68000.
 * **Direct SDRAM path (step 3).** On-board fast RAM (the Zorro II window
@@ -206,7 +236,10 @@ either way.
    ```
 
    On Linux/macOS: `python3 scripts/build.py min` with oss-cad-suite's
-   `bin` on your PATH. A build takes a few minutes per seed.
+   `bin` on your PATH, or with the `yowasp-yosys` and
+   `yowasp-nextpnr-ecp5` pip packages installed (`build.py` falls back to
+   them when plain `yosys` / `nextpnr-ecp5` are missing). A build takes a
+   few minutes per seed.
 3. The bitstream lands in `build\<config>\base64_tg68_<config>.bit`.
    The design uses ~8.8k (min) to ~10.3k (full) of the FPGA's 24k LUTs,
 and 16 (min) or 35 (full) of its 56 block RAMs.
@@ -251,6 +284,22 @@ actually provides:
 it gets `RESULT: PASS`, and writes `timing.txt`. Expect the 1T classes to
 pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
+
+Step 5 (pair buffers) builds as supplied (`full` known good on hardware):
+
+| Build | Seed | Worst 1T slack | Worst multicycle slack |
+| --- | --- | --- | --- |
+| min | 12 | +0.21 ns | +3.7 ns |
+| full | 2 | +0.22 ns | +3.2 ns |
+
+The pair buffers cost timing at first: the first version failed every seed of
+every build. The tag check is now pipelined over three clocks, the cache RAM
+outputs go straight into registers, the prefetch hit and the buffer hits
+share one branch of the bridge's decision, and `ib_a`/`ib_d`/`db_a`/`db_d`
+are classed like `pf_a` in `check_timing.py` (loaded at least 3 clocks before
+they are read; the testbench asserts that). The `fastmem` configuration (fast
+RAM, no SD card) did not pass in 12 seeds (best -1.36 ns), so no `fastmem`
+bitstream is supplied for step 5.
 
 Step 4 (data cache) builds as supplied:
 

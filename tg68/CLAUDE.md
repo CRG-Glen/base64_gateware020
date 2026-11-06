@@ -54,7 +54,10 @@ Toolchain: yowasp-yosys 0.70 and yowasp-nextpnr-ecp5 0.11 (pip), ecppack
 from Ubuntu's fpga-trellis, Verilator 5.020, binutils-m68k-linux-gnu, or
 oss-cad-suite on Windows (build.bat). `scripts/setup_cloud.sh` installs the
 exact versions; with them, `build.py full --seed 3 --seeds 1` reproduces
-the released step 4 `full` bitstream bit for bit. Synthesis uses `synth_ecp5 -abc9`,
+the released step 4 `full` bitstream bit for bit. `build.py` uses
+`yowasp-yosys` / `yowasp-nextpnr-ecp5` by itself when plain `yosys` /
+`nextpnr-ecp5` are not on PATH, so no `YOSYS` / `NEXTPNR` variables are
+needed (they still override). Synthesis uses `synth_ecp5 -abc9`,
 keep_hierarchy on the TG68 modules then flatten, and deletes `$scopeinfo`
 cells. nextpnr runs with `--placer static --router router2`.
 
@@ -148,6 +151,17 @@ that gives the "_fast" files.
   - The CPU is the only writer of fast RAM (the SD controller is CPU-driven,
     no DMA), so no software cache management is needed.
   - Both flush on reset and when MapROM changes state.
+- **Pair buffers (step 5, `full` known good on hardware):** the CLOOK clock
+  reads the neighbouring word of the pair (address bit 1 flipped) from the
+  same RAMs, and the clock after CCMP keeps it in `ib_*` (fetches) or `db_*`
+  (data reads) if its tag matches. A cycle for exactly that word is answered
+  at DECIDE like a prefetch hit: 5 clocks instead of 7, no bus or SDRAM
+  port needed. Dropped by any write to the address (compared every clock
+  while a write's `a_r`/`eRWn` are held), reset, and the cache flushes;
+  used only while its cache is on. A cache slot reading "invalid" does NOT
+  mean the buffer is stale (the I-cache drops a slot on a write to any
+  aliasing address). `PAIRBUF=0` removes it. tb_top.sv checks every buffer
+  hit against a shadow of the CPU's writes.
 - **Cache enable:** both caches follow CACR EI. The data cache must NOT get
   the 68030 CACR bit 8: software tells an 020 from an 030 by setting that bit
   and reading it back, so storing it would make the CPU detect as a 68030 and
@@ -168,8 +182,13 @@ that gives the "_fast" files.
 - **yosys turns a constant `1'bz` on an inout into a constant-0 driver.** The
   SD card's MISO was driven low in every build up to the step 4 rebuild.
   Inputs on inout pins are now ECP5 `BB` buffers with T=1 under `ifdef
-  YOSYS`. build.py refuses a netlist with inout bits tied to constants.
-  Verilator honours `1'bz`, so sims cannot catch this.
+  YOSYS`: the SD card's DAT0-2, and `sdram_dq` when there is no fast RAM
+  (the `min` build). build.py refuses a netlist with inout bits tied to
+  constants. The one allowed exception is `sd_cmd[0]=0` and `sd_d[3]=1` in
+  a config without the SD block (real outputs, idle on purpose). A new
+  inout that is constant in some config needs a `BB` or an entry in
+  `tied_ok` in build.py, with a reason. Verilator honours `1'bz`, so sims
+  cannot catch this.
 - `syn_useioff` can't go on registers that are also read internally
   (rt_as_n, rt_vma_n): packing fails.
 - `pkill -f build.py` from a shell whose command line contains "build.py"
@@ -197,15 +216,18 @@ that gives the "_fast" files.
 | step 2 (I-cache) | 4833 / 3208 | 4.38 / 3.91 |
 | step 3 (direct path) | - | 6.46 / 5.71 |
 | step 4 (D-cache) | 6076 / 4007 | 7.28 / 5.71 |
+| step 5 (pair buffers, `full`) | 6720 / 3717 | 7.46 / 5.71 |
 
-- SD card (sfsd.device 2.4) on step 4: 2.18 MB/s in SysInfo; fx68k gets
-  1.76 MB/s.
+- SD card (sfsd.device 2.4): 2.18 MB/s in SysInfo on step 4 and step 5
+  (2184533 bytes/s); fx68k gets 1.76 MB/s.
+- Step 5 caches-off Dhrystones (3717) are below step 4's (4007), but the
+  caches-off logic is unchanged: identical clock counts for both in the
+  read and copy benches with CACR=0. Probably different test conditions;
+  re-run step 4 and step 5 back to back on the same setup to settle it.
 - SysInfo reports "66 MHz" by timing loops. AIBB: close to a 25 MHz 68030.
 
 ## Ideas not yet done (Glen decides the order)
 
-- Two words per cache entry, so sequential hits cost 5 clocks instead of 7
-  (est. 10-20%).
 - A 2-4 entry write queue (copies are write-bound).
 - Bigger caches: 16 more block RAMs, which would crowd out RTG.
 - RTG framebuffer in SDRAM: discussed as a future add-on, no design yet.
