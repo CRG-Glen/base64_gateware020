@@ -787,6 +787,7 @@ module base64_tg68_top #(
         .IPL0n    (ipl_out[0]),
         .iEdb     (core_iedb),
         .icache_win(fm_win),            // TG68: cache only on-board RAM (+ROM)
+        .icache_win_k(1'b0),            // TG68: tg68_bus decodes fm_win's windows itself
         // TG68: direct SDRAM path to fast RAM
         .fm_on    (fm_cfg_on),
         .fm_match (fm_cfg_match),

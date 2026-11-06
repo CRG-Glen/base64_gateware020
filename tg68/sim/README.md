@@ -19,14 +19,16 @@
   addresses on one cache slot, writes made with the caches off, ROM data,
   and a two-pass sum. It also checks the SDRAM never answers a direct
   request in under 3 clocks, which the speculative read relies on.
-  The pair buffers have their own cases: a word write, a byte write and a
-  write made with the caches off, each landing on the word a buffer holds,
-  and MapROM switching with a shadow word buffered. Beyond those, every
-  buffer hit in every test (benches included) is checked against the cache
-  RAM entry and against a shadow copy of what the CPU wrote, byte lane by
-  byte lane, and the run fails on any difference. (When these tests were
-  written they were checked against deliberately broken versions of the
-  design: no write invalidation, and no flush clear. Both are caught.)
+  Four cases land a write on a word right after a cache hit on its
+  neighbour (a word write, a byte write, a write with the caches off) or
+  switch MapROM with a shadow word cached. Beyond those, every cache hit in
+  every test (benches included) is checked against a shadow copy of what
+  the CPU wrote, byte lane by byte lane, and the run fails on any
+  difference: the early lookup (step 6) hands the CPU the word before the
+  tag compare, so this is the check that matters. `bus` runs the same check
+  under random DTACK and the bus hand-over. (Checked against deliberately
+  broken versions: DECIDE not loading the word is caught by both benches;
+  a compare using the late `icache_win` collapses the data-cache hits.)
 * **bench copy | read | scatter | sd**: fast RAM throughput, timed on a second
   pass with the loop running from the instruction cache. `copy` copies
   1 KB, `read` sums 1 KB sequentially, `scatter` reads four longs in

@@ -135,7 +135,7 @@ Boots from SD exactly like the fx68k build. Same `Mask` advice applies
   data) no longer waits for a posted write or prefetch to finish. In
   simulation: sequential reads 7.29 → 8.03 MB/s, scattered reads
   8.50 → 11.66 MB/s, the 1 KB copy unchanged at 4.85 MB/s.
-* **Pair buffers (step 5).** A longword is two 16-bit bus cycles and code
+* **Pair buffers (step 5; replaced by the early lookup in step 6).** A longword is two 16-bit bus cycles and code
   runs word by word, so a cache hit on one word of an aligned pair is nearly
   always followed by a hit on the other. A lookup costs 7 clocks per step; a
   word already sitting in a register costs 5. The cycle that looks the first
@@ -160,6 +160,24 @@ Boots from SD exactly like the fx68k build. Same `Mask` advice applies
   conditions. The testbench checks every buffer hit
   against a shadow copy of what the CPU wrote, so a stale buffer shows up in
   any test, not only the ones aimed at it.
+* **Early cache lookup (step 6).** After each CPU step the adapter waits
+  for the kernel's outputs to settle before acting on them: 3 clocks,
+  because the bus state and function codes need nearly that long. The
+  address alone is final much sooner (about 21 ns routed, and the cache
+  index bits by about 15 ns), so the cache RAMs now read it a clock earlier,
+  on the edge into the clock where the adapter decides what the cycle is.
+  That clock already loads the looked-up word into the CPU's data register
+  and the tag into the compare register, and the next clock compares and,
+  on a hit, steps the CPU. A cache hit costs 5 clocks instead of 7, and a
+  miss reaches the bus or the SDRAM a clock sooner. The step 5 pair buffers,
+  which only made the second word of a pair cost 5 clocks, gained nothing
+  after that and were removed. `check_timing.py` gives the kernel-to-cache-RAM
+  paths their own class with one clock less than the other kernel outputs
+  (table below). In simulation, second pass from the caches: sequential
+  reads 8.87 → 10.64 MB/s (+20%), scattered reads 13.28 → 15.66 MB/s (+18%),
+  the 1 KB copy 5.00 → 5.35 MB/s (+7%). **Not yet run on hardware.** Every
+  cache hit in every test is checked against a shadow copy of what the CPU
+  wrote; the bus bench (random DTACK, bus hand-over) now checks them too.
 * **MapROM.** The board's boot ROM (`turbomem.mem`, built with
   `DIAG_MAPROM=1`) copies Kickstart into the SDRAM shadow at every boot,
   verifies it and switches over, so it is normally already on. Both caches
@@ -277,6 +295,7 @@ actually provides:
 | … → window decode | 1T | The fast RAM window registers the direct-path decode reads |
 | config regs → … | 4T | Autoconfig base/configured, maprom bits, SDRAM `init_done`: quasi-static |
 | adapter → kernel | 2T | `TG_DIN` |
+| kernel → cache RAM | 2T | `TG_SETTLE`-1: the early lookup reads the cache RAMs on the edge into DECIDE (step 6) |
 | kernel → adapter | 3T | `TG_SETTLE` |
 | kernel → kernel | 4T | `TG_STEP` |
 
