@@ -11,8 +11,7 @@ ports and adds the caches and the direct SDRAM path. Changes to the fx68k
 build's own files are few and marked `TG68:`.
 
 > **Status:** steps 1-6 run on an A500+ (step 6 `full`: 8144 Dhrystones,
-> 8.50 MIPS, AIBB MemTest 7.65 MB/s with the caches on; SD card 2.18 MB/s on
-> step 5).
+> 8.50 MIPS, AIBB MemTest 7.65 MB/s with the caches on, SD card 2.18 MB/s).
 >
 > **SD card: only the step 4 `full` bitstream reads the card.** Every
 > earlier yosys build drove the card's data-out line (MISO) low, so the
@@ -28,7 +27,7 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
-| `bitstreams/step6_earlylookup/` | + early cache lookup: every cache hit in 5 clocks, not 7 (replaces the pair buffers) | **Latest. Known good on hardware**: 8144 Dhrystones (+21% on step 5), MemTest 7.65 MB/s. `full` only |
+| `bitstreams/step6_earlylookup/` | + early cache lookup: every cache hit in 5 clocks, not 7 (replaces the pair buffers) | **Latest. Known good on hardware**, SD card included: 8144 Dhrystones (+21% on step 5), MemTest 7.65 MB/s. `full` only |
 | `bitstreams/step5_pairbuf/` | + pair buffers: the other half of a cached pair in 5 clocks, not 7 | **Known good. `full` on hardware**, SD card included: 6720 Dhrystones, MemTest 7.46 MB/s. `min` not run on hardware |
 | `bitstreams/step4_dcache/` | + 8 KB data cache, cache hits overlap SDRAM writes; SD card pin fix | **Known good on hardware**, SD card included |
 | `bitstreams/step3_direct/` | + direct CPU → SDRAM path for fast RAM, posted writes, word prefetch | **Known good on hardware**: MemTest 6.46 MB/s |
