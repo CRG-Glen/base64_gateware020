@@ -126,8 +126,8 @@ that gives the "_fast" files.
 - **Sequencer states (tg68_bus.v):** SETTLE -> DECIDE, then:
   - an internal step;
   - a prefetch-buffer hit -> FINISH;
-  - a cache lookup CLOOK -> CCMP (hit -> FINISH, miss -> DWAIT, CFREE or
-    SETUP);
+  - a cache lookup -> CCMP (hit steps the kernel there; miss -> DWAIT,
+    CFREE or SETUP);
   - a posted write -> FINISH;
   - a direct read -> DWAIT -> DDATA;
   - an old-route Amiga-bus cycle SETUP -> WAIT -> LATCH -> FINISH.
@@ -144,24 +144,32 @@ that gives the "_fast" files.
 - **Caches (steps 2 and 4):** two 8 KB direct-mapped caches, one 16-bit word
   per entry, in block RAM.
   - Cacheable: fast RAM and Kickstart $F80000-$FFFFFF. Never Chip RAM.
-  - Both share one lookup pipeline (ic_qd/ic_qt).
+  - Both share one lookup pipeline: the RAMs read the kernel's address on
+    the edge into DECIDE, DECIDE loads the word into k_din_c and the tag
+    into ic_qt, CCMP compares (EARLY LOOKUP, step 6).
   - Write-through. The data cache allocates on whole-word writes to fast RAM
     and drops the entry otherwise. The instruction cache drops the entry on
     any write.
   - The CPU is the only writer of fast RAM (the SD controller is CPU-driven,
     no DMA), so no software cache management is needed.
   - Both flush on reset and when MapROM changes state.
-- **Pair buffers (step 5, `full` known good on hardware):** the CLOOK clock
-  reads the neighbouring word of the pair (address bit 1 flipped) from the
-  same RAMs, and the clock after CCMP keeps it in `ib_*` (fetches) or `db_*`
-  (data reads) if its tag matches. A cycle for exactly that word is answered
-  at DECIDE like a prefetch hit: 5 clocks instead of 7, no bus or SDRAM
-  port needed. Dropped by any write to the address (compared every clock
-  while a write's `a_r`/`eRWn` are held), reset, and the cache flushes;
-  used only while its cache is on. A cache slot reading "invalid" does NOT
-  mean the buffer is stale (the I-cache drops a slot on a write to any
-  aliasing address). `PAIRBUF=0` removes it. tb_top.sv checks every buffer
-  hit against a shadow of the CPU's writes.
+- **Early lookup (step 6, known good on hardware):** the kernel's
+  address is final ~21 ns after its registers move (the cache index bits
+  ~15 ns), well inside 2 clocks, while busstate and FC need nearly 3. So the
+  cache RAMs read on the edge INTO DECIDE; DECIDE loads `k_din_c` (the
+  word, its own register: the RAM output through k_din's wide mux failed
+  timing by ~2 ns on every seed) and ic_qt from the RAM outputs, and sets
+  `k_din_sel` so the kernel's data input (`k_dat`) takes k_din_c; CCMP
+  compares (`cc_hit`) and a hit calls step() right there. A miss clears
+  k_din_sel; so does the end of the clkena clock. Hit: 5 clocks (was 7). check_timing.py class
+  "kernel -> cache RAM" gets SETTLE-1 = 2T. CCMP uses `ic_ok_d` (window
+  decode of k_addr registered at DECIDE), not `ic_ok`: `icache_win` lags
+  a_r by a clock and is stale in CCMP (breaking that collapses D-cache hits
+  in the fastmem bench). `icache_win_k` lets a test bench supply its own
+  window (the top ties it to 0). The step 5 pair buffers gained nothing
+  after this (also 5 clocks) and were removed. tb_top.sv and
+  tb_tg68_bus.sv check every cache hit's data against a shadow of the
+  CPU's writes.
 - **Cache enable:** both caches follow CACR EI. The data cache must NOT get
   the 68030 CACR bit 8: software tells an 020 from an 030 by setting that bit
   and reading it back, so storing it would make the CPU detect as a 68030 and
@@ -217,13 +225,16 @@ that gives the "_fast" files.
 | step 3 (direct path) | - | 6.46 / 5.71 |
 | step 4 (D-cache) | 6076 / 4007 | 7.28 / 5.71 |
 | step 5 (pair buffers, `full`) | 6720 / 3717 | 7.46 / 5.71 |
+| step 6 (early lookup, `full`) | 8144 / 3813 | 7.65 / 5.71 |
 
-- SD card (sfsd.device 2.4): 2.18 MB/s in SysInfo on step 4 and step 5
-  (2184533 bytes/s); fx68k gets 1.76 MB/s.
+- SD card (sfsd.device 2.4): 2.18 MB/s in SysInfo on steps 4, 5 and 6
+  (2184533 bytes/s each time); fx68k gets 1.76 MB/s.
 - Step 5 caches-off Dhrystones (3717) are below step 4's (4007), but the
   caches-off logic is unchanged: identical clock counts for both in the
-  read and copy benches with CACR=0. Probably different test conditions;
-  re-run step 4 and step 5 back to back on the same setup to settle it.
+  read and copy benches with CACR=0. Step 6's caches-off run gave 3813,
+  though nothing step 6 changed is active with the caches off: SysInfo
+  varies by a few percent between runs. Probably different test conditions;
+  re-run steps 4 to 6 back to back on the same setup to settle it.
 - SysInfo reports "66 MHz" by timing loops. AIBB: close to a 25 MHz 68030.
 
 ## Ideas not yet done (Glen decides the order)

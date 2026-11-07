@@ -23,7 +23,8 @@ module tb;
         .FC2(FC2), .FC1(FC1), .FC0(FC0),
         .DTACKn(dtackn), .BERRn(berrn), .BRn(brn), .BGn(BGn), .BGACKn(bgackn),
         .IPL2n(ipl_n[2]), .IPL1n(ipl_n[1]), .IPL0n(ipl_n[0]),
-        .iEdb(din), .icache_win(icw), .oEdb(dout), .eab(a), .stalled(stalled));
+        .iEdb(din), .icache_win(icw), .icache_win_k(icw_k), .eab_early(ea),
+        .oEdb(dout), .eab(a), .stalled(stalled));
 
     reg [15:0] rom [0:4095];
     reg [15:0] ram [0:4095];
@@ -34,9 +35,41 @@ module tb;
     // fastmem_zii's decode: ROM and RAM here both count.
     reg icw = 1'b0;
     always @(posedge clk) icw <= (byte_a < 32'h2000) || (byte_a >= 32'h8000 && byte_a < 32'hA000);
+    // ...and the same window from the kernel's early address, unregistered,
+    // for the early lookup (tg68_bus decodes the real board's windows itself)
+    wire [31:1] ea;
+    wire [31:0] early_byte = {ea, 1'b0};
+    wire icw_k = (early_byte < 32'h2000) || (early_byte >= 32'h8000 && early_byte < 32'hA000);
     integer fetches = 0;
     always @(negedge ASn) if (fc[1:0] == 2'b10) fetches = fetches + 1;
     wire [2:0]  fc = {FC2, FC1, FC0};
+    // Cache-hit oracle (tg68_bus EARLY LOOKUP): every cache hit hands the
+    // kernel the word the RAMs read before the tag compare; check it against
+    // what the CPU last wrote there (a shadow of every CPU write, byte lane by
+    // byte lane). Here that covers the self-modifying-code test under random
+    // DTACK and the bus hand-over. Words never written are not checked.
+    integer hit_chk = 0, hit_bad = 0;
+    reg [17:0] shadow [int unsigned];
+    reg [17:0] sh_s; reg [31:1] sh_k; reg [3:0] sh_pq = 0;
+    always @(posedge clk) begin
+        sh_pq <= dut.q;
+        if (sh_pq == 4'd1 && dut.q != 4'd1 && !dut.eRWn) begin
+            sh_k = dut.a_r;
+            sh_s = shadow.exists(sh_k) ? shadow[sh_k] : 18'd0;
+            if (!dut.uds_want) begin sh_s[17] = 1'b1; sh_s[15:8] = dut.oEdb[15:8]; end
+            if (!dut.lds_want) begin sh_s[16] = 1'b1; sh_s[7:0]  = dut.oEdb[7:0];  end
+            shadow[sh_k] = sh_s;
+        end
+        if (dut.q == 4'd8 && dut.cc_hit && shadow.exists(dut.a_r)) begin
+            hit_chk = hit_chk + 1;
+            sh_s = shadow[dut.a_r];
+            if ((sh_s[17] && dut.k_dat[15:8] !== sh_s[15:8]) || (sh_s[16] && dut.k_dat[7:0] !== sh_s[7:0])) begin
+                $display("FAIL cache hit: stale data at %h: CPU gets %h, last written %h",
+                         {dut.a_r, 1'b0}, dut.k_dat, sh_s[15:0]);
+                hit_bad = hit_bad + 1;
+            end
+        end
+    end
     integer errors = 0, cycles = 0, iacks = 0, writes = 0;
     integer seed = 1;
 
@@ -153,6 +186,9 @@ module tb;
         check(32'h8138, 32'h00000002, "self-modified code");
         check(32'h8FF0, 32'h600DC0DE, "done marker");
         if (iacks != 1) begin $display("FAIL expected 1 IACK, got %0d", iacks); errors = errors + 1; end
+        $display("cache hits checked against the CPU's writes %0d (stale: %0d)", hit_chk, hit_bad);
+        if (hit_bad) errors = errors + hit_bad;
+        if (hit_chk == 0) begin $display("FAIL cache-hit oracle never used"); errors = errors + 1; end
         if (stalled) begin $display("FAIL stall flag set"); errors = errors + 1; end
         if (errors == 0) $display("PASS");
         else             $display("FAILED with %0d errors", errors);

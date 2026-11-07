@@ -10,8 +10,8 @@ and the SD card. An adapter, `tg68_bus.v`, makes TG68K look like fx68k's
 ports and adds the caches and the direct SDRAM path. Changes to the fx68k
 build's own files are few and marked `TG68:`.
 
-> **Status:** steps 1-5 run on an A500+ (step 5 `full`: 6720 Dhrystones,
-> 7.01 MIPS, AIBB MemTest 7.46 MB/s with the caches on, SD card 2.18 MB/s).
+> **Status:** steps 1-6 run on an A500+ (step 6 `full`: 8144 Dhrystones,
+> 8.50 MIPS, AIBB MemTest 7.65 MB/s with the caches on, SD card 2.18 MB/s).
 >
 > **SD card: only the step 4 `full` bitstream reads the card.** Every
 > earlier yosys build drove the card's data-out line (MISO) low, so the
@@ -27,7 +27,8 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
-| `bitstreams/step5_pairbuf/` | + pair buffers: the other half of a cached pair in 5 clocks, not 7 | **Latest. `full` known good on hardware**, SD card included: 6720 Dhrystones, MemTest 7.46 MB/s. `min` not run on hardware |
+| `bitstreams/step6_earlylookup/` | + early cache lookup: every cache hit in 5 clocks, not 7 (replaces the pair buffers) | **Latest. Known good on hardware**, SD card included: 8144 Dhrystones (+21% on step 5), MemTest 7.65 MB/s. `full` only |
+| `bitstreams/step5_pairbuf/` | + pair buffers: the other half of a cached pair in 5 clocks, not 7 | **Known good. `full` on hardware**, SD card included: 6720 Dhrystones, MemTest 7.46 MB/s. `min` not run on hardware |
 | `bitstreams/step4_dcache/` | + 8 KB data cache, cache hits overlap SDRAM writes; SD card pin fix | **Known good on hardware**, SD card included |
 | `bitstreams/step3_direct/` | + direct CPU → SDRAM path for fast RAM, posted writes, word prefetch | **Known good on hardware**: MemTest 6.46 MB/s |
 | `bitstreams/step2_icache/` | + 8 KB instruction cache | **Known good on hardware**: 4833 Dhrystones, 5.04 MIPS |
@@ -135,7 +136,7 @@ Boots from SD exactly like the fx68k build. Same `Mask` advice applies
   data) no longer waits for a posted write or prefetch to finish. In
   simulation: sequential reads 7.29 → 8.03 MB/s, scattered reads
   8.50 → 11.66 MB/s, the 1 KB copy unchanged at 4.85 MB/s.
-* **Pair buffers (step 5).** A longword is two 16-bit bus cycles and code
+* **Pair buffers (step 5; replaced by the early lookup in step 6).** A longword is two 16-bit bus cycles and code
   runs word by word, so a cache hit on one word of an aligned pair is nearly
   always followed by a hit on the other. A lookup costs 7 clocks per step; a
   word already sitting in a register costs 5. The cycle that looks the first
@@ -160,6 +161,28 @@ Boots from SD exactly like the fx68k build. Same `Mask` advice applies
   conditions. The testbench checks every buffer hit
   against a shadow copy of what the CPU wrote, so a stale buffer shows up in
   any test, not only the ones aimed at it.
+* **Early cache lookup (step 6).** After each CPU step the adapter waits
+  for the kernel's outputs to settle before acting on them: 3 clocks,
+  because the bus state and function codes need nearly that long. The
+  address alone is final much sooner (about 21 ns routed, and the cache
+  index bits by about 15 ns), so the cache RAMs now read it a clock earlier,
+  on the edge into the clock where the adapter decides what the cycle is.
+  That clock already loads the looked-up word into a register of its own
+  that feeds the CPU's data input, and the tag into the compare register,
+  and the next clock compares and, on a hit, steps the CPU. A cache hit costs 5 clocks instead of 7, and a
+  miss reaches the bus or the SDRAM a clock sooner. The step 5 pair buffers,
+  which only made the second word of a pair cost 5 clocks, gained nothing
+  after that and were removed. `check_timing.py` gives the kernel-to-cache-RAM
+  paths their own class with one clock less than the other kernel outputs
+  (table below). In simulation, second pass from the caches: sequential
+  reads 8.87 → 10.64 MB/s (+20%), scattered reads 13.28 → 15.66 MB/s (+18%),
+  the 1 KB copy 5.00 → 5.35 MB/s (+7%). On an A500+ (`full`), caches on:
+  6720 → 8144 Dhrystones (+21%), 7.01 → 8.50 MIPS, AIBB MemTest 7.46 →
+  7.65 MB/s. Caches off: 3813 Dhrystones (step 5's run gave 3717, though
+  nothing step 6 changed is used with the caches off, so SysInfo varies by a
+  few percent between runs), MemTest 5.71 MB/s as before. Every
+  cache hit in every test is checked against a shadow copy of what the CPU
+  wrote; the bus bench (random DTACK, bus hand-over) now checks them too.
 * **MapROM.** The board's boot ROM (`turbomem.mem`, built with
   `DIAG_MAPROM=1`) copies Kickstart into the SDRAM shadow at every boot,
   verifies it and switches over, so it is normally already on. Both caches
@@ -277,6 +300,7 @@ actually provides:
 | … → window decode | 1T | The fast RAM window registers the direct-path decode reads |
 | config regs → … | 4T | Autoconfig base/configured, maprom bits, SDRAM `init_done`: quasi-static |
 | adapter → kernel | 2T | `TG_DIN` |
+| kernel → cache RAM | 2T | `TG_SETTLE`-1: the early lookup reads the cache RAMs on the edge into DECIDE (step 6) |
 | kernel → adapter | 3T | `TG_SETTLE` |
 | kernel → kernel | 4T | `TG_STEP` |
 
@@ -284,6 +308,21 @@ actually provides:
 it gets `RESULT: PASS`, and writes `timing.txt`. Expect the 1T classes to
 pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
+
+Step 6 (early lookup) builds as supplied (known good on hardware; `full`
+only, as from this step on):
+
+| Build | Seed | Worst 1T slack | Worst multicycle slack |
+| --- | --- | --- | --- |
+| full | 12 | +0.10 ns | +4.0 ns |
+
+The early read itself has plenty of room: kernel → cache RAM needs 15.1 ns
+of its 23.3 ns. The first build failed every seed by 1.5–3.5 ns because the
+looked-up word went into `k_din` through its wide input mux; it now has its
+own register (`k_din_c`). The second failed on a path from `fm_cfg_match`:
+that is fastmem_zii's `addr_match` (static after autoconfig, already in the
+checker's config class) under the name of the top-level wire it drives, so
+`check_timing.py` now knows that name too.
 
 Step 5 (pair buffers) builds as supplied (`full` known good on hardware):
 

@@ -144,21 +144,21 @@ dsum:   add.w   (%a0)+,%d4
         dbra    %d0,dsum
         dbra    %d5,dpass
         move.l  %d4,0x8180          | 8180 2 * sum(3i, i<64) = 2*6048 = 0x2F40
-        | -- pair buffer: a write to the buffered neighbour must not be missed --
+        | -- a write right after a cache hit on the neighbouring word --
         move.l  #0x11112222,0x08000A00  | both words cached (word writes allocate)
-        move.w  0x08000A00,%d0      | hit; the word at 0A02 now sits in the pair buffer
+        move.w  0x08000A00,%d0      | hit (and, before step 6, buffered 0A02)
         move.w  #0x7777,0x08000A02  | word write to that word
         moveq   #0,%d1
         move.w  0x08000A02,%d1
-        move.l  %d1,0x8184          | 8184 00007777 (not the buffered 2222)
+        move.l  %d1,0x8184          | 8184 00007777 (not the old 2222)
         move.l  #0xAAAABBBB,0x08000B00
-        move.w  0x08000B00,%d0      | buffers 0B02
-        move.b  #0xCC,0x08000B03    | byte write into the buffered word
+        move.w  0x08000B00,%d0      | hit on the neighbour of 0B02
+        move.b  #0xCC,0x08000B03    | byte write into 0B02
         moveq   #0,%d1
         move.w  0x08000B02,%d1
         move.l  %d1,0x8188          | 8188 0000BBCC
         move.l  #0x13131414,0x08000C00
-        move.w  0x08000C00,%d0      | buffers 0C02
+        move.w  0x08000C00,%d0      | hit on the neighbour of 0C02
         moveq   #0,%d0
         movec   %d0,%cacr           | caches off
         move.w  #0x1515,0x08000C02  | written while off
@@ -167,19 +167,19 @@ dsum:   add.w   (%a0)+,%d4
         moveq   #0,%d1
         move.w  0x08000C02,%d1
         move.l  %d1,0x818C          | 818C 00001515
-        | -- ...and MapROM switching flushes the buffer along with the caches --
+        | -- MapROM switching flushes the caches --
         move.b  #1,0x8F40           | TB: LOAD
         move.l  #0x11112222,0x00F81000  | shadow words 1111, 2222
         move.b  #2,0x8F40           | TB: ACTIVE: flushes the caches (4096 clocks)
         move.w  #799,%d2            | ...so wait, or the reads below bypass the cache
 mrdl0:  dbra    %d2,mrdl0
         move.l  0x00F81000,%d0      | miss, fills the data cache
-        move.l  0x00F81000,%d1      | hit: F81002 (2222, the shadow) is buffered
+        move.l  0x00F81000,%d1      | hit, F81002 (2222, the shadow) cached
         move.b  #3,0x8F40           | TB: OFF: flushes again
         move.w  #799,%d2            | let that flush finish too
 mrdly:  dbra    %d2,mrdly
         moveq   #0,%d0
-        move.w  0x00F81002,%d0      | the real ROM word, not the buffered shadow
+        move.w  0x00F81002,%d0      | the real ROM word, not the cached shadow
         move.l  %d0,0x8190          | 8190 00000000
         .endif
         moveq   #0,%d7

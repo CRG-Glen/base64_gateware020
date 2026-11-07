@@ -104,10 +104,6 @@ KIN = re.compile(r'(^|\.)(k_din|data_in|k_ipl|ipl|IPL|k_berr|berr|k_nreset|nRese
 # the address changes, so they have 3T; 2T is used).
 BUSOUT = re.compile(r'^(cpu\.(a_r|fc_r|eRWn|oEdb|eab|FC\d)|core_a|core_fc|core_rw|core_dout|hi_null_r'
                     r'|cpu\.dp_(we|wdata|be)|cpu\.pf_a'
-                    # pair buffers: loaded in the clock after a lookup's CCMP,
-                    # read at DECIDE >= 3 clocks later (SETTLE), like pf_a.
-                    # tb_top.sv asserts that gap on every DECIDE.
-                    r'|cpu\.(ib_a|ib_d|db_a|db_d)'
                     # a_r bits that yosys named after the slave port they drive
                     r'|g_\w+\.u_\w+\.(a|a_high|a_low|region)'
                     r'|g_fastmem\.u_fastmem\.(owns_r|cpu_win_r|mr_win_r|saddr_r|saddr)'
@@ -116,6 +112,11 @@ STATIC = re.compile(r'^(g_(fastmem|sd)\.u_\w+\.(maprom_active|maprom_load|config
                     r'tm_configured|sd_configured|base|base_sd|tm_base|base_addr\w*|cpu_base\w*)'
                     # the same MapROM bits, named after the adapter's ports
                     r'|cpu\.mr_(active|load)'
+                    # fastmem_zii's configured/addr_match (above), when yosys
+                    # names the flip-flops after the top-level wires they
+                    # drive (fm_cfg_on = configured, fm_cfg_match = addr_match;
+                    # seen in the step 6 build)
+                    r'|fm_cfg_(on|match)'
                     r'|g_sdram\.u_sdram\.init_done)(_|\[|$)')
 # Instruction cache RAM and its registers: ordinary single-cycle logic, but
 # listed separately because a cache hit loads k_din one clock after ic_qd,
@@ -151,8 +152,16 @@ KDIN = re.compile(r'^cpu\.(k_din|core\.data_in|ic_wd|dc_wd)(_|\[|$)')
 # DECIDE, and held while a request is outstanding, so the controller sees
 # it two clocks after it last changed -- a bus-output start, above.)
 WINREG = re.compile(r'^g_fastmem\.u_fastmem\.(owns_r|cpu_win_r|mr_win_r|fm_win)(_|\[|$)')
+# The cache RAMs (block RAM). Their read address is the kernel's own address,
+# and the read that counts is the one on the edge INTO DECIDE (tg68_bus EARLY
+# LOOKUP, step 6): SETTLE-1 clocks after the kernel's registers moved, not
+# SETTLE. Every kernel-started path into these cells gets that shorter budget
+# (address, and conservatively every other pin); paths from anything else are
+# ordinary 1T logic, as before.
+CRAM = re.compile(r'^cpu\.(ic_data|ic_tag|g_dcache\.dc_data|g_dcache\.dc_tag)(\.|_|\[|$)')
 def end_class(inst):
     if KDIN.match(inst): return 'D'
+    if CRAM.match(inst): return 'R'
     if WINREG.match(inst): return 'W'
     return 'K' if inst.startswith('cpu.core.') else 'O'
 
@@ -172,6 +181,9 @@ BUDGET = {('O','O'): 1, ('O','K'): 1, ('C','O'): 1, ('C','K'): 1,
           ('O','W'): 1, ('A','W'): 1, ('C','W'): 1, ('M','W'): 1, ('K','W'): 1,
           ('S','W'): 1, ('I','W'): 1,
           ('Q','O'): 1, ('Q','K'): 1, ('Q','D'): 1, ('Q','W'): 1}
+for _c in 'OCMKASIQ':                     # cache RAM endpoints: as 'logic' ...
+    BUDGET[(_c, 'R')] = BUDGET[(_c, 'O')]
+BUDGET[('K', 'R')] = args.settle - 1      # ... except the early read
 
 # ---- longest paths, one arrival per start class ------------------------------
 indeg = collections.Counter()
@@ -218,7 +230,8 @@ def trace(node, c):
 
 names = {'O': 'logic', 'C': 'clkena', 'M': 'adapter->kernel', 'K': 'kernel',
          'D': 'read-data latch', 'A': 'bus outputs', 'S': 'config regs',
-         'I': 'icache/direct', 'W': 'window decode', 'Q': 'adapter ctrl'}
+         'I': 'icache/direct', 'W': 'window decode', 'Q': 'adapter ctrl',
+         'R': 'cache RAM'}
 fail = False
 print('Multicycle timing check at %.2f MHz (T = %.2f ns), STEP=%d SETTLE=%d DIN=%d DATA=%d'
       % (args.freq, T / 1000, args.step, args.settle, args.din, args.data))

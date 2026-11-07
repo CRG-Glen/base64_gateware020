@@ -57,7 +57,6 @@ module tg68_bus #(
     parameter integer ICACHE     = 1,  // instruction cache, see ICACHE below
     parameter integer DIRECT     = 1,  // direct SDRAM path, see DIRECT below
     parameter integer DCACHE     = 1,  // data cache, see DCACHE below
-    parameter integer PAIRBUF    = 1,  // neighbour-word buffers, see PAIR BUFFERS
     parameter integer IC_AW      = 12, // log2(cache words): 12 = 4096 = 8 KB
     parameter integer BARREL     = 0   // documentation only: which netlist
 )(
@@ -85,6 +84,12 @@ module tg68_bus #(
     input  wire        IPL2n, IPL1n, IPL0n,
     input  wire [15:0] iEdb,
     input  wire        icache_win, // registered: eab is in on-board fast RAM
+    input  wire        icache_win_k, // the same, decoded from eab_early (the
+                                   // kernel's address) without a register. The
+                                   // adapter decodes the board's own windows
+                                   // itself (k_z2/k_cpuw/k_rom), so the top
+                                   // level ties this to 0; test benches with
+                                   // another memory map drive it (EARLY LOOKUP)
     // direct SDRAM path (to fastmem_zii's dp_* port)
     input  wire        fm_on,      // fast RAM block is built and configured
     input  wire [7:0]  fm_match,   //   ... and owns these Zorro II slots
@@ -117,6 +122,15 @@ module tg68_bus #(
     reg         k_clkena = 1'b0;
     reg         k_nreset = 1'b0;
     reg  [15:0] k_din    = 16'hFFFF;
+    // EARLY LOOKUP (step 6): a cache hit's word goes to the kernel from its
+    // own register, k_din_c, loaded in DECIDE from the RAM output through a
+    // 2-way mux only; k_din_sel picks it. Loading the RAM output into k_din
+    // itself put it through k_din's wide input mux (-2 ns on every seed).
+    // Both feed the kernel as k_din does (adapter -> kernel budget), and both
+    // are stable from the DECIDE edge, two clocks before the kernel samples.
+    reg  [15:0] k_din_c  = 16'hFFFF;
+    reg         k_din_sel = 1'b0;
+    wire [15:0] k_dat    = k_din_sel ? k_din_c : k_din;
     reg  [2:0]  k_ipl    = 3'b111;
     reg         k_berr   = 1'b0;
 
@@ -132,7 +146,7 @@ module tg68_bus #(
         .clk        (clk),
         .nreset     (k_nreset),
         .clkena_in  (k_clkena),
-        .data_in    (k_din),
+        .data_in    (k_dat),
         .ipl        (k_ipl),
         .berr       (k_berr),
         .addr_out   (k_addr),
@@ -166,8 +180,8 @@ module tg68_bus #(
                      Q_WAIT   = 4'd4,  // waiting for DTACK/BERR
                      Q_LATCH  = 4'd5,  // DTACK seen, counting to data latch
                      Q_FINISH = 4'd6,  // data latched, counting to clkena
-                     Q_CLOOK  = 4'd7,  // fetch: cache RAM being read
-                     Q_CCMP   = 4'd8,  // fetch: compare tag, hit or go to bus
+                     // 4'd7 unused (was CLOOK, before step 6)
+                     Q_CCMP   = 4'd8,  // cache: compare tag, hit steps the CPU
                      Q_DWAIT  = 4'd9,  // direct SDRAM access in progress
                      Q_DDATA  = 4'd10, // direct SDRAM data captured
                      Q_CFREE  = 4'd11; // cache miss: waiting for the SDRAM port
@@ -198,11 +212,12 @@ module tg68_bus #(
     // may give the Zorro II RAM a different address next time.
     //
     // Timing: the cache RAM's read address is the kernel's own address
-    // output, so the read happens on the DECIDE edge (a kernel -> logic
-    // path, SETTLE budget). Its output is registered (ic_q*) before the
-    // compare, so the hit decision and the hit data into k_din are
-    // ordinary single-cycle paths. A hit costs 3 clocks from DECIDE to the
-    // step, against 7+ for fast RAM and ~45 for the ROM over the 7M bus.
+    // output, read on the edge INTO DECIDE (EARLY LOOKUP, step 6: a kernel
+    // -> cache RAM path with SETTLE-1 clocks). DECIDE registers the RAM
+    // output (word into k_din_c, tag into ic_qt) and CCMP compares, so the
+    // hit decision and the hit data are ordinary single-cycle paths. A hit
+    // costs 5 clocks from one kernel step to the next, against 7+ for fast
+    // RAM and ~45 for the ROM over the 7M bus.
     // ------------------------------------------------------------------
     localparam integer IC_N  = 1 << IC_AW;
     localparam integer TAGW  = 1 + 2 + (23 - IC_AW);     // valid, region, a[23:IC_AW+1]
@@ -215,11 +230,11 @@ module tg68_bus #(
         ic_tag[ic_i]  = {TAGW{1'b0}};
     end
 
-    // TG68: in the CLOOK clock (sib_sel) the RAMs read the neighbouring word
-    // of the pair (address bit 1 flipped), see PAIR BUFFERS. In every other
-    // clock this is the kernel's address, as before.
-    reg              sib_sel = 1'b0;
-    wire [IC_AW-1:0] ic_ra = {k_addr[IC_AW:2], k_addr[1] ^ sib_sel};
+    // TG68: the RAMs read the kernel's address on every clock. The read
+    // that counts is the one on the edge INTO DECIDE (EARLY LOOKUP, step 6),
+    // two clocks after the kernel's registers moved: check_timing.py gives
+    // kernel -> cache RAM paths SETTLE-1 clocks for this.
+    wire [IC_AW-1:0] ic_ra = k_addr[IC_AW:1];
     reg  [15:0]      ic_dq;
     reg  [TAGW-1:0]  ic_tq;
     reg              ic_we = 1'b0;
@@ -235,8 +250,12 @@ module tg68_bus #(
         end
     end
 
-    reg  [15:0]      ic_qd;            // registered cache outputs
-    reg  [TAGW-1:0]  ic_qt;
+    reg  [TAGW-1:0]  ic_qt;            // the looked-up tag, registered at DECIDE
+    // The cacheable-window test for the lookup, registered at DECIDE from the
+    // kernel's address (k_rom/k_z2/k_cpuw, the same windows as ic_ok below).
+    // ic_ok itself uses icache_win, which is one clock behind a_r and so is
+    // not valid yet in CCMP, which is now the clock right after DECIDE.
+    reg              ic_ok_d = 1'b0;
     reg              ic_flush = 1'b1;  // sweeping all entries invalid
     reg  [IC_AW-1:0] ic_fcnt = {IC_AW{1'b0}};
     reg              cyc_fetch = 1'b0; // current bus cycle is a fetch
@@ -262,10 +281,10 @@ module tg68_bus #(
     // Same geometry, tags and cacheable area as the instruction cache
     // (2^IC_AW 16-bit words, direct-mapped; on-board fast RAM and the
     // Kickstart ROM), in its own block RAM, for data reads (busstate 10).
-    // It shares the lookup pipeline: the RAMs are read from the kernel's
-    // address on the DECIDE edge, CLOOK registers whichever cache this cycle
-    // uses into ic_qd/ic_qt, and CCMP compares. So the compare and the hit
-    // path into k_din are the instruction cache's, unchanged.
+    // It shares the lookup pipeline (EARLY LOOKUP below): both RAMs are read
+    // from the kernel's address on the edge into DECIDE, DECIDE loads the
+    // word of the kind this cycle uses into k_din_c and its tag into ic_qt,
+    // and CCMP compares.
     //
     // Write-through. Every CPU write reaches memory as before. A whole-word
     // write to fast RAM also writes the cache entry (allocate), so a value
@@ -348,7 +367,7 @@ module tg68_bus #(
     // DECIDE, alongside the lookup, so a miss costs nothing extra. On a hit
     // the read is left to finish in the background and its data dropped
     // (it becomes dp_kind 2, like a posted write). The controller cannot
-    // answer before CCMP: its quickest request->ack is 3 clocks, CCMP is 2
+    // answer before CCMP: its quickest request->ack is 3 clocks, CCMP is 1
     // (the test bench checks this).
     reg  dp_spec = 1'b0;   // this lookup has a speculative read in flight
     wire k_look  = ((ICACHE != 0) && k_bs == 2'b00 && ic_on)
@@ -356,56 +375,26 @@ module tg68_bus #(
     wire pf_wait = (dp_kind == 2'd3) && (k_addr[31:1] == pf_a);
 
     // ------------------------------------------------------------------
-    // PAIR BUFFERS -- the neighbouring word, already in a register
+    // EARLY LOOKUP (step 6)
     //
-    // The 68020 reads a longword as two 16-bit cycles and runs code word by
-    // word, so a cache hit on the first word of an aligned pair is nearly
-    // always followed by one on the second. A lookup costs 7 clocks from one
-    // step to the next (3 settle, DECIDE, CLOOK, CCMP, FINISH); a word that
-    // is already in a register is answered straight from DECIDE, like the
-    // prefetch buffer: 5.
-    //
-    // So the CLOOK clock, which only has to pass the first word's RAM output
-    // on, reads the neighbour (address bit 1 flipped) from the same RAMs: no
-    // extra clock, and the 8 KB geometry is unchanged. The next clock checks
-    // its tag (the neighbour shares the first word's tag) and, if it is a
-    // valid cached word, keeps it in the buffer of the kind of cycle that
-    // looked: ib_* for instruction fetches, db_* for data reads (a buffer
-    // per cache, so code and data cycles do not displace each other).
-    //
-    // A buffered word is a copy of a cache word and so of memory. It is
-    // dropped by:
-    //   * any write cycle to its address (checked every clock while a write
-    //     cycle's address is held, so posted writes and old-route writes
-    //     alike), including byte writes and writes made with the caches off;
-    //   * reset, and the cache flushes (MapROM switching);
-    // and it is only used while its cache is enabled. An entry replaced by a
-    // different line does not matter: the buffer still holds the right data
-    // for its own address.
-    // ------------------------------------------------------------------
-    // Stage 1 (every clock, no enable): the cache RAMs' output, as the
-    // neighbour of the lookup in a_r. Only meaningful in the clock after
-    // CCMP, which is when sb_pi/sb_pd say so.
-    // One raw register per cache, straight from its RAM output (no mux in
-    // the RAM -> flip-flop path); stage 2 picks the one that matters.
-    reg  [15:0]      sb_qdi = 16'd0, sb_qdd = 16'd0;
-    reg  [TAGW-1:0]  sb_qti = {TAGW{1'b0}}, sb_qtd = {TAGW{1'b0}};
-    reg  [31:1]      sb_a  = 31'd0;
-    reg              sb_en = 1'b0;       // the cache could be used for this lookup
-    reg              sb_pi = 1'b0, sb_pd = 1'b0;   // CCMP was last clock: fetch / data
-    // Stage 2: tag compared and buffer loaded (invalid); stage 3: valid set.
-    reg              sb_m  = 1'b0;       // the neighbour's tag matched
-    reg              sb_fi = 1'b0, sb_fd = 1'b0;   // stage 2 was last clock
-    reg              ib_valid = 1'b0, db_valid = 1'b0;
-    // ib_a/ib_d/db_a/db_d change only in the clock after CCMP's, and are
-    // read at DECIDE, which is >= 3 clocks later (SETTLE): check_timing.py
-    // treats them like pf_a. The testbench checks the gap.
-    reg  [31:1]      ib_a = 31'd0, db_a = 31'd0;
-    reg  [15:0]      ib_d = 16'd0, db_d = 16'd0;
-    wire k_ib_hit = (PAIRBUF != 0) && ib_valid && (k_bs == 2'b00) && ic_on
-                    && (k_addr[31:1] == ib_a);
-    wire k_db_hit = (PAIRBUF != 0) && (DCACHE != 0) && db_valid && (k_bs == 2'b10)
-                    && dc_on && (k_addr[31:1] == db_a);
+    // The kernel's address is final about 21 ns after its registers move
+    // (routed, slow corner), inside two clocks, while the bus-state and
+    // function-code outputs need nearly three. So the cache RAMs are read on
+    // the edge into DECIDE, a clock before DECIDE's own decision, and DECIDE
+    // already has both caches' word and tag for the address:
+    //   * DECIDE loads the word of this cycle's kind into k_din_c (its own
+    //     register, through a 2-way mux only, whatever the compare will say:
+    //     data registers load unconditionally) and its tag into ic_qt, and
+    //     sets k_din_sel so the kernel's data input takes k_din_c;
+    //   * CCMP, the next clock, compares, and a hit steps the kernel there
+    //     and then: k_din_c has been stable for a clock, which is all
+    //     DIN_SETUP asks. A miss sets k_din_sel back to k_din.
+    // A hit costs 5 clocks from one step to the next instead of 7 (3 settle,
+    // DECIDE, CCMP), the same as a prefetch hit. That made the step 5 pair
+    // buffers, which bought 5 clocks for the second word of a pair, worth
+    // nothing, so they are gone. A miss also goes on to the bus or the SDRAM
+    // a clock sooner.
+    wire cc_hit = ic_ok_d && (ic_qt == ic_want) && (cyc_fetch ? ic_on : dc_on);
 
     // ------------------------------------------------------------------
     // DIRECT -- direct SDRAM path for on-board fast RAM
@@ -521,7 +510,7 @@ module tg68_bus #(
     wire bus_free      = BGn && BGACKn && BRn && HALTn;
     // CLOOK/CCMP count: a miss goes straight on to a bus cycle.
     wire in_cycle      = (q == Q_SETUP) || (q == Q_WDS) || (q == Q_WAIT)
-                       || (q == Q_LATCH) || (q == Q_CLOOK) || (q == Q_CCMP)
+                       || (q == Q_LATCH) || (q == Q_CCMP)
                        || (q == Q_DWAIT) || (q == Q_DDATA) || (q == Q_CFREE)
                        || ~as_i || ~ASn;
 
@@ -529,17 +518,18 @@ module tg68_bus #(
         k_clkena <= 1'b0;
         ic_we    <= 1'b0;
         dc_we    <= 1'b0;
-        sib_sel  <= 1'b0;
-        // PAIR BUFFERS stage 1: loaded every clock, qualified by sb_pi/sb_pd
-        // (keeps the cache RAM outputs' path to one mux and a flip-flop)
-        sb_qdi   <= ic_dq;
-        sb_qdd   <= dc_dq;
-        sb_qti   <= ic_tq;
-        sb_qtd   <= dc_tq;
-        sb_a     <= {a_r[31:2], ~a_r[1]};
-        sb_en    <= ic_ok && (cyc_fetch ? ic_on : dc_on);
-        sb_pi    <= 1'b0;
-        sb_pd    <= 1'b0;
+        // EARLY LOOKUP: loaded every clock (only the DECIDE edge counts,
+        // and CCMP is always the clock straight after it), so no enable sits
+        // in the RAM -> register path.
+        ic_qt    <= (k_bs == 2'b00) ? ic_tq : dc_tq;
+        // Loaded on every DECIDE clock (the last one counts) and then HELD:
+        // re-reading after DECIDE could hand the kernel a word that a fill
+        // put there after the tag was checked.
+        if (q == Q_DECIDE) k_din_c <= (k_bs == 2'b00) ? ic_dq : dc_dq;
+        // The kernel samples data_in at the end of the clkena clock; the
+        // select goes back to k_din on that same edge.
+        if (k_clkena) k_din_sel <= 1'b0;
+        ic_ok_d  <= (ICACHE != 0) && (k_rom || k_z2 || k_cpuw || icache_win_k);
         mr_act_d <= mr_active;
         ic_on_r  <= (ICACHE != 0) && k_cacr[0] && !flush_nxt;
         dc_on_r  <= (DCACHE != 0) && k_cacr[0] && !flush_nxt;
@@ -555,6 +545,7 @@ module tg68_bus #(
             // Hold the kernel in reset, but keep stepping it: its internal
             // synchronous Reset only advances on clkena.
             k_nreset <= 1'b0;
+            k_din_sel <= 1'b0;
             as_i  <= 1'b1; uds_i <= 1'b1; lds_i <= 1'b1; eRWn <= 1'b1;
             oRESETn  <= 1'b1;
             k_berr   <= 1'b0;
@@ -565,7 +556,6 @@ module tg68_bus #(
             pf_fill  <= 1'b0; pf_dc <= 1'b0;
             pw_upd   <= 1'b0;
             dp_spec  <= 1'b0;
-            ib_valid <= 1'b0; db_valid <= 1'b0;
             stalled  <= 1'b0;
             wd       <= 24'd0;
             q        <= Q_SETTLE;
@@ -610,18 +600,10 @@ module tg68_bus #(
                 oRESETn <= k_nresetout;
                 if (internal_step) begin
                     if (cnt >= STEP - 1) step();
-                end else if (k_pf_ok || k_ib_hit || k_db_hit) begin
-                    // No cycle to start, the word is already in a register:
-                    //  * k_pf_ok: second half of a longword / next sequential
-                    //    word, prefetched from the SDRAM (needs the port
-                    //    idle, as before);
-                    //  * k_ib_hit / k_db_hit: the other half of a pair the
-                    //    last cache lookup found (PAIR BUFFERS), which needs
-                    //    neither the bus nor the SDRAM port.
-                    // One branch, so the three share the state change and a
-                    // priority chain no deeper than the prefetch hit alone
-                    // had. a_r/eRWn are left alone.
-                    k_din    <= k_pf_ok ? pf_d : (k_bs[1] ? db_d : ib_d);
+                end else if (k_pf_ok) begin
+                    // second half of a longword / next sequential word:
+                    // already fetched, no SDRAM access at all
+                    k_din    <= pf_d;
                     bus_berr <= 1'b0;
                     tmr      <= 6'd0;
                     q        <= Q_FINISH;
@@ -645,8 +627,11 @@ module tg68_bus #(
                     dp_spec  <= 1'b0;
                     // The cache RAMs read on this edge used k_addr already.
                     if (k_look) begin
-                        q <= Q_CLOOK;            // look in the cache first
-                        sib_sel <= 1'b1;         // CLOOK reads the neighbour
+                        q <= Q_CCMP;             // look in the cache first
+                        // EARLY LOOKUP: the RAMs read this address on the
+                        // edge into DECIDE; k_din_c takes the word on this
+                        // edge (see below), CCMP decides
+                        k_din_sel <= 1'b1;
                         if (k_bs == 2'b10 && k_fast && !dp_busy) begin
                             dp_req_i <= 1'b1;    // speculative read
                             dp_busy  <= 1'b1; dp_kind <= 2'd1;
@@ -672,39 +657,35 @@ module tg68_bus #(
                 end
             end
             // ----------------------------------------------------------
-            // ic_qd/ic_qt carry whichever cache this cycle uses
-            Q_CLOOK: begin
-                ic_qd <= cyc_fetch ? ic_dq : dc_dq;
-                ic_qt <= cyc_fetch ? ic_tq : dc_tq;
-                q     <= Q_CCMP;
-            end
-            // icache_win is one clock behind a_r, which changed at DECIDE,
-            // so it is valid here.
+            // EARLY LOOKUP: ic_qt and k_din were loaded on the edge into
+            // this state. ic_ok_d is the window decode of this cycle's
+            // address (icache_win is not valid yet, see ic_ok_d).
             Q_CCMP: begin
                 tmr <= 6'd0;
                 dp_spec <= 1'b0;
-                // The RAMs now show the neighbour of the pair (read in the
-                // CLOOK clock); stage 1 above captures it on this edge.
-                sb_pi   <= (PAIRBUF != 0) && cyc_fetch;
-                sb_pd   <= (PAIRBUF != 0) && (DCACHE != 0) && !cyc_fetch;
-                // k_din is loaded whether or not this is a hit, so the tag
-                // compare only steers the state, not the data register. On
-                // a miss it is overwritten before the kernel steps.
-                k_din   <= ic_qd;
-                if (ic_ok && ic_qt == ic_want && (cyc_fetch ? ic_on : dc_on)) begin
+                // k_din_c already holds the looked-up word (loaded in DECIDE)
+                // and k_din_sel picks it, so a hit steps the kernel now. On a
+                // miss the select goes back to k_din, which the miss path
+                // loads before the kernel steps.
+                if (cc_hit) begin
                     bus_berr <= 1'b0;        // hit: no bus cycle at all
-                    q        <= Q_FINISH;
+                    if (cnt >= STEP - 1 && DIN_SETUP <= 1) step();
+                    else q   <= Q_FINISH;
                     if (dp_spec) dp_kind <= 2'd2;   // drop the speculative read
                 end else if (dp_spec) begin
+                    k_din_sel <= 1'b0;
                     q        <= Q_DWAIT;     // miss: the read is already out
                 end else if (dp_busy) begin
+                    k_din_sel <= 1'b0;
                     q        <= Q_CFREE;     // miss: port still busy
                 end else if (dp_fast) begin
+                    k_din_sel <= 1'b0;
                     dp_req_i <= 1'b1;        // miss in fast RAM: direct
                     dp_busy  <= 1'b1; dp_kind <= 2'd1;
                     dp_we    <= 1'b0;
                     q        <= Q_DWAIT;
                 end else begin
+                    k_din_sel <= 1'b0;
                     q        <= Q_SETUP;     // miss: address is already out
                 end
             end
@@ -824,31 +805,6 @@ module tg68_bus #(
             default: q <= Q_SETTLE;
             endcase
 
-            // PAIR BUFFERS stage 2 (the clock after CCMP): compare the
-            // neighbour's tag with the lookup's (same line, valid, same
-            // region) and load the buffer of that kind, as INVALID: it is
-            // replaced whether or not the neighbour is usable. a_r is still
-            // the lookup's address: the next DECIDE is >= SETTLE clocks away.
-            sb_m  <= ((sb_pi ? sb_qti : sb_qtd) == ic_want) && sb_en;
-            sb_fi <= sb_pi;
-            sb_fd <= sb_pd;
-            if (sb_pi) begin ib_valid <= 1'b0; ib_a <= sb_a; ib_d <= sb_qdi; end
-            if (sb_pd) begin db_valid <= 1'b0; db_a <= sb_a; db_d <= sb_qdd; end
-            // stage 3: valid, if the tag matched
-            if (sb_fi && sb_m) ib_valid <= 1'b1;
-            if (sb_fd && sb_m) db_valid <= 1'b1;
-            // ...and drop a buffered word the CPU writes. eRWn/a_r hold the
-            // last cycle's R/W and address until the next one is set up, so
-            // this fires on every clock after a write; harmless, as the
-            // lookup that loads a buffer is always a read. Only the cache
-            // index is compared: a write to an aliasing address drops the
-            // buffer too, which costs nothing but a reload and keeps the
-            // compare short. After the loads above, so a drop wins.
-            if (!eRWn) begin
-                if (a_r[IC_AW:1] == ib_a[IC_AW:1]) ib_valid <= 1'b0;
-                if (a_r[IC_AW:1] == db_a[IC_AW:1]) db_valid <= 1'b0;
-            end
-
             // Posted writes and prefetches complete in the background. (A
             // read's second ack pulse, one clock after the first, arrives
             // with dp_kind already 0 and is ignored.)
@@ -880,11 +836,6 @@ module tg68_bus #(
         // by the sweep.
         // Both caches share the sweep. MapROM switching on or off changes
         // what the ROM addresses return, so it flushes too.
-        // The pair buffers go too (MapROM switching changes what the ROM
-        // addresses return).
-        if (flush_trig || ic_flush) begin
-            ib_valid <= 1'b0; db_valid <= 1'b0;
-        end
         if (flush_trig) begin
             ic_flush <= 1'b1;
             ic_fcnt  <= {IC_AW{1'b0}};
