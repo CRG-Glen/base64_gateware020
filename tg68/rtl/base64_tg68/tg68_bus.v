@@ -542,6 +542,11 @@ module tg68_bus #(
     reg [5:0] cnt  = 6'd0;   // clocks since last clkena (saturating)
     reg [5:0] tmr  = 6'd0;   // per-state timer
     reg       bus_berr = 1'b0;
+    // dec_r is 1 exactly while q is Q_DECIDE: set on the way in (SETTLE),
+    // cleared on every way out. It enables DECIDE's bulk data loads from a
+    // register of its own: decoding q for ~55 enables put that decode in the
+    // data-cache write-port path (-3 ns, step 7).
+    reg       dec_r = 1'b0;
     reg       cyc_start = 1'b0;   // a cycle was set up on the last edge (a_r and
                                   // the bus registers belong to it; for the
                                   // test benches' write shadow)
@@ -600,6 +605,7 @@ module tg68_bus #(
             // synchronous Reset only advances on clkena.
             k_nreset <= 1'b0;
             k_din_sel <= 1'b0; k_long_ack <= 1'b0;
+            dec_r    <= 1'b0;
             as_i  <= 1'b1; uds_i <= 1'b1; lds_i <= 1'b1; eRWn <= 1'b1;
             oRESETn  <= 1'b1;
             k_berr   <= 1'b0;
@@ -643,23 +649,14 @@ module tg68_bus #(
                     dc_wd <= dp_wdata;
                 end
             end
-            case (q)
-            // ----------------------------------------------------------
-            Q_SETTLE: if (cnt >= SETTLE - 1) q <= Q_DECIDE;
-            // ----------------------------------------------------------
-            Q_DECIDE: begin
-                // nResetOut is combinational in the kernel; only trust it
-                // here, after the outputs have settled. A glitch would
-                // reset every peripheral on the motherboard.
-                oRESETn <= k_nresetout;
-                // Data registers that only matter for a cycle that starts load
-                // on EVERY DECIDE clock, whatever DECIDE decides, so the
-                // decision tree (the kernel's address, step 7: ~25 ns) stays
-                // out of their enables. Each is used only by the cycle set up
-                // here, and DECIDE comes no sooner after the last cycle than
-                // a new cycle would, so the old values are held as long as
-                // before. The port's write data belong to a request still in
-                // flight, if there is one.
+            // Data registers that only matter for a cycle that starts load
+            // on EVERY DECIDE clock (dec_r), whatever DECIDE decides, so the
+            // decision tree (the kernel's address) stays out of their
+            // enables. Each is used only by the cycle set up there, and
+            // DECIDE comes no sooner after the last cycle than a new cycle
+            // would, so old values are held as long as before. The port's
+            // write data belong to a request still in flight, if there is one.
+            if (dec_r) begin
                 oEdb      <= k_dout;
                 uds_want  <= k_nuds;
                 lds_want  <= k_nlds;
@@ -669,11 +666,22 @@ module tg68_bus #(
                     dp_wdata <= k_dout;
                     dp_be    <= ~{k_nuds, k_nlds};
                 end
+            end
+            case (q)
+            // ----------------------------------------------------------
+            Q_SETTLE: if (cnt >= SETTLE - 1) begin q <= Q_DECIDE; dec_r <= 1'b1; end
+            // ----------------------------------------------------------
+            Q_DECIDE: begin
+                // nResetOut is combinational in the kernel; only trust it
+                // here, after the outputs have settled. A glitch would
+                // reset every peripheral on the motherboard.
+                oRESETn <= k_nresetout;
                 if (internal_step) begin
                     if (cnt >= STEP - 1) step();
                 end else if (k_pf_ok) begin
                     // second half of a longword / next sequential word:
                     // already fetched, no SDRAM access at all
+                    dec_r    <= 1'b0;
                     k_din    <= pf_d;
                     bus_berr <= 1'b0;
                     tmr      <= 6'd0;
@@ -685,6 +693,7 @@ module tg68_bus #(
                     tmr      <= 6'd0;
                     dp_fast   <= k_fast;
                     cyc_start <= 1'b1;
+                    dec_r     <= 1'b0;
                     dp_spec  <= 1'b0;
                     // The cache RAMs read on this edge used k_addr already.
                     if (k_look) begin
@@ -942,6 +951,7 @@ module tg68_bus #(
             k_ipl    <= {IPL2n, IPL1n, IPL0n};
             k_berr   <= 1'b0;     // the kernel samples the old value here
             q        <= Q_SETTLE;
+            dec_r    <= 1'b0;
         end
     endtask
 

@@ -58,6 +58,10 @@ module tb;
         ks_cyc = ks_cyc + 1;
         if (dut.k_long_ack !== ks_la || dut.k_din_sel !== ks_ds) ks_chg = ks_cyc;
         ks_la = dut.k_long_ack; ks_ds = dut.k_din_sel;
+        if (dut.dec_r !== (dut.q == 4'd1)) begin
+            $display("FAIL dec_r out of step with q (q=%0d dec_r=%b)", dut.q, dut.dec_r);
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
         if (dut.k_clkena && ks_cyc - ks_chg < 1) begin
             $display("FAIL long_ack/k_din_sel changed in the clock before the kernel sampled them");
             ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
