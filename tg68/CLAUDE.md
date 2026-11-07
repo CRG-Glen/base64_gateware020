@@ -153,7 +153,7 @@ that gives the "_fast" files.
   - The CPU is the only writer of fast RAM (the SD controller is CPU-driven,
     no DMA), so no software cache management is needed.
   - Both flush on reset and when MapROM changes state.
-- **Early lookup (step 6, not yet tested on hardware):** the kernel's
+- **Early lookup (step 6, known good on hardware):** the kernel's
   address is final ~21 ns after its registers move (the cache index bits
   ~15 ns), well inside 2 clocks, while busstate and FC need nearly 3. So the
   cache RAMs read on the edge INTO DECIDE; DECIDE loads `k_din_c` (the
@@ -225,13 +225,16 @@ that gives the "_fast" files.
 | step 3 (direct path) | - | 6.46 / 5.71 |
 | step 4 (D-cache) | 6076 / 4007 | 7.28 / 5.71 |
 | step 5 (pair buffers, `full`) | 6720 / 3717 | 7.46 / 5.71 |
+| step 6 (early lookup, `full`) | 8144 / 3813 | 7.65 / 5.71 |
 
 - SD card (sfsd.device 2.4): 2.18 MB/s in SysInfo on step 4 and step 5
   (2184533 bytes/s); fx68k gets 1.76 MB/s.
 - Step 5 caches-off Dhrystones (3717) are below step 4's (4007), but the
   caches-off logic is unchanged: identical clock counts for both in the
-  read and copy benches with CACR=0. Probably different test conditions;
-  re-run step 4 and step 5 back to back on the same setup to settle it.
+  read and copy benches with CACR=0. Step 6's caches-off run gave 3813,
+  though nothing step 6 changed is active with the caches off: SysInfo
+  varies by a few percent between runs. Probably different test conditions;
+  re-run steps 4 to 6 back to back on the same setup to settle it.
 - SysInfo reports "66 MHz" by timing loops. AIBB: close to a 25 MHz 68030.
 
 ## Ideas not yet done (Glen decides the order)
