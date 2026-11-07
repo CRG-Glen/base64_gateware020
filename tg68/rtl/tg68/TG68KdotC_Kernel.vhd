@@ -543,7 +543,14 @@ ALU: TG68K_ALU
 	long_cand <= cand OR ext32_cand;
 	ext32_ack <= ext32_cand AND long_ack;
 	read_pair <= l1 OR ext32_ack;
-	l1 <= long_ack AND cand;
+	-- Base64 (tg68/README.md, "32-bit data path"): was long_ack AND cand. The
+	-- Base64 bus side raises long_ack only for a pair the kernel offered on
+	-- long_cand (= cand with DataPath32="001"), and cand cannot change before
+	-- the step, so the AND is redundant there; without it clkena_lw, which
+	-- gates most of the kernel's registers, meets timing (clkena -> kernel
+	-- +0.3..+1.8 ns on every seed tried, against -0.1..-5.0 ns with it).
+	-- The test benches assert long_ack is never high without long_cand.
+	l1 <= long_ack;
 
 	-- Used only with aligned data/extension pairs.
 	addr_p2 <= addr(31 downto 2) & "10";

@@ -27,7 +27,8 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
-| `bitstreams/step6_earlylookup/` | + early cache lookup: every cache hit in 5 clocks, not 7 (replaces the pair buffers) | **Latest. Known good on hardware**, SD card included: 8144 Dhrystones (+21% on step 5), MemTest 7.65 MB/s. `full` only |
+| `bitstreams/step7_datapath32/` | + 32-bit data path: aligned longword reads from the caches in one CPU step (m1nl's TG68K.C fork, banked caches) | **Newest, not yet run on hardware.** `full` only. Simulated and timing-checked |
+| `bitstreams/step6_earlylookup/` | + early cache lookup: every cache hit in 5 clocks, not 7 (replaces the pair buffers) | **Latest known good on hardware**, SD card included: 8144 Dhrystones (+21% on step 5), MemTest 7.65 MB/s. `full` only |
 | `bitstreams/step5_pairbuf/` | + pair buffers: the other half of a cached pair in 5 clocks, not 7 | **Known good. `full` on hardware**, SD card included: 6720 Dhrystones, MemTest 7.46 MB/s. `min` not run on hardware |
 | `bitstreams/step4_dcache/` | + 8 KB data cache, cache hits overlap SDRAM writes; SD card pin fix | **Known good on hardware**, SD card included |
 | `bitstreams/step3_direct/` | + direct CPU → SDRAM path for fast RAM, posted writes, word prefetch | **Known good on hardware**: MemTest 6.46 MB/s |
@@ -328,6 +329,22 @@ it gets `RESULT: PASS`, and writes `timing.txt`. Expect the 1T classes to
 pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
 
+Step 7 (32-bit data path) builds as supplied (not yet run on hardware):
+
+| Build | Seed | Worst 1T slack | Worst multicycle slack |
+| --- | --- | --- | --- |
+| full | 4 | +0.06 ns | +0.86 ns |
+
+Both margins are thin: the multicycle one (kernel → logic, the kernel's
+outputs into DECIDE) was +4 ns in step 6. With pairs live the kernel keeps
+its pair logic, which slows its address (~21 → ~25 ns with every pair kind
+on) and its clock enable. Getting here took: data pairs only (`DP32=1`); the
+adapter's cycle data registers (`oEdb`, strobes, posted-write data) loading
+on every DECIDE clock, out of the address decode, from their own enable
+register (`dec_r`); the one-line kernel change above; and two classifier
+fixes (kernel-internal registers named after `nReset`; `k_long_ack` is an
+adapter → kernel input).
+
 Step 6 (early lookup) builds as supplied (known good on hardware; `full`
 only, as from this step on):
 
@@ -448,7 +465,8 @@ committed netlist byte for byte). Its arguments select variants: barrel
 shifter, no bitfields, iterative multiply.
 
 From step 7 the VHDL is m1nl's fork of TG68K.C
-(<https://github.com/m1nl/TG68K.C>, commit `a8e6f38`), unmodified: upstream
+(<https://github.com/m1nl/TG68K.C>, commit `a8e6f38`), with one marked
+change (below): upstream
 TG68K.C (our kernel was identical to its base) plus a cheaper rotate unit and
 the 32-bit data path (`long_cand`/`long_ack`, `data_in_hi`,
 `data_write_lo`). The wrapper `tg68_020.vhd` passes those ports through and
@@ -458,6 +476,16 @@ extensions (bits 1 and 2), but either of those put the kernel's clock-enable
 paths 2-5 ns over budget on every seed tried (they sit in its program-counter
 and fetch logic), while data pairs alone leave the kernel's address timing as
 it was.
+
+**The one change to the fork** (`TG68KdotC_Kernel.vhd`, marked "Base64"):
+`l1 <= long_ack AND cand` became `l1 <= long_ack`. `l1` is part of the
+kernel's `clkena_lw`, which gates most of its registers, and with the AND that
+path failed timing on 11 of 12 seeds (by up to 5 ns); without it it passed on
+every seed tried (+0.3 to +1.8 ns). The AND is redundant here: the adapter
+raises `long_ack` only for a pair the kernel offered on `long_cand` (which,
+with data pairs only, is `cand`), and `cand` is decoded from kernel registers
+that cannot change before the step. Both test benches assert that `long_ack`
+is never high without `long_cand`.
 
 GHDL turns a handful of VHDL `case ... when others => null` statements into
 latches that yosys rejects. `fix_latches.py` neutralises exactly those.

@@ -23,7 +23,8 @@ MapROM.
 ```
 rtl/base64_tg68/   top level (base64_tg68_top.sv) and the bus adapter tg68_bus.v
 rtl/tg68/          TG68K.C VHDL: m1nl's fork (github.com/m1nl/TG68K.C, a8e6f38,
-                   32-bit data path), unmodified, + the tg68_020.vhd wrapper;
+                   32-bit data path) with ONE marked change (l1 <= long_ack,
+                   see README), + the tg68_020.vhd wrapper;
                    tg68_020_b0.v is the GHDL-converted netlist actually built
                    (regenerate: YOSYS=yowasp-yosys sh scripts/gen_tg68.sh, needs
                    Ubuntu's ghdl 4.1.0; reproduces the netlist byte for byte)
@@ -184,7 +185,13 @@ that gives the "_fast" files.
   (so the drop is 2 clocks old); miss -> drop. It never changes in the clock
   before the kernel samples (tb assertion), so check_timing.py classes it
   adapter -> kernel. `DP32_ACK=0` turns pairs off. Pairs only from cache hits
-  so far; writes stay 16-bit.
+  so far; writes stay 16-bit. Kernel change: `l1 <= long_ack` (was AND cand;
+  clkena -> kernel failed 11/12 seeds with it); valid only while the adapter
+  acks offered pairs only (tb asserts long_ack implies long_cand). DECIDE's
+  data registers (oEdb, uds/lds_want, cyc_fetch, dp_we/wdata/be) load on every
+  DECIDE clock under `dec_r` (= q is DECIDE, tb-asserted); `cyc_start` marks a
+  real cycle start for the tb write shadow. Timing margins are thin (seed 4:
+  +0.06 ns 1T, +0.86 ns kernel -> logic).
 - **Cache enable:** both caches follow CACR EI. The data cache must NOT get
   the 68030 CACR bit 8: software tells an 020 from an 030 by setting that bit
   and reading it back, so storing it would make the CPU detect as a 68030 and

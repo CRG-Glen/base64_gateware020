@@ -58,6 +58,12 @@ module tb;
         ks_cyc = ks_cyc + 1;
         if (dut.k_long_ack !== ks_la || dut.k_din_sel !== ks_ds) ks_chg = ks_cyc;
         ks_la = dut.k_long_ack; ks_ds = dut.k_din_sel;
+        // The kernel's l1 <= long_ack (Base64 change, was long_ack AND cand)
+        // relies on this: long_ack only ever answers an offered pair.
+        if (dut.k_long_ack && !dut.k_long_cand) begin
+            $display("FAIL long_ack high without long_cand");
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
         if (dut.dec_r !== (dut.q == 4'd1)) begin
             $display("FAIL dec_r out of step with q (q=%0d dec_r=%b)", dut.q, dut.dec_r);
             ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
