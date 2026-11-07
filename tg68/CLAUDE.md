@@ -173,7 +173,9 @@ that gives the "_fast" files.
   tb_tg68_bus.sv check every cache hit's data against a shadow of the
   CPU's writes.
 - **32-bit data path (step 7, not yet tested on hardware):** core = m1nl's
-  TG68K.C fork; `k_long_cand` offers an aligned pair. Each cache is two banks
+  TG68K.C fork, `DP32=1` (data pairs only: immediate and absolute-address
+  pairs made clkena -> kernel fail every seed by 2-5 ns); `k_long_cand`
+  offers an aligned pair. Each cache is two banks
   (`*_e` even words, `*_o` odd words, row = addr[12:2]); DECIDE registers both
   banks' words (`k_din_ce/k_din_co`) and tags (`ic_qt_e/o`). `k_long_ack` is
   set at DECIDE (pair offered, aligned) and resolved in CCMP: both words hit

@@ -10,11 +10,12 @@
 -- a8e6f38): bit 0 longword data reads/writes, bit 1 32-bit immediates, bit 2
 -- absolute-long address extensions, each as one aligned pair when the bus
 -- side answers long_cand with long_ack. With long_ack held at 0 the kernel
--- runs the ordinary 16-bit sequence.
+-- runs the ordinary 16-bit sequence. Base64 uses 1 (data only): bits 1 and
+-- 2 put the kernel's clkena paths 2-5 ns over budget on every seed tried.
 library ieee; use ieee.std_logic_1164.all; use ieee.numeric_std.all;
 entity tg68_020 is
   generic (BARREL : integer := 0; BITFIELD : integer := 1; MULHW : integer := 1;
-           DP32 : integer := 7);
+           DP32 : integer := 1);
   port (
     clk        : in  std_logic;
     nreset     : in  std_logic;

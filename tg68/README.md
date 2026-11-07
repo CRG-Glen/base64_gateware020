@@ -184,8 +184,10 @@ Boots from SD exactly like the fx68k build. Same `Mask` advice applies
   cache hit in every test is checked against a shadow copy of what the CPU
   wrote; the bus bench (random DTACK, bus hand-over) now checks them too.
 * **32-bit data path (step 7).** The CPU core is now m1nl's fork of
-  TG68K.C, which can move an aligned pair of words (a longword operand, a
-  32-bit immediate, or an absolute-long address) in one step instead of two
+  TG68K.C, which can move an aligned pair of words in one step instead of
+  two. Of its three kinds of pair (longword data, 32-bit immediates,
+  absolute-long addresses) only longword data reads are switched on; the
+  other two cost more timing in the kernel than it has
   when the memory side agrees. Each cache is split into an even-word and an
   odd-word bank (same total size), so one lookup reads both words of a pair.
   When the core offers a pair and both words hit, the adapter answers
@@ -450,8 +452,12 @@ From step 7 the VHDL is m1nl's fork of TG68K.C
 TG68K.C (our kernel was identical to its base) plus a cheaper rotate unit and
 the 32-bit data path (`long_cand`/`long_ack`, `data_in_hi`,
 `data_write_lo`). The wrapper `tg68_020.vhd` passes those ports through and
-sets `DataPath32` with its `DP32` generic (default 7: data, immediates and
-absolute addresses).
+sets `DataPath32` with its `DP32` generic. It is 1: longword data reads
+only. The fork can also pair 32-bit immediates and absolute-long address
+extensions (bits 1 and 2), but either of those put the kernel's clock-enable
+paths 2-5 ns over budget on every seed tried (they sit in its program-counter
+and fetch logic), while data pairs alone leave the kernel's address timing as
+it was.
 
 GHDL turns a handful of VHDL `case ... when others => null` statements into
 latches that yosys rejects. `fix_latches.py` neutralises exactly those.
