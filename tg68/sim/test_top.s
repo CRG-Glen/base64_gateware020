@@ -181,6 +181,21 @@ mrdly:  dbra    %d2,mrdly
         moveq   #0,%d0
         move.w  0x00F81002,%d0      | the real ROM word, not the cached shadow
         move.l  %d0,0x8190          | 8190 00000000
+        | -- 32-bit data path: aligned pairs from the caches (step 7) --
+        move.l  #0x01010101,0x08000F00  | data for the abs.L add (both words cached)
+        lea     fn32,%a0            | copy fn32 into fast RAM (long-aligned)
+        movea.l #0x08000E00,%a1
+        moveq   #4,%d0
+cp32:   move.l  (%a0)+,(%a1)+
+        dbra    %d0,cp32
+        jsr     0x08000E00          | fills the instruction cache
+        jsr     0x08000E00          | from the caches: imm32, abs.L and the long read as pairs
+        move.l  %d6,0x8194          | 8194 0x89ABCDEF + 0x01010101 = 0x8AACCEF0
+        | a pair whose second word is NOT cached must not be taken as a pair
+        move.l  #0x31323334,0x08000D00  | both words cached
+        move.b  #0x99,0x08000D03    | byte write: the second word's entry is dropped
+        move.l  0x08000D00,%d0      | first word hits, second misses
+        move.l  %d0,0x8198          | 8198 31323399 (not the stale 3334)
         .endif
         moveq   #0,%d7
         jsr     romfn+0xF80000      | Kickstart-ROM range: over the 7M bus,
@@ -197,6 +212,12 @@ romfn:  moveq   #0x55,%d7
         rts
         .balign 4
 romdat: .long   0x01020304
+        .balign 4
+fn32:   nop                         | +0
+        move.l  #0x89ABCDEF,%d6     | +2 opcode, +4 imm32 (4-byte aligned)
+        nop                         | +8
+        add.l   0x08000F00,%d6      | +10 opcode, +12 abs.L (aligned); long data read
+        rts                         | +16
 fastfn: move.l  #0xFA57,%d6
         rts
         nop

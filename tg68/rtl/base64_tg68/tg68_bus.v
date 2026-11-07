@@ -57,6 +57,8 @@ module tg68_bus #(
     parameter integer ICACHE     = 1,  // instruction cache, see ICACHE below
     parameter integer DIRECT     = 1,  // direct SDRAM path, see DIRECT below
     parameter integer DCACHE     = 1,  // data cache, see DCACHE below
+    parameter integer DP32_ACK   = 1,  // answer aligned word pairs from the caches
+                                       // (32-BIT DATA PATH; 0 = 16-bit only)
     parameter integer IC_AW      = 12, // log2(cache words): 12 = 4096 = 8 KB
     parameter integer BARREL     = 0   // documentation only: which netlist
 )(
@@ -123,20 +125,35 @@ module tg68_bus #(
     reg         k_nreset = 1'b0;
     reg  [15:0] k_din    = 16'hFFFF;
     // EARLY LOOKUP (step 6): a cache hit's word goes to the kernel from its
-    // own register, k_din_c, loaded in DECIDE from the RAM output through a
+    // own register, k_din_ce/co, loaded in DECIDE from the RAM output through a
     // 2-way mux only; k_din_sel picks it. Loading the RAM output into k_din
     // itself put it through k_din's wide input mux (-2 ns on every seed).
     // Both feed the kernel as k_din does (adapter -> kernel budget), and both
     // are stable from the DECIDE edge, two clocks before the kernel samples.
-    reg  [15:0] k_din_c  = 16'hFFFF;
+    // (step 7: one register per cache bank, k_din_ce/k_din_co; the word the
+    // cycle asked for is chosen after them by address bit 1.)
+    reg  [15:0] k_din_ce = 16'hFFFF, k_din_co = 16'hFFFF;
     reg         k_din_sel = 1'b0;
-    wire [15:0] k_dat    = k_din_sel ? k_din_c : k_din;
+    wire [15:0] k_dat;                 // assigned below a_r
     reg  [2:0]  k_ipl    = 3'b111;
     reg         k_berr   = 1'b0;
 
     wire [31:0] k_addr;
     wire [15:0] k_dout;
     wire        k_nwr, k_nuds, k_nlds, k_nresetout, k_skip;
+    // 32-BIT DATA PATH (step 7, m1nl's TG68K.C fork): the kernel offers an
+    // aligned word pair on k_long_cand; answering k_long_ack at the step
+    // moves both words at once (reads: k_din_hi = word at the address,
+    // data_in = word at +2; writes: k_dout, then k_dout_lo).
+    wire        k_long_cand;
+    wire [15:0] k_dout_lo;
+    // k_long_ack is set at DECIDE when the kernel offers an aligned pair for
+    // a cache lookup (a guess: CCMP finds out whether both words hit) and is
+    // only ever changed >= 2 clocks before the kernel samples it, like
+    // data_in: a pair hit steps at once; a hit on the asked word alone drops
+    // it and steps a clock later (FINISH); a miss drops it. The word at the
+    // address goes to data_in_hi straight from the even bank's register.
+    reg         k_long_ack = 1'b0;
     wire [1:0]  k_bs;
     wire [2:0]  k_fc;
     wire [3:0]  k_cacr;            // 68020 CACR: 0 EI, 1 FI, 2 CEI, 3 CI
@@ -147,10 +164,14 @@ module tg68_bus #(
         .nreset     (k_nreset),
         .clkena_in  (k_clkena),
         .data_in    (k_dat),
+        .data_in_hi (k_din_ce),
+        .long_ack   (k_long_ack),
         .ipl        (k_ipl),
         .berr       (k_berr),
         .addr_out   (k_addr),
         .data_write (k_dout),
+        .data_write_lo (k_dout_lo),
+        .long_cand  (k_long_cand),
         .nwr        (k_nwr),
         .nuds       (k_nuds),
         .nlds       (k_nlds),
@@ -168,6 +189,7 @@ module tg68_bus #(
     reg [2:0]  fc_r = 3'b110;
     reg        uds_want = 1'b1, lds_want = 1'b1;
     assign eab = a_r;
+    assign k_dat = !k_din_sel ? k_din : ((a_r[1] | k_long_ack) ? k_din_co : k_din_ce);
     assign {FC2, FC1, FC0} = fc_r;
 
     // ------------------------------------------------------------------
@@ -214,7 +236,7 @@ module tg68_bus #(
     // Timing: the cache RAM's read address is the kernel's own address
     // output, read on the edge INTO DECIDE (EARLY LOOKUP, step 6: a kernel
     // -> cache RAM path with SETTLE-1 clocks). DECIDE registers the RAM
-    // output (word into k_din_c, tag into ic_qt) and CCMP compares, so the
+    // output (word into k_din_ce/co, tag into ic_qt_e/o) and CCMP compares, so the
     // hit decision and the hit data are ordinary single-cycle paths. A hit
     // costs 5 clocks from one kernel step to the next, against 7+ for fast
     // RAM and ~45 for the ROM over the 7M bus.
@@ -222,35 +244,46 @@ module tg68_bus #(
     localparam integer IC_N  = 1 << IC_AW;
     localparam integer TAGW  = 1 + 2 + (23 - IC_AW);     // valid, region, a[23:IC_AW+1]
 
-    (* ram_style = "block" *) reg [15:0]     ic_data [0:IC_N-1];
-    (* ram_style = "block" *) reg [TAGW-1:0] ic_tag  [0:IC_N-1];
+    // TG68: each cache is two banks, even words (address bit 1 = 0) and odd
+    // words, half as deep: the same RAM, but one read gives both words of an
+    // aligned pair (32-BIT DATA PATH, step 7). Writes and the flush sweep go
+    // to the bank their word index's bit 0 selects.
+    localparam integer IC_NB = IC_N / 2;
+    (* ram_style = "block" *) reg [15:0]     ic_data_e [0:IC_NB-1];
+    (* ram_style = "block" *) reg [15:0]     ic_data_o [0:IC_NB-1];
+    (* ram_style = "block" *) reg [TAGW-1:0] ic_tag_e  [0:IC_NB-1];
+    (* ram_style = "block" *) reg [TAGW-1:0] ic_tag_o  [0:IC_NB-1];
     integer ic_i;
-    initial for (ic_i = 0; ic_i < IC_N; ic_i = ic_i + 1) begin
-        ic_data[ic_i] = 16'd0;
-        ic_tag[ic_i]  = {TAGW{1'b0}};
+    initial for (ic_i = 0; ic_i < IC_NB; ic_i = ic_i + 1) begin
+        ic_data_e[ic_i] = 16'd0; ic_data_o[ic_i] = 16'd0;
+        ic_tag_e[ic_i]  = {TAGW{1'b0}}; ic_tag_o[ic_i] = {TAGW{1'b0}};
     end
 
     // TG68: the RAMs read the kernel's address on every clock. The read
     // that counts is the one on the edge INTO DECIDE (EARLY LOOKUP, step 6),
     // two clocks after the kernel's registers moved: check_timing.py gives
     // kernel -> cache RAM paths SETTLE-1 clocks for this.
-    wire [IC_AW-1:0] ic_ra = k_addr[IC_AW:1];
-    reg  [15:0]      ic_dq;
-    reg  [TAGW-1:0]  ic_tq;
+    wire [IC_AW-2:0] ic_ra = k_addr[IC_AW:2];      // row: both banks
+    reg  [15:0]      ic_dq_e, ic_dq_o;
+    reg  [TAGW-1:0]  ic_tq_e, ic_tq_o;
     reg              ic_we = 1'b0;
     reg  [IC_AW-1:0] ic_wa;
     reg  [15:0]      ic_wd;
     reg  [TAGW-1:0]  ic_wt;
     always @(posedge clk) begin
-        ic_dq <= ic_data[ic_ra];
-        ic_tq <= ic_tag[ic_ra];
-        if (ic_we) begin
-            ic_data[ic_wa] <= ic_wd;
-            ic_tag[ic_wa]  <= ic_wt;
+        ic_dq_e <= ic_data_e[ic_ra]; ic_dq_o <= ic_data_o[ic_ra];
+        ic_tq_e <= ic_tag_e[ic_ra];  ic_tq_o <= ic_tag_o[ic_ra];
+        if (ic_we && !ic_wa[0]) begin
+            ic_data_e[ic_wa[IC_AW-1:1]] <= ic_wd;
+            ic_tag_e[ic_wa[IC_AW-1:1]]  <= ic_wt;
+        end
+        if (ic_we && ic_wa[0]) begin
+            ic_data_o[ic_wa[IC_AW-1:1]] <= ic_wd;
+            ic_tag_o[ic_wa[IC_AW-1:1]]  <= ic_wt;
         end
     end
 
-    reg  [TAGW-1:0]  ic_qt;            // the looked-up tag, registered at DECIDE
+    reg  [TAGW-1:0]  ic_qt_e, ic_qt_o; // the looked-up tags (both banks), at DECIDE
     // The cacheable-window test for the lookup, registered at DECIDE from the
     // kernel's address (k_rom/k_z2/k_cpuw, the same windows as ic_ok below).
     // ic_ok itself uses icache_win, which is one clock behind a_r and so is
@@ -283,7 +316,7 @@ module tg68_bus #(
     // Kickstart ROM), in its own block RAM, for data reads (busstate 10).
     // It shares the lookup pipeline (EARLY LOOKUP below): both RAMs are read
     // from the kernel's address on the edge into DECIDE, DECIDE loads the
-    // word of the kind this cycle uses into k_din_c and its tag into ic_qt,
+    // word of the kind this cycle uses into k_din_ce/co and its tag into ic_qt_e/o,
     // and CCMP compares.
     //
     // Write-through. Every CPU write reaches memory as before. A whole-word
@@ -308,35 +341,41 @@ module tg68_bus #(
     // Both caches are flushed after any reset and whenever MapROM is
     // switched on or off, since the ROM addresses then return other data.
     // ------------------------------------------------------------------
-    wire [15:0]      dc_dq;
-    wire [TAGW-1:0]  dc_tq;
+    wire [15:0]      dc_dq_e, dc_dq_o;
+    wire [TAGW-1:0]  dc_tq_e, dc_tq_o;
     reg              dc_we = 1'b0;
     reg  [IC_AW-1:0] dc_wa;
     reg  [15:0]      dc_wd;
     reg  [TAGW-1:0]  dc_wt;
     generate if (DCACHE != 0) begin : g_dcache
-        (* ram_style = "block" *) reg [15:0]     dc_data [0:IC_N-1];
-        (* ram_style = "block" *) reg [TAGW-1:0] dc_tag  [0:IC_N-1];
-        reg [15:0]     dq;
-        reg [TAGW-1:0] tq;
+        (* ram_style = "block" *) reg [15:0]     dc_data_e [0:IC_NB-1];
+        (* ram_style = "block" *) reg [15:0]     dc_data_o [0:IC_NB-1];
+        (* ram_style = "block" *) reg [TAGW-1:0] dc_tag_e  [0:IC_NB-1];
+        (* ram_style = "block" *) reg [TAGW-1:0] dc_tag_o  [0:IC_NB-1];
+        reg [15:0]     dq_e, dq_o;
+        reg [TAGW-1:0] tq_e, tq_o;
         integer i;
-        initial for (i = 0; i < IC_N; i = i + 1) begin
-            dc_data[i] = 16'd0;
-            dc_tag[i]  = {TAGW{1'b0}};
+        initial for (i = 0; i < IC_NB; i = i + 1) begin
+            dc_data_e[i] = 16'd0; dc_data_o[i] = 16'd0;
+            dc_tag_e[i]  = {TAGW{1'b0}}; dc_tag_o[i] = {TAGW{1'b0}};
         end
         always @(posedge clk) begin
-            dq <= dc_data[ic_ra];
-            tq <= dc_tag[ic_ra];
-            if (dc_we) begin
-                dc_data[dc_wa] <= dc_wd;
-                dc_tag[dc_wa]  <= dc_wt;
+            dq_e <= dc_data_e[ic_ra]; dq_o <= dc_data_o[ic_ra];
+            tq_e <= dc_tag_e[ic_ra];  tq_o <= dc_tag_o[ic_ra];
+            if (dc_we && !dc_wa[0]) begin
+                dc_data_e[dc_wa[IC_AW-1:1]] <= dc_wd;
+                dc_tag_e[dc_wa[IC_AW-1:1]]  <= dc_wt;
+            end
+            if (dc_we && dc_wa[0]) begin
+                dc_data_o[dc_wa[IC_AW-1:1]] <= dc_wd;
+                dc_tag_o[dc_wa[IC_AW-1:1]]  <= dc_wt;
             end
         end
-        assign dc_dq = dq;
-        assign dc_tq = tq;
+        assign dc_dq_e = dq_e; assign dc_dq_o = dq_o;
+        assign dc_tq_e = tq_e; assign dc_tq_o = tq_o;
     end else begin : g_no_dcache
-        assign dc_dq = 16'd0;
-        assign dc_tq = {TAGW{1'b0}};
+        assign dc_dq_e = 16'd0; assign dc_dq_o = 16'd0;
+        assign dc_tq_e = {TAGW{1'b0}}; assign dc_tq_o = {TAGW{1'b0}};
     end endgenerate
 
     wire dc_on   = dc_on_r;
@@ -382,19 +421,26 @@ module tg68_bus #(
     // function-code outputs need nearly three. So the cache RAMs are read on
     // the edge into DECIDE, a clock before DECIDE's own decision, and DECIDE
     // already has both caches' word and tag for the address:
-    //   * DECIDE loads the word of this cycle's kind into k_din_c (its own
+    //   * DECIDE loads the word of this cycle's kind into k_din_ce/co (its own
     //     register, through a 2-way mux only, whatever the compare will say:
-    //     data registers load unconditionally) and its tag into ic_qt, and
-    //     sets k_din_sel so the kernel's data input takes k_din_c;
+    //     data registers load unconditionally) and its tag into ic_qt_e/o, and
+    //     sets k_din_sel so the kernel's data input takes k_din_ce/co;
     //   * CCMP, the next clock, compares, and a hit steps the kernel there
-    //     and then: k_din_c has been stable for a clock, which is all
+    //     and then: k_din_ce/co has been stable for a clock, which is all
     //     DIN_SETUP asks. A miss sets k_din_sel back to k_din.
     // A hit costs 5 clocks from one step to the next instead of 7 (3 settle,
     // DECIDE, CCMP), the same as a prefetch hit. That made the step 5 pair
     // buffers, which bought 5 clocks for the second word of a pair, worth
     // nothing, so they are gone. A miss also goes on to the bus or the SDRAM
     // a clock sooner.
-    wire cc_hit = ic_ok_d && (ic_qt == ic_want) && (cyc_fetch ? ic_on : dc_on);
+    // Both banks' tags are compared; the word the cycle asked for (a_r[1])
+    // decides a narrow hit.
+    wire cc_hit_e = (ic_qt_e == ic_want);
+    wire cc_hit_o = (ic_qt_o == ic_want);
+    wire cc_on    = ic_ok_d && (cyc_fetch ? ic_on : dc_on);
+    wire cc_hit   = cc_on && (a_r[1] ? cc_hit_o : cc_hit_e);
+    // ...and a pair hit (k_long_ack is only set for aligned pairs) needs both
+    wire cc_long  = k_long_ack && cc_on && cc_hit_e && cc_hit_o;
 
     // ------------------------------------------------------------------
     // DIRECT -- direct SDRAM path for on-board fast RAM
@@ -521,14 +567,18 @@ module tg68_bus #(
         // EARLY LOOKUP: loaded every clock (only the DECIDE edge counts,
         // and CCMP is always the clock straight after it), so no enable sits
         // in the RAM -> register path.
-        ic_qt    <= (k_bs == 2'b00) ? ic_tq : dc_tq;
+        ic_qt_e  <= (k_bs == 2'b00) ? ic_tq_e : dc_tq_e;
+        ic_qt_o  <= (k_bs == 2'b00) ? ic_tq_o : dc_tq_o;
         // Loaded on every DECIDE clock (the last one counts) and then HELD:
         // re-reading after DECIDE could hand the kernel a word that a fill
         // put there after the tag was checked.
-        if (q == Q_DECIDE) k_din_c <= (k_bs == 2'b00) ? ic_dq : dc_dq;
+        if (q == Q_DECIDE) begin
+            k_din_ce <= (k_bs == 2'b00) ? ic_dq_e : dc_dq_e;
+            k_din_co <= (k_bs == 2'b00) ? ic_dq_o : dc_dq_o;
+        end
         // The kernel samples data_in at the end of the clkena clock; the
         // select goes back to k_din on that same edge.
-        if (k_clkena) k_din_sel <= 1'b0;
+        if (k_clkena) begin k_din_sel <= 1'b0; k_long_ack <= 1'b0; end
         ic_ok_d  <= (ICACHE != 0) && (k_rom || k_z2 || k_cpuw || icache_win_k);
         mr_act_d <= mr_active;
         ic_on_r  <= (ICACHE != 0) && k_cacr[0] && !flush_nxt;
@@ -545,7 +595,7 @@ module tg68_bus #(
             // Hold the kernel in reset, but keep stepping it: its internal
             // synchronous Reset only advances on clkena.
             k_nreset <= 1'b0;
-            k_din_sel <= 1'b0;
+            k_din_sel <= 1'b0; k_long_ack <= 1'b0;
             as_i  <= 1'b1; uds_i <= 1'b1; lds_i <= 1'b1; eRWn <= 1'b1;
             oRESETn  <= 1'b1;
             k_berr   <= 1'b0;
@@ -629,9 +679,12 @@ module tg68_bus #(
                     if (k_look) begin
                         q <= Q_CCMP;             // look in the cache first
                         // EARLY LOOKUP: the RAMs read this address on the
-                        // edge into DECIDE; k_din_c takes the word on this
+                        // edge into DECIDE; k_din_ce/co take the words on this
                         // edge (see below), CCMP decides
                         k_din_sel <= 1'b1;
+                        // 32-BIT DATA PATH: take the pair if both words hit
+                        // (CCMP decides; see k_long_ack)
+                        k_long_ack <= (DP32_ACK != 0) && k_long_cand && !k_addr[1];
                         if (k_bs == 2'b10 && k_fast && !dp_busy) begin
                             dp_req_i <= 1'b1;    // speculative read
                             dp_busy  <= 1'b1; dp_kind <= 2'd1;
@@ -657,34 +710,47 @@ module tg68_bus #(
                 end
             end
             // ----------------------------------------------------------
-            // EARLY LOOKUP: ic_qt and k_din were loaded on the edge into
+            // EARLY LOOKUP: ic_qt_e/o and k_din_ce/co were loaded on the edge into
             // this state. ic_ok_d is the window decode of this cycle's
             // address (icache_win is not valid yet, see ic_ok_d).
             Q_CCMP: begin
                 tmr <= 6'd0;
                 dp_spec <= 1'b0;
-                // k_din_c already holds the looked-up word (loaded in DECIDE)
+                // k_din_ce/k_din_co already hold the looked-up word (loaded in DECIDE)
                 // and k_din_sel picks it, so a hit steps the kernel now. On a
                 // miss the select goes back to k_din, which the miss path
                 // loads before the kernel steps.
-                if (cc_hit) begin
-                    bus_berr <= 1'b0;        // hit: no bus cycle at all
+                if (cc_long || (cc_hit && !k_long_ack)) begin
+                    // hit (a pair hit if k_long_ack): no bus cycle at all
+                    bus_berr <= 1'b0;
                     if (cnt >= STEP - 1 && DIN_SETUP <= 1) step();
                     else q   <= Q_FINISH;
                     if (dp_spec) dp_kind <= 2'd2;   // drop the speculative read
+                end else if (cc_hit) begin
+                    // the asked word hit but not its pair partner: take it
+                    // as a narrow access, a clock later, so that dropping
+                    // k_long_ack also reaches the kernel >= 2 clocks early
+                    bus_berr   <= 1'b0;
+                    k_long_ack <= 1'b0;
+                    q          <= Q_FINISH;
+                    if (dp_spec) dp_kind <= 2'd2;
                 end else if (dp_spec) begin
+                    k_long_ack <= 1'b0;
                     k_din_sel <= 1'b0;
                     q        <= Q_DWAIT;     // miss: the read is already out
                 end else if (dp_busy) begin
+                    k_long_ack <= 1'b0;
                     k_din_sel <= 1'b0;
                     q        <= Q_CFREE;     // miss: port still busy
                 end else if (dp_fast) begin
+                    k_long_ack <= 1'b0;
                     k_din_sel <= 1'b0;
                     dp_req_i <= 1'b1;        // miss in fast RAM: direct
                     dp_busy  <= 1'b1; dp_kind <= 2'd1;
                     dp_we    <= 1'b0;
                     q        <= Q_DWAIT;
                 end else begin
+                    k_long_ack <= 1'b0;
                     k_din_sel <= 1'b0;
                     q        <= Q_SETUP;     // miss: address is already out
                 end

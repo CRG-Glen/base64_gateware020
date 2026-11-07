@@ -78,6 +78,43 @@ generic(
 end TG68K_ALU;
 
 architecture logic of TG68K_ALU is
+	-- For rings 2**k+1, 2**k is congruent to -1 modulo the ring.
+	-- Fold the six-bit count into low-high, then correct a negative result.
+	function rotate_count_mod(count, ring_size : std_logic_vector(5 downto 0))
+		return std_logic_vector is
+		variable low_part, high_part : unsigned(5 downto 0);
+		variable difference : signed(6 downto 0);
+		variable remainder : unsigned(5 downto 0);
+	begin
+		case ring_size is
+			when "001001" =>
+				low_part := unsigned("000" & count(2 downto 0));
+				high_part := unsigned("000" & count(5 downto 3));
+			when "010001" =>
+				low_part := unsigned("00" & count(3 downto 0));
+				high_part := unsigned("0000" & count(5 downto 4));
+			when "100001" =>
+				low_part := unsigned('0' & count(4 downto 0));
+				high_part := (others => '0');
+				high_part(0) := count(5);
+			when others =>
+				low_part := (others => '0');
+				high_part := (others => '0');
+		end case;
+		difference := signed('0' & low_part) - signed('0' & high_part);
+		remainder := unsigned(difference(5 downto 0));
+		if difference(6) = '1' then
+			remainder := remainder + unsigned(ring_size);
+		end if;
+		case ring_size is
+			when "001001" | "010001" | "100001" =>
+				return std_logic_vector(remainder);
+			when "001000" => return "000" & count(2 downto 0);
+			when "010000" => return "00" & count(3 downto 0);
+			when "100000" => return '0' & count(4 downto 0);
+			when others => return "000000";
+		end case;
+	end function;
 -----------------------------------------------------------------------------
 -----------------------------------------------------------------------------
 -- ALU and more
@@ -841,48 +878,7 @@ process (OP1out, OP2out, opcode, bit_nr, bit_msb, bs_shift, bs_shift_mod, ring, 
 		END IF;
 
 -- calc shift count		
-		-- bs_shift_mod <= std_logic_vector(unsigned(bs_shift) rem unsigned(ring));
-		-- replace the divider with logic
-		CASE ring IS
-			WHEN "001001" =>
-				IF bs_shift = 63 THEN
-					bs_shift_mod <= "000000";
-				ELSIF bs_shift > 6*9-1 THEN
-					bs_shift_mod <= bs_shift - 6*9;
-				ELSIF bs_shift > 5*9-1 THEN
-					bs_shift_mod <= bs_shift - 5*9;
-				ELSIF bs_shift > 4*9-1 THEN
-					bs_shift_mod <= bs_shift - 4*9;
-				ELSIF bs_shift > 3*9-1 THEN
-					bs_shift_mod <= bs_shift - 3*9;
-				ELSIF bs_shift > 2*9-1 THEN
-					bs_shift_mod <= bs_shift - 2*9;
-				ELSIF bs_shift > 9-1 THEN
-					bs_shift_mod <= bs_shift - 9;
-				ELSE
-					bs_shift_mod <= bs_shift;
-				END IF;
-			WHEN "010001" =>
-				IF bs_shift > 3*17-1 THEN
-					bs_shift_mod <= bs_shift - 3*17;
-				ELSIF bs_shift > 2*17-1 THEN
-					bs_shift_mod <= bs_shift - 2*17;
-				ELSIF bs_shift > 17-1 THEN
-					bs_shift_mod <= bs_shift - 17;
-				ELSE
-					bs_shift_mod <= bs_shift;
-				END IF;
-			WHEN "100001" =>
-				IF bs_shift > 32 THEN
-					bs_shift_mod <= bs_shift - 33;
-				ELSE
-					bs_shift_mod <= bs_shift;
-				END IF;
-			WHEN "001000" => bs_shift_mod <= "000" & bs_shift(2 downto 0);
-			WHEN "010000" => bs_shift_mod <=  "00" & bs_shift(3 downto 0);
-			WHEN "100000" => bs_shift_mod <=   "0" & bs_shift(4 downto 0);
-			WHEN OTHERS => bs_shift_mod <= (OTHERS => '0');
-		END CASE;
+		bs_shift_mod <= rotate_count_mod(bs_shift, ring);
 
 		bit_nr <= bs_shift_mod(5 downto 0);
 		IF exe_opcode(8)='0' THEN  --right shift

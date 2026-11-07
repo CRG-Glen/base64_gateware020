@@ -98,7 +98,10 @@ for ctype, inst, body in cells(txt):
 
 # ---- classify --------------------------------------------------------------
 CLKENA = re.compile(r'(^|\.)(k_clkena|clkena_in)(\[|_|$)')
-KIN = re.compile(r'(^|\.)(k_din|data_in|k_ipl|ipl|IPL|k_berr|berr|k_nreset|nReset|nreset)(\[|_|$)')
+# k_long_ack (step 7, the 32-bit data path) is set at DECIDE and only ever
+# changes >= 2 clocks before the kernel samples it, like data_in; tb_top.sv
+# and tb_tg68_bus.sv assert that on every kernel step.
+KIN = re.compile(r'(^|\.)(k_din|data_in|k_ipl|ipl|IPL|k_berr|berr|k_nreset|nReset|nreset|k_long_ack)(\[|_|$)')
 # ...and the slaves' registered address decodes, which follow the address one
 # clock later and are only acted on once AS is low (AS falls 3 clocks after
 # the address changes, so they have 3T; 2T is used).

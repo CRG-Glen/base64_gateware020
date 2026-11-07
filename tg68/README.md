@@ -183,6 +183,23 @@ Boots from SD exactly like the fx68k build. Same `Mask` advice applies
   few percent between runs), MemTest 5.71 MB/s as before. Every
   cache hit in every test is checked against a shadow copy of what the CPU
   wrote; the bus bench (random DTACK, bus hand-over) now checks them too.
+* **32-bit data path (step 7).** The CPU core is now m1nl's fork of
+  TG68K.C, which can move an aligned pair of words (a longword operand, a
+  32-bit immediate, or an absolute-long address) in one step instead of two
+  when the memory side agrees. Each cache is split into an even-word and an
+  odd-word bank (same total size), so one lookup reads both words of a pair.
+  When the core offers a pair and both words hit, the adapter answers
+  `long_ack` and hands over both words: the pair costs 5 clocks instead of
+  10. If only the asked word hits, it is taken as an ordinary access a clock
+  later; a miss goes to memory as before (pairs come only from the caches
+  so far; longword writes are still two 16-bit writes). In simulation,
+  second pass from the caches: sequential reads 10.64 → 12.59 MB/s (+18%),
+  scattered longword reads 15.66 → 20.41 MB/s (+30%), the 1 KB copy
+  unchanged at 5.35 MB/s (its source and destination share cache slots, so
+  its reads miss). **Not yet run on hardware.** The cache-hit check now
+  covers both words of every pair and that `long_ack` is set exactly for
+  pair hits, and asserts that `long_ack` never changes in the clock before
+  the CPU samples it.
 * **MapROM.** The board's boot ROM (`turbomem.mem`, built with
   `DIAG_MAPROM=1`) copies Kickstart into the SDRAM shadow at every boot,
   verifies it and switches over, so it is normally already on. Both caches
@@ -299,7 +316,7 @@ actually provides:
 | adapter ctrl → … | 1T | `tg68_bus`'s own state and flags. Split from *logic* because they steer the read-data registers on single-clock transitions, so the slaves' 2T read-data budget must not apply to them |
 | … → window decode | 1T | The fast RAM window registers the direct-path decode reads |
 | config regs → … | 4T | Autoconfig base/configured, maprom bits, SDRAM `init_done`: quasi-static |
-| adapter → kernel | 2T | `TG_DIN` |
+| adapter → kernel | 2T | `TG_DIN`; also `k_long_ack` (step 7), changed ≥ 2 clocks before the CPU samples it (the testbenches assert this) |
 | kernel → cache RAM | 2T | `TG_SETTLE`-1: the early lookup reads the cache RAMs on the edge into DECIDE (step 6) |
 | kernel → adapter | 3T | `TG_SETTLE` |
 | kernel → kernel | 4T | `TG_STEP` |
@@ -423,9 +440,18 @@ oss-cad-suite's Windows build doesn't reliably ship. `tg68_020_b0.v` is
 GHDL's synthesis output for the 68020 configuration. 32-bit MUL/DIV,
 bitfields, VBR and 68010+ stack frames are on. The barrel shifter is off:
 it saved nothing measurable in LUTs and isn't needed for function.
-`scripts/gen_tg68.sh` regenerates it (Linux, needs `ghdl` and `yosys`).
-Its arguments select variants: barrel shifter, no bitfields, iterative
-multiply.
+`scripts/gen_tg68.sh` regenerates it (Linux, needs `ghdl` and `yosys`;
+Ubuntu's `ghdl` 4.1.0 package with `YOSYS=yowasp-yosys` reproduces the
+committed netlist byte for byte). Its arguments select variants: barrel
+shifter, no bitfields, iterative multiply.
+
+From step 7 the VHDL is m1nl's fork of TG68K.C
+(<https://github.com/m1nl/TG68K.C>, commit `a8e6f38`), unmodified: upstream
+TG68K.C (our kernel was identical to its base) plus a cheaper rotate unit and
+the 32-bit data path (`long_cand`/`long_ack`, `data_in_hi`,
+`data_write_lo`). The wrapper `tg68_020.vhd` passes those ports through and
+sets `DataPath32` with its `DP32` generic (default 7: data, immediates and
+absolute addresses).
 
 GHDL turns a handful of VHDL `case ... when others => null` statements into
 latches that yosys rejects. `fix_latches.py` neutralises exactly those.
@@ -434,8 +460,9 @@ only be reached in simulation with X/U inputs.
 
 ## Credits
 
-Tobias Gubener (TG68K.C), Alastair M. Robinson (the parent gateware and its
-TG68 work), the fx68k build's authors for the whole board-side design,
+Tobias Gubener (TG68K.C), m1nl (the TG68K.C fork with the 32-bit data path,
+and the IcePi Zero Minimig that showed how far this core can go), Alastair M.
+Robinson (the parent gateware and its TG68 work), the fx68k build's authors for the whole board-side design,
 Niklas Ekström (the SD controller and sfsd.device), and JBilander for the
 Base64.
 

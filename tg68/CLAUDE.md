@@ -22,9 +22,11 @@ MapROM.
 
 ```
 rtl/base64_tg68/   top level (base64_tg68_top.sv) and the bus adapter tg68_bus.v
-rtl/tg68/          TG68K.C VHDL (unmodified except tg68_020.vhd wrapper) and
-                   tg68_020_b0.v, the GHDL-converted netlist actually built
-                   (regenerate with scripts/gen_tg68.sh; needs ghdl+yosys plugin)
+rtl/tg68/          TG68K.C VHDL: m1nl's fork (github.com/m1nl/TG68K.C, a8e6f38,
+                   32-bit data path), unmodified, + the tg68_020.vhd wrapper;
+                   tg68_020_b0.v is the GHDL-converted netlist actually built
+                   (regenerate: YOSYS=yowasp-yosys sh scripts/gen_tg68.sh, needs
+                   Ubuntu's ghdl 4.1.0; reproduces the netlist byte for byte)
 rtl/base64_fx68k/  copies of the fx68k build's slaves; every change is
                    marked "TG68:" (fastmem_zii: direct SDRAM port and BUS_RAM;
                    all slaves: *_int_win outputs)
@@ -170,6 +172,17 @@ that gives the "_fast" files.
   after this (also 5 clocks) and were removed. tb_top.sv and
   tb_tg68_bus.sv check every cache hit's data against a shadow of the
   CPU's writes.
+- **32-bit data path (step 7, not yet tested on hardware):** core = m1nl's
+  TG68K.C fork; `k_long_cand` offers an aligned pair. Each cache is two banks
+  (`*_e` even words, `*_o` odd words, row = addr[12:2]); DECIDE registers both
+  banks' words (`k_din_ce/k_din_co`) and tags (`ic_qt_e/o`). `k_long_ack` is
+  set at DECIDE (pair offered, aligned) and resolved in CCMP: both words hit
+  (`cc_long`) -> step with the pair (data_in_hi = k_din_ce, data_in =
+  k_din_co); only the asked word hits -> drop k_long_ack and step via FINISH
+  (so the drop is 2 clocks old); miss -> drop. It never changes in the clock
+  before the kernel samples (tb assertion), so check_timing.py classes it
+  adapter -> kernel. `DP32_ACK=0` turns pairs off. Pairs only from cache hits
+  so far; writes stay 16-bit.
 - **Cache enable:** both caches follow CACR EI. The data cache must NOT get
   the 68030 CACR bit 8: software tells an 020 from an 030 by setting that bit
   and reading it back, so storing it would make the CPU detect as a 68030 and
@@ -242,4 +255,5 @@ that gives the "_fast" files.
 - A 2-4 entry write queue (copies are write-bound).
 - Bigger caches: 16 more block RAMs, which would crowd out RTG.
 - RTG framebuffer in SDRAM: discussed as a future add-on, no design yet.
-- A 32-bit TG68 bus: large change inside the kernel; parked.
+- Step 7 follow-ups: longword WRITES as pairs (two posted SDRAM writes per
+  pair), and pairs from the direct SDRAM path on a miss.

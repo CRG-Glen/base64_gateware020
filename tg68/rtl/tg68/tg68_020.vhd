@@ -6,18 +6,28 @@
 -- trap), saving LUTs and, mainly, routing congestion.
 -- MULHW generic: 0 does MULU.L/MULS.L iteratively instead of in the DSP
 -- blocks -- slower multiplies, but no wide buses to and from the DSP row.
-library ieee; use ieee.std_logic_1164.all;
+-- DP32 generic: the kernel's DataPath32 flags (m1nl's TG68K.C fork, commit
+-- a8e6f38): bit 0 longword data reads/writes, bit 1 32-bit immediates, bit 2
+-- absolute-long address extensions, each as one aligned pair when the bus
+-- side answers long_cand with long_ack. With long_ack held at 0 the kernel
+-- runs the ordinary 16-bit sequence.
+library ieee; use ieee.std_logic_1164.all; use ieee.numeric_std.all;
 entity tg68_020 is
-  generic (BARREL : integer := 0; BITFIELD : integer := 1; MULHW : integer := 1);
+  generic (BARREL : integer := 0; BITFIELD : integer := 1; MULHW : integer := 1;
+           DP32 : integer := 7);
   port (
     clk        : in  std_logic;
     nreset     : in  std_logic;
     clkena_in  : in  std_logic;
     data_in    : in  std_logic_vector(15 downto 0);
+    data_in_hi : in  std_logic_vector(15 downto 0);   -- wide read, word at addr+0
+    long_ack   : in  std_logic;                       -- accept this aligned pair
     ipl        : in  std_logic_vector(2 downto 0);
     berr       : in  std_logic;
     addr_out   : out std_logic_vector(31 downto 0);
     data_write : out std_logic_vector(15 downto 0);
+    data_write_lo : out std_logic_vector(15 downto 0); -- wide write, word at addr+2
+    long_cand  : out std_logic;                       -- this access may be a pair
     nwr        : out std_logic;
     nuds       : out std_logic;
     nlds       : out std_logic;
@@ -33,11 +43,14 @@ begin
   cpu: entity work.TG68KdotC_Kernel
     generic map (SR_Read => 1, VBR_Stackframe => 1, extAddr_Mode => 1,
                  MUL_Mode => 1, DIV_Mode => 1, BitField => BITFIELD,
-                 BarrelShifter => BARREL, MUL_Hardware => MULHW)
+                 BarrelShifter => BARREL, MUL_Hardware => MULHW,
+                 DataPath32 => std_logic_vector(to_unsigned(DP32, 3)))
     port map (clk => clk, nReset => nreset, clkena_in => clkena_in,
-              data_in => data_in, IPL => ipl, IPL_autovector => '0',
+              data_in => data_in, data_in_hi => data_in_hi, long_ack => long_ack,
+              IPL => ipl, IPL_autovector => '0',
               berr => berr, CPU => "11",
-              addr_out => addr_out, data_write => data_write, nWr => nwr,
+              addr_out => addr_out, data_write => data_write,
+              data_write_lo => data_write_lo, long_cand => long_cand, nWr => nwr,
               nUDS => nuds, nLDS => nlds, busstate => busstate,
               longword => open, nResetOut => nresetout, FC => fc,
               clr_berr => open, skipFetch => skipfetch,

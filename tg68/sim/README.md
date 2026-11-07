@@ -29,6 +29,15 @@
   under random DTACK and the bus hand-over. (Checked against deliberately
   broken versions: DECIDE not loading the word is caught by both benches;
   a compare using the late `icache_win` collapses the data-cache hits.)
+  Step 7 (32-bit data path): a routine in fast RAM with an aligned 32-bit
+  immediate and an absolute-long address runs twice, the second time as
+  pairs from the caches; and a longword whose second word was dropped from
+  the cache must not be taken as a pair. The oracle checks both words of
+  every pair, that `long_ack` is set exactly for pair hits, and that
+  `long_ack`/`k_din_sel` never change in the clock before the CPU samples
+  them. (Checked against broken versions: a pair hit ignoring the second
+  word's tag, the wrong word on `data_in_hi`, stepping with `long_ack`
+  still set, and dropping it a clock too late: all caught.)
 * **bench copy | read | scatter | sd**: fast RAM throughput, timed on a second
   pass with the loop running from the instruction cache. `copy` copies
   1 KB, `read` sums 1 KB sequentially, `scatter` reads four longs in
