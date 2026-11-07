@@ -138,11 +138,10 @@ module tb;
         pb_pq <= dut.cpu.q;
         pb_mr <= dut.cpu.mr_active;
         if (dut.cpu.mr_active !== pb_mr) shadow.delete();
-        // a write cycle has just been accepted: a_r, oEdb and the strobes
-        // were latched on the edge that left DECIDE. (An internal step or a
-        // prefetch hit leaves DECIDE too, and re-applies the last write:
-        // harmless.)
-        if (pb_pq == 4'd1 && dut.cpu.q != 4'd1 && !dut.cpu.eRWn) begin
+        // a write cycle has just been set up (cyc_start): a_r, oEdb and the
+        // strobes belong to it. (oEdb and the strobes now load on every
+        // DECIDE clock, so only a real cycle start may be recorded.)
+        if (dut.cpu.cyc_start && !dut.cpu.eRWn) begin
             pb_k = dut.cpu.a_r;
             pb_s = shadow.exists(pb_k) ? shadow[pb_k] : 18'd0;
             if (!dut.cpu.uds_want) begin pb_s[17] = 1'b1; pb_s[15:8] = dut.cpu.oEdb[15:8]; end

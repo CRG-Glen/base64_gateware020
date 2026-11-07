@@ -130,7 +130,12 @@ def start_class(inst):
     if STATIC.match(inst): return 'S'
     if BUSOUT.match(inst): return 'A'
     if inst.startswith('cpu.') and CLKENA.search(inst): return 'C'
-    if inst.startswith('cpu.') and (KIN.search(inst) or KDIN.match(inst)): return 'M'
+    # (not the kernel's own registers, cpu.core.cpu.*: yosys names some of
+    # them after nets such as nReset, and they are kernel starts whatever
+    # their name says; adapter registers named after a kernel PORT sit at
+    # cpu.core.<port>, one level up. Seen in the step 7 build.)
+    if inst.startswith('cpu.') and not inst.startswith('cpu.core.cpu.') \
+            and (KIN.search(inst) or KDIN.match(inst)): return 'M'
     if inst.startswith('cpu.core.'):                    return 'K'
     # The adapter's own control registers (sequencer state, timers, flags).
     # Ordinary 1T logic like 'O', but split out because 'O' -> read-data

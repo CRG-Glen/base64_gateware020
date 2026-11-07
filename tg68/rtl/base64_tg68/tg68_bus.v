@@ -542,6 +542,9 @@ module tg68_bus #(
     reg [5:0] cnt  = 6'd0;   // clocks since last clkena (saturating)
     reg [5:0] tmr  = 6'd0;   // per-state timer
     reg       bus_berr = 1'b0;
+    reg       cyc_start = 1'b0;   // a cycle was set up on the last edge (a_r and
+                                  // the bus registers belong to it; for the
+                                  // test benches' write shadow)
 
     // Watchdog for the stall LED: ~2^23 clocks = ~98 ms
     reg [23:0] wd = 24'd0;
@@ -564,6 +567,7 @@ module tg68_bus #(
         k_clkena <= 1'b0;
         ic_we    <= 1'b0;
         dc_we    <= 1'b0;
+        cyc_start <= 1'b0;
         // EARLY LOOKUP: loaded every clock (only the DECIDE edge counts,
         // and CCMP is always the clock straight after it), so no enable sits
         // in the RAM -> register path.
@@ -648,6 +652,23 @@ module tg68_bus #(
                 // here, after the outputs have settled. A glitch would
                 // reset every peripheral on the motherboard.
                 oRESETn <= k_nresetout;
+                // Data registers that only matter for a cycle that starts load
+                // on EVERY DECIDE clock, whatever DECIDE decides, so the
+                // decision tree (the kernel's address, step 7: ~25 ns) stays
+                // out of their enables. Each is used only by the cycle set up
+                // here, and DECIDE comes no sooner after the last cycle than
+                // a new cycle would, so the old values are held as long as
+                // before. The port's write data belong to a request still in
+                // flight, if there is one.
+                oEdb      <= k_dout;
+                uds_want  <= k_nuds;
+                lds_want  <= k_nlds;
+                cyc_fetch <= (k_bs == 2'b00);
+                if (!dp_busy) begin
+                    dp_we    <= ~k_nwr;
+                    dp_wdata <= k_dout;
+                    dp_be    <= ~{k_nuds, k_nlds};
+                end
                 if (internal_step) begin
                     if (cnt >= STEP - 1) step();
                 end else if (k_pf_ok) begin
@@ -661,19 +682,9 @@ module tg68_bus #(
                     a_r      <= k_addr[31:1];
                     fc_r     <= k_fc;
                     eRWn     <= k_nwr;          // RW valid before AS, like S1
-                    oEdb     <= k_dout;
-                    uds_want <= k_nuds;
-                    lds_want <= k_nlds;
                     tmr      <= 6'd0;
-                    cyc_fetch <= (k_bs == 2'b00);
                     dp_fast   <= k_fast;
-                    // the port's write data belong to a request still in
-                    // flight, if there is one
-                    if (!dp_busy) begin
-                        dp_we    <= ~k_nwr;
-                        dp_wdata <= k_dout;
-                        dp_be    <= ~{k_nuds, k_nlds};
-                    end
+                    cyc_start <= 1'b1;
                     dp_spec  <= 1'b0;
                     // The cache RAMs read on this edge used k_addr already.
                     if (k_look) begin

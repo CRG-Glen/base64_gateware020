@@ -79,7 +79,7 @@ module tb;
     reg [17:0] sh_s; reg [31:1] sh_k; reg [3:0] sh_pq = 0;
     always @(posedge clk) begin
         sh_pq <= dut.q;
-        if (sh_pq == 4'd1 && dut.q != 4'd1 && !dut.eRWn) begin
+        if (dut.cyc_start && !dut.eRWn) begin
             sh_k = dut.a_r;
             sh_s = shadow.exists(sh_k) ? shadow[sh_k] : 18'd0;
             if (!dut.uds_want) begin sh_s[17] = 1'b1; sh_s[15:8] = dut.oEdb[15:8]; end
