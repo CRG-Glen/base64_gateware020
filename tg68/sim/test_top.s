@@ -196,6 +196,21 @@ cp32:   move.l  (%a0)+,(%a1)+
         move.b  #0x99,0x08000D03    | byte write: the second word's entry is dropped
         move.l  0x08000D00,%d0      | first word hits, second misses
         move.l  %d0,0x8198          | 8198 31323399 (not the stale 3334)
+        | -- 32-bit SDRAM (step 8): pair writes must land in the SDRAM --
+        move.l  #0x51525354,0x08004C00  | aligned longword: one pair write
+        move.l  #0,0x08006C00       | same cache slots 8 KB up: evicts both words
+        move.l  0x08004C00,%d0      | misses: both words come from the SDRAM
+        move.l  %d0,0x819C          | 819C 51525354
+        move.l  #0x61626364,0x08004D02  | misaligned: two 16-bit writes, no pair
+        move.l  #0,0x08006D00       | evict
+        move.l  #0,0x08006D04
+        move.l  0x08004D02,%d0
+        move.l  %d0,0x81A0          | 81A0 61626364
+        move.l  #0x71727374,0x08004E00  | both words into the data cache
+        move.l  0x08004E00,%d0      | (read back: now cached)
+        move.l  #0x81828384,0x08004E00  | pair write over cached words
+        move.l  0x08004E00,%d0      | hits: both cache entries updated
+        move.l  %d0,0x81A4          | 81A4 81828384
         .endif
         moveq   #0,%d7
         jsr     romfn+0xF80000      | Kickstart-ROM range: over the 7M bus,

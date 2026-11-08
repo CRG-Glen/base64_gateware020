@@ -116,11 +116,15 @@ entity TG68KdotC_Kernel is
 		BarrelShifter : integer := 1;		--0=>no,			1=>yes,				2=>switchable with CPU(1)  
 		MUL_Hardware : integer := 1;		--0=>no,			1=>yes,
 		-- Optional pair transfers: bit 0=data, bit 1=immediate, bit 2=absolute address.
-		DataPath32 : std_logic_vector(2 downto 0) := "111"
+		DataPath32 : std_logic_vector(2 downto 0) := "111";
+		-- Base64: 1 = clkena_lw comes in on clkena_lw_in, registered by the
+		-- bus side (see the clkena_lw assignment below)
+		ClkenaLW_Ext : integer := 0
 		);
 	port(clk						: in std_logic;
 		nReset					: in std_logic;			--low active
 		clkena_in				: in std_logic:='1';
+		clkena_lw_in			: in std_logic:='0';	-- Base64, with ClkenaLW_Ext=1
 		data_in					: in std_logic_vector(15 downto 0);
 		IPL						: in std_logic_vector(2 downto 0):="111";
 		IPL_autovector			: in std_logic:='0';
@@ -555,7 +559,16 @@ ALU: TG68K_ALU
 	-- Used only with aligned data/extension pairs.
 	addr_p2 <= addr(31 downto 2) & "10";
 	data_write_lo <= data_write_mux(15 downto 0) WHEN DataPath32(0)='1' ELSE (others=>'0');
-	clkena_lw <= '1' WHEN clkena_in='1' AND (memmaskmux(3)='1' OR l1='1') ELSE '0';
+	-- Base64 (tg68/README.md, "Timing"): with ClkenaLW_Ext=1 the bus side
+	-- supplies clkena_lw from a register it sets on the same edge as
+	-- clkena_in, to clkena AND (NOT longword OR long_ack) taken from the
+	-- settled outputs (memmaskmux(3) = NOT longword is final SETTLE clocks
+	-- after a step; long_ack never changes on the edge that sets clkena).
+	-- clkena_lw gates most of the kernel's registers (~320 loads); computed
+	-- here it put a LUT and a second high-fanout hop on every clkena path,
+	-- which then failed on 11 of 12 seeds once step 8 moved the placement.
+	clkena_lw <= clkena_lw_in WHEN ClkenaLW_Ext=1 ELSE
+	             '1' WHEN clkena_in='1' AND (memmaskmux(3)='1' OR l1='1') ELSE '0';
 	clr_berr <= '1' WHEN setopcode='1' AND trap_berr='1' ELSE '0';
 	
 	PROCESS (clk, nReset)

@@ -23,8 +23,9 @@ MapROM.
 ```
 rtl/base64_tg68/   top level (base64_tg68_top.sv) and the bus adapter tg68_bus.v
 rtl/tg68/          TG68K.C VHDL: m1nl's fork (github.com/m1nl/TG68K.C, a8e6f38,
-                   32-bit data path) with ONE marked change (l1 <= long_ack,
-                   see README), + the tg68_020.vhd wrapper;
+                   32-bit data path) with TWO marked changes (l1 <= long_ack;
+                   clkena_lw from the clkena_lw_in port, see README), + the
+                   tg68_020.vhd wrapper;
                    tg68_020_b0.v is the GHDL-converted netlist actually built
                    (regenerate: YOSYS=yowasp-yosys sh scripts/gen_tg68.sh, needs
                    Ubuntu's ghdl 4.1.0; reproduces the netlist byte for byte)
@@ -192,6 +193,29 @@ that gives the "_fast" files.
   DECIDE clock under `dec_r` (= q is DECIDE, tb-asserted); `cyc_start` marks a
   real cycle start for the tb write shadow. Timing margins are thin (seed 4:
   +0.06 ns 1T, +0.86 ns kernel -> logic).
+- **32-bit SDRAM writes (step 8, not yet on hardware):** `DP32_WR=1`.
+  `k_wpair` = pair offered, aligned, both strobes. Only `k_long_ack` is
+  set in the posted-write branch (fast RAM only). `dp_pair` (= k_wpair) and
+  `dp_wdata_lo` (the kernel's `data_write_lo`) load under `dec_r` with the
+  other port data; sdram_ctrl (`TG68:`) latches `cur_pair = pair && we`,
+  so reads ignore dp_pair. S_WR2: a second WRITE at col|1 the clock after
+  the first (tCCD=1, same open row). Cache: pw_upd writes the even word,
+  then pw_upd2 (<= dp_pair, held while the port is busy) the odd word a
+  clock later. The prefetch drop compares k_addr[31:2] (either word).
+  First version set dp_pair/pw_pair inside the DECIDE branches: kernel ->
+  logic failed by ~1-2 ns on most seeds (decode fan-out); moving them out
+  fixed that class. clkena -> kernel then failed 11/12 seeds on an
+  identical kernel netlist, and with DP32_WR=0 too: the path was fragile.
+  Kernel change 2 fixed it: `k_clkena_lw` (set with k_clkena to
+  `!k_longword || k_long_ack`) drives the kernel's clkena_lw (~320 loads)
+  through `clkena_lw_in` (wrapper generic CLKLW=1, kernel generic
+  ClkenaLW_Ext). Both tbs assert it equals the kernel's own formula every
+  clock. check_timing's CLKENA pattern includes `clkena_lw` (yosys could
+  name the register after the port). Seed 3: +0.37 ns 1T, +1.70 ns
+  multicycle; seeds 1, 2, 4 miss by 0.1-0.8 ns. Tests: tb shadow records both words
+  (`wr_pairs`), fastmem FAILs on `wr_pairs < 4` or any SDRAM model
+  violation (`u_sdram.n_err`), directed tests at 0x819C/0x81A0/0x81A4;
+  mutations (2nd column, no pw_upd2, masked 2nd write) all caught.
 - **Cache enable:** both caches follow CACR EI. The data cache must NOT get
   the 68030 CACR bit 8: software tells an 020 from an 030 by setting that bit
   and reading it back, so storing it would make the CPU detect as a 68030 and
@@ -268,5 +292,5 @@ that gives the "_fast" files.
 - A 2-4 entry write queue (copies are write-bound).
 - Bigger caches: 16 more block RAMs, which would crowd out RTG.
 - RTG framebuffer in SDRAM: discussed as a future add-on, no design yet.
-- Step 7 follow-ups: longword WRITES as pairs (two posted SDRAM writes per
-  pair), and pairs from the direct SDRAM path on a miss.
+- Step 8 follow-up: pair READS from the direct SDRAM path on a cache miss
+  (two READ commands back to back, both words returned, both banks filled).

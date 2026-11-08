@@ -59,6 +59,8 @@ module tg68_bus #(
     parameter integer DCACHE     = 1,  // data cache, see DCACHE below
     parameter integer DP32_ACK   = 1,  // answer aligned word pairs from the caches
                                        // (32-BIT DATA PATH; 0 = 16-bit only)
+    parameter integer DP32_WR    = 1,  // post aligned longword writes to fast RAM
+                                       // as one pair (32-BIT SDRAM, step 8)
     parameter integer IC_AW      = 12, // log2(cache words): 12 = 4096 = 8 KB
     parameter integer BARREL     = 0   // documentation only: which netlist
 )(
@@ -106,6 +108,9 @@ module tg68_bus #(
     output reg         dp_we,
     output reg  [15:0] dp_wdata,
     output reg  [1:0]  dp_be,
+    output reg         dp_pair,    // 32-BIT SDRAM: this posted write is an aligned
+                                   // pair, dp_wdata to the word, dp_wdata_lo to +2
+    output reg  [15:0] dp_wdata_lo,
     input  wire        dp_ack,
     input  wire [15:0] dp_rdata,
     output reg  [15:0] oEdb,
@@ -122,6 +127,14 @@ module tg68_bus #(
     // Kernel
     // ------------------------------------------------------------------
     reg         k_clkena = 1'b0;
+    // The kernel's long-word clock enable, clkena AND (NOT longword OR
+    // long_ack), set on the same edge as k_clkena from settled inputs:
+    // longword is a kernel output, final SETTLE clocks after a step, and
+    // k_long_ack never changes on a step edge (tb-asserted). As a register it
+    // takes a LUT and a high-fanout hop off every clkena -> kernel path
+    // (kernel change 2, see TG68KdotC_Kernel.vhd).
+    reg         k_clkena_lw = 1'b0;
+    wire        k_longword;
     reg         k_nreset = 1'b0;
     reg  [15:0] k_din    = 16'hFFFF;
     // EARLY LOOKUP (step 6): a cache hit's word goes to the kernel from its
@@ -163,6 +176,7 @@ module tg68_bus #(
         .clk        (clk),
         .nreset     (k_nreset),
         .clkena_in  (k_clkena),
+        .clkena_lw_in (k_clkena_lw),
         .data_in    (k_dat),
         .data_in_hi (k_din_ce),
         .long_ack   (k_long_ack),
@@ -172,6 +186,7 @@ module tg68_bus #(
         .data_write (k_dout),
         .data_write_lo (k_dout_lo),
         .long_cand  (k_long_cand),
+        .longword   (k_longword),
         .nwr        (k_nwr),
         .nuds       (k_nuds),
         .nlds       (k_nlds),
@@ -394,6 +409,10 @@ module tg68_bus #(
     // anything else drops the entry.
     reg  pw_upd = 1'b0;
     reg  pw_dc  = 1'b0;    // ...and the data-cache entry becomes valid
+    // 32-BIT SDRAM (step 8): a pair write updates the second word's entries
+    // one clock after the first (pw_upd2, from dp_wdata_lo); still >= 1
+    // clock before the next lookup's early read.
+    reg  pw_upd2 = 1'b0;
     //
     // OVERLAP. A cache lookup does not need the SDRAM, so it may start while
     // a posted write, a prefetch or a discarded read is still finishing in
@@ -521,6 +540,9 @@ module tg68_bus #(
     wire k_pf_hit = (DIRECT != 0) && pf_valid && (k_bs == 2'b10) && k_nwr
                     && (k_addr[31:1] == pf_a) && k_fast;
     wire k_pf_ok  = k_pf_hit && !dp_busy;
+    // 32-BIT SDRAM (step 8): a longword write the kernel offers as an aligned
+    // pair, both bytes of the word strobed (a pair is always a whole longword)
+    wire k_wpair  = (DP32_WR != 0) && k_long_cand && !k_addr[1] && !k_nuds && !k_nlds;
 
     // ------------------------------------------------------------------
     // STROBE PIPELINE
@@ -570,6 +592,7 @@ module tg68_bus #(
 
     always @(posedge clk) begin
         k_clkena <= 1'b0;
+        k_clkena_lw <= 1'b0;
         ic_we    <= 1'b0;
         dc_we    <= 1'b0;
         cyc_start <= 1'b0;
@@ -614,13 +637,15 @@ module tg68_bus #(
             dp_inc   <= 1'b0;
             pf_valid <= 1'b0;
             pf_fill  <= 1'b0; pf_dc <= 1'b0;
-            pw_upd   <= 1'b0;
+            pw_upd   <= 1'b0; pw_upd2 <= 1'b0;
+            dp_pair  <= 1'b0;
             dp_spec  <= 1'b0;
             stalled  <= 1'b0;
             wd       <= 24'd0;
             q        <= Q_SETTLE;
             if (cnt >= STEP - 1) begin
                 k_clkena <= 1'b1;
+                k_clkena_lw <= !k_longword || k_long_ack;
                 cnt      <= 6'd0;
                 k_ipl    <= {IPL2n, IPL1n, IPL0n};
             end
@@ -640,6 +665,9 @@ module tg68_bus #(
             end
             if (pw_upd) begin
                 pw_upd <= 1'b0;
+                // dp_pair still holds this write's flag: the port is busy
+                // with it, so DECIDE has not reloaded it
+                pw_upd2 <= dp_pair;
                 if (ICACHE != 0 && !ic_flush) begin
                     ic_we <= 1'b1; ic_wa <= a_r[IC_AW:1]; ic_wt <= {TAGW{1'b0}};
                 end
@@ -647,6 +675,19 @@ module tg68_bus #(
                     dc_we <= 1'b1; dc_wa <= a_r[IC_AW:1];
                     dc_wt <= ic_want; dc_wt[TAGW-1] <= pw_dc;
                     dc_wd <= dp_wdata;
+                end
+            end
+            if (pw_upd2) begin
+                // the pair's second word (a_r is the first, an even word; the
+                // same tag; a pair is always a whole longword)
+                pw_upd2 <= 1'b0;
+                if (ICACHE != 0 && !ic_flush) begin
+                    ic_we <= 1'b1; ic_wa <= {a_r[IC_AW:2], 1'b1}; ic_wt <= {TAGW{1'b0}};
+                end
+                if (DCACHE != 0) begin
+                    dc_we <= 1'b1; dc_wa <= {a_r[IC_AW:2], 1'b1};
+                    dc_wt <= ic_want; dc_wt[TAGW-1] <= pw_dc;
+                    dc_wd <= dp_wdata_lo;
                 end
             end
             // Data registers that only matter for a cycle that starts load
@@ -664,7 +705,11 @@ module tg68_bus #(
                 if (!dp_busy) begin
                     dp_we    <= ~k_nwr;
                     dp_wdata <= k_dout;
+                    dp_wdata_lo <= k_dout_lo;
                     dp_be    <= ~{k_nuds, k_nlds};
+                    // 32-BIT SDRAM: the controller only honours it on a
+                    // write (cur_pair = pair && we), so reads need not clear it
+                    dp_pair  <= k_wpair;
                 end
             end
             case (q)
@@ -711,10 +756,19 @@ module tg68_bus #(
                             dp_spec  <= 1'b1;
                         end
                     end else if (k_fast && !k_nwr) begin
-                        // posted write: issue it and step on
+                        // posted write: issue it and step on. An aligned
+                        // longword the kernel offers as a pair goes as ONE
+                        // request: the controller writes both words back to
+                        // back (32-BIT SDRAM). k_long_ack is set on this edge
+                        // and the kernel steps at the end of FINISH, so it is
+                        // 2 clocks old when sampled, like a cache pair.
                         dp_req_i <= 1'b1;
                         dp_busy  <= 1'b1; dp_kind  <= 2'd2;
-                        if (pf_valid && k_addr[31:1] == pf_a) pf_valid <= 1'b0;
+                        k_long_ack <= k_wpair;   // (dp_pair: loaded under dec_r)
+                        // drop the prefetched word if this writes it: compared
+                        // by longword, which covers a pair's second word too
+                        if (pf_valid && k_addr[31:2] == pf_a[31:2])
+                            pf_valid <= 1'b0;
                         // the caches are updated on the next clock (pw_upd)
                         pw_upd <= 1'b1;
                         pw_dc  <= dc_on && !k_nuds && !k_nlds && (k_z2 || k_cpuw);
@@ -947,6 +1001,7 @@ module tg68_bus #(
     task step;
         begin
             k_clkena <= 1'b1;
+            k_clkena_lw <= !k_longword || k_long_ack;
             cnt      <= 6'd0;
             k_ipl    <= {IPL2n, IPL1n, IPL0n};
             k_berr   <= 1'b0;     // the kernel samples the old value here
@@ -960,7 +1015,7 @@ module tg68_bus #(
     initial begin
         ASn = 1'b1; UDSn = 1'b1; LDSn = 1'b1; eRWn = 1'b1;
         BGn = 1'b1; oRESETn = 1'b1; oEdb = 16'd0; stalled = 1'b0;
-        dp_inc = 1'b0;
+        dp_inc = 1'b0; dp_pair = 1'b0; dp_wdata_lo = 16'd0;
     end
 
 endmodule
