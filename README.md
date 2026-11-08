@@ -32,8 +32,6 @@ Measured on an A500+ (Kickstart 3.x), step 7:
 | AIBB MemTest | 7.65 MB/s | 5.71 MB/s |
 | SD card (SysInfo) | 2.18 MB/s | |
 
-(AIBB's own Dhrystone was last measured on step 4: 11712 with the caches
-on, about a 25 MHz 68030; SysInfo has risen 44% since then.)
 
 ## Getting it running
 
