@@ -28,7 +28,7 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
-| `bitstreams/exp16x_seed9/` (branch `exp-16x-clock` only) | **Experimental, overclocked**: for a board whose ICS570B is rewired to x16 (113.5 MHz). Correct Amiga-side timing (bus cycles, E/CIA), SDRAM CL3, SD clock in spec. See *16x clock* | Simulated; not timing-signed (needs the chip ~36% faster than the worst-case model); **not yet run on hardware** |
+| `bitstreams/exp16x_seed9/` (branch `exp-16x-clock` only) | **Experimental, overclocked**: for a board whose ICS570B is rewired to x16 (113.5 MHz). Correct Amiga-side timing (bus cycles, E/CIA), SDRAM CL3, SD clock in spec. See *16x clock* | **Works on Glen's x16 board** (`_fast` file), Ripple IDE ROM included: 12311 Dhrystones, MemTest 15.81 MB/s. Not timing-signed (needs the chip ~36% faster than the worst-case model) |
 | `bitstreams/step9_sdram32r/` | + 32-bit SDRAM reads: an aligned longword read that misses the caches is one SDRAM request (two READ commands back to back) and one CPU step | **Latest. Known good on hardware**, SD card included: MemTest 12.20 MB/s (+12% on step 8), xSysInfo fast RAM 23.31 MB/s (+42%); SysInfo Dhrystones unchanged (9221). `full` only |
 | `bitstreams/step8_sdram32w/` | + 32-bit SDRAM writes: an aligned longword write to fast RAM is one CPU step and one SDRAM request (two WRITE commands back to back) | **Known good on hardware**, SD card included: 9226 Dhrystones (+6% on step 7), MemTest 10.93 MB/s (+43%). `full` only |
 | `bitstreams/step7_datapath32/` | + 32-bit data path: aligned longword reads from the caches in one CPU step (m1nl's TG68K.C fork, banked caches) | **Known good on hardware**, SD card included: 8728 Dhrystones (+7% on step 6), MemTest 7.65 MB/s. `full` only |
@@ -370,6 +370,26 @@ differs is under `` `ifdef TG68_X16 ``:
 In simulation (`VLFLAGS=-DTG68_X16 sh sim/run.sh ...`) every test passes
 at 113.5 MHz, with no SDRAM timing violations. Against the 12x build: copy
 7.33 → 9.31 MB/s, read 12.59 → 16.22, scatter 20.35 → 25.67.
+
+On Glen's A500+ with the ICS570B rewired to x16 (the `_fast` file), it
+works, and a Ripple IDE's boot ROM now runs (its CF card mounts):
+
+| | 12x, step 9 | 16x, step 9 bitstream (12x timing) | 16x, this build |
+| --- | --- | --- | --- |
+| SysInfo Dhrystones, caches on / off | 9221 / 4202 | 12311 / 5322 | 12311 / 5180 |
+| AIBB MemTest, caches on / off | 12.20 / 6.97 MB/s | - | 15.81 / 8.88 MB/s |
+| xSysInfo Dhrystones, caches on / off | 15075 / 7802 | 22117 / 10329 | 19429 / 9496 |
+| xSysInfo fast RAM, caches on / off | 23.31 / 20.28 MB/s | 31.14 / 27.17 MB/s | 29.18 / 25.20 MB/s |
+| SD card, SysInfo / xSysInfo | 2.18 / 1.9 MB/s | - / 2.6 MB/s | 2.18 / 2.1 MB/s |
+| Ripple CF card, SysInfo (caches on / off) | ~2.8 MB/s | ROM not run | 3.13 / 2.93 MB/s |
+
+Against the 12x build: SysInfo +34%, MemTest +30%, xSysInfo fast RAM
++25%. Against the 12x bitstream on the x16 board, this build gives up
+about 7% on SDRAM-bound work (xSysInfo fast RAM and caches-off figures)
+for CAS latency 3, and the SD card's xSysInfo figure falls from 2.6 to
+2.1 MB/s with its clock back inside the SD limits. xSysInfo's caches-on
+Dhrystones fell 12% (22117 to 19429) while SysInfo's are unchanged, which
+CAS latency alone does not obviously explain.
 
 **It is overclocked.** The FPGA's timing is signed off against a worst-case
 model (slowest chip, hot, low supply). At 113.5 MHz no seed comes close to

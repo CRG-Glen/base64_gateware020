@@ -339,6 +339,15 @@ that gives the "_fast" files.
   ran on Glen's x16 board needs 1.28x). The 12x build on this branch is
   logically identical to main but not bit-identical (yosys numbering moves
   even for ifdef'd-out text), so 12x releases come from main.
+  Hardware (exp16x_seed9 `_fast`, Glen's x16 board): works; the Ripple
+  IDE's ROM now runs (CF 3.13 / 2.93 MB/s caches on / off). SysInfo
+  12311 / 5180 Dhrystones, AIBB MemTest 15.81 / 8.88 MB/s, xSysInfo
+  19429 / 9496 Dhrystones, fast RAM 29.18 / 25.20 MB/s, SD 2.18 MB/s
+  (SysInfo) / 2.1 (xSysInfo). Vs the 12x bitstream on the same board:
+  ~7% less on SDRAM-bound work (CL3), xSysInfo caches-on Dhrystones -12%
+  (22117 -> 19429) with SysInfo unchanged: not explained yet. CL2 at
+  113.5 MHz is in spec only if the SDRAM is a -6 (or faster) part:
+  check the chip marking before trying it.
 - Timing headroom: from step 7 on only ~1 seed in 8 passes every class,
   with a different path missing each time (README "Timing"). A new
   feature will likely need a seed search. A real fix would need fewer
