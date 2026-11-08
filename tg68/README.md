@@ -14,8 +14,8 @@ build's own files are few and marked `TG68:`.
 > Dhrystones, 9.62 MIPS, AIBB MemTest 12.20 MB/s with the caches on,
 > xSysInfo fast RAM 23.31 MB/s, SD card 2.18 MB/s (sfsd.device). That is
 > about 3.3× the 2783 Dhrystones of the first working build.
-> Step 10 (instruction prefetch and 32-bit instruction-stream pairs) is
-> simulated and timing-checked, not yet run on hardware.
+> Step 10 (instruction prefetch and 32-bit instruction-stream pairs) runs
+> on the A500+ too: 9691 Dhrystones at 12x, 12936 at 16x (board mod).
 >
 > **SD card: every `full` bitstream from step 4 on reads the card.** The
 > step 1-3 `full` files drove the card's data-out line (MISO) low, so the
@@ -30,7 +30,7 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
-| `bitstreams/step10_ifetch32/` | + instruction prefetch (the next word after an instruction read from SDRAM) and 32-bit instruction-stream pairs (32-bit immediates and absolute-long addresses in one CPU step). 12x and 16x files | Simulated and timing-checked (12x seed 14; 16x seed 2 needs 1.31×); **not yet run on hardware** |
+| `bitstreams/step10_ifetch32/` | + instruction prefetch (the next word after an instruction read from SDRAM) and 32-bit instruction-stream pairs (32-bit immediates and absolute-long addresses in one CPU step). 12x and 16x files | **Known good on hardware**, 12x and 16x, SD card included: 9691 / 12936 Dhrystones (12x / 16x, +5% on step 9), caches off 4918 / 5982 (+17% / +15%). Caches-off MemTest 5-7% lower |
 | `bitstreams/exp16x_seed9/` (branch `exp-16x-clock` only) | **Experimental, overclocked**: for a board whose ICS570B is rewired to x16 (113.5 MHz). Correct Amiga-side timing (bus cycles, E/CIA), SDRAM CL3, SD clock in spec. See *16x clock* | **Works on Glen's x16 board** (`_fast` file), Ripple IDE ROM included: 12311 Dhrystones, MemTest 15.81 MB/s. Not timing-signed (needs the chip ~36% faster than the worst-case model) |
 | `bitstreams/step9_sdram32r/` | + 32-bit SDRAM reads: an aligned longword read that misses the caches is one SDRAM request (two READ commands back to back) and one CPU step | **Latest. Known good on hardware**, SD card included: MemTest 12.20 MB/s (+12% on step 8), xSysInfo fast RAM 23.31 MB/s (+42%); SysInfo Dhrystones unchanged (9221). `full` only |
 | `bitstreams/step8_sdram32w/` | + 32-bit SDRAM writes: an aligned longword write to fast RAM is one CPU step and one SDRAM request (two WRITE commands back to back) | **Known good on hardware**, SD card included: 9226 Dhrystones (+6% on step 7), MemTest 10.93 MB/s (+43%). `full` only |
@@ -294,6 +294,24 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   prefetched instruction word, and a buffer hit doesn't chain the next
   prefetch. The tests count instruction-stream pairs from the cache and
   from SDRAM and check them against the write shadow.
+
+  On the A500+ (step 9, or the first 16x build, → step 10):
+
+  | | 12x | 16x |
+  | --- | --- | --- |
+  | SysInfo Dhrystones, caches on | 9221 → 9691 (+5%) | 12311 → 12936 (+5%) |
+  | SysInfo Dhrystones, caches off | 4202 → 4918 (+17%) | 5180 → 5982 (+15%) |
+  | AIBB MemTest, caches on | 12.20 → 12.28 MB/s | 15.81 → 15.91 MB/s |
+  | AIBB MemTest, caches off | 6.97 → 6.60 MB/s (−5%) | 8.88 → 8.28 MB/s (−7%) |
+  | xSysInfo Dhrystones, caches on / off | 15075 / 7802 → 15363 / 7536 | 19429 / 9496 → 21233 / 10318 |
+  | xSysInfo fast RAM, caches on / off | 23.31 / 20.28 → 23.35 / 21.01 MB/s | 29.18 / 25.20 → 29.19 / 25.98 MB/s |
+
+  CPU-bound code gains (the instruction-stream pairs with the caches on,
+  both changes with them off). Caches-off MemTest loses 5-7%, most likely
+  because an instruction prefetch the loop doesn't use still occupies the
+  SDRAM when the next data read wants it. xSysInfo varies by a few percent
+  between runs (see step 9). The SD card works on both; 2.2 MB/s in
+  xSysInfo at 16x with the caches on.
 * **MapROM.** The board's boot ROM (`turbomem.mem`, built with
   `DIAG_MAPROM=1`) copies Kickstart into the SDRAM shadow at every boot,
   verifies it and switches over, so it is normally already on. Both caches
@@ -503,7 +521,7 @@ pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
 
 Step 10 (instruction prefetch, instruction-stream pairs) builds as supplied
-(not yet run on hardware):
+(known good on hardware, 12x and 16x):
 
 | Build | Seed | Worst 1T slack | Worst multicycle slack |
 | --- | --- | --- | --- |

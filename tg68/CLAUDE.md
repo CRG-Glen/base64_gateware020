@@ -242,8 +242,8 @@ that gives the "_fast" files.
   checks at 0x81A8/0x81AC/0x81B0; mutations (2nd column, S_RD_DONE not
   held, select off, wrong word, no fill) all caught. Timing: seed 7
   +0.36 / +1.16 ns; ~1 seed in 8 passes, as step 8 (README "Timing").
-- **Instruction prefetch and instruction-stream pairs (step 10, not yet on
-  hardware):** after an instruction read the DDATA prefetch runs for
+- **Instruction prefetch and instruction-stream pairs (step 10, known good
+  on hardware, 12x and 16x):** after an instruction read the DDATA prefetch runs for
   fetches too (`pf_ic` = the buffered word is an instruction word: pf_fill
   then writes the instruction cache, `pf_dc` holds its fill conditions);
   k_pf_hit takes fetches (`!k_bs[0]`). Core regenerated with DP32=7
@@ -317,12 +317,19 @@ that gives the "_fast" files.
 | step 7 (32-bit data path, `full`) | 8728 / 3940 | 7.65 / 5.71 |
 | step 8 (32-bit SDRAM writes, `full`) | 9226 / 3982 | 10.93 / 6.15 |
 | step 9 (32-bit SDRAM reads, `full`) | 9221 / 4202 | 12.20 / 6.97 |
+| step 10 (instruction prefetch + pairs, `full`) | 9691 / 4918 | 12.28 / 6.60 |
+| step 10 at 16x (board mod) | 12936 / 5982 | 15.91 / 8.28 |
 
 - AIBB MemTest did not move from step 6 to step 7 (pairs only come from
   cache hits; MemTest's reads miss and its writes are 16-bit). Step 8's
   pair writes took it to 10.93 MB/s (+43%), and to 6.15 with the caches
   off (pair writes work without them). Step 9's pair reads on a miss:
   12.20 / 6.97 (+12% / +13%). The write queue is what would move it next.
+- Step 10: caches-off Dhrystones +17% (12x) / +15% (16x), cached +5%;
+  caches-off MemTest -5% / -7% (likely unused instruction prefetches
+  holding the SDRAM ahead of data reads). xSysInfo 12x caches on / off
+  15363 / 7536, fast RAM 23.35 / 21.01; 16x 21233 / 10318, 29.19 / 25.98.
+  SD works on both (2.2 MB/s xSysInfo, 16x, caches on).
 - SD card (sfsd.device 2.4): 2.18 MB/s in SysInfo on steps 4 to 9
   (2184533 bytes/s each time); fx68k gets 1.76 MB/s.
 - xSysInfo (Glen's test suite from step 8): 15711 Dhrystones, 8.94 MIPS,
