@@ -193,7 +193,7 @@ that gives the "_fast" files.
   DECIDE clock under `dec_r` (= q is DECIDE, tb-asserted); `cyc_start` marks a
   real cycle start for the tb write shadow. Timing margins are thin (seed 4:
   +0.06 ns 1T, +0.86 ns kernel -> logic).
-- **32-bit SDRAM writes (step 8, not yet on hardware):** `DP32_WR=1`.
+- **32-bit SDRAM writes (step 8, known good on hardware):** `DP32_WR=1`.
   `k_wpair` = pair offered, aligned, both strobes. Only `k_long_ack` is
   set in the posted-write branch (fast RAM only). `dp_pair` (= k_wpair) and
   `dp_wdata_lo` (the kernel's `data_write_lo`) load under `dec_r` with the
@@ -273,12 +273,19 @@ that gives the "_fast" files.
 | step 5 (pair buffers, `full`) | 6720 / 3717 | 7.46 / 5.71 |
 | step 6 (early lookup, `full`) | 8144 / 3813 | 7.65 / 5.71 |
 | step 7 (32-bit data path, `full`) | 8728 / 3940 | 7.65 / 5.71 |
+| step 8 (32-bit SDRAM writes, `full`) | 9226 / 3982 | 10.93 / 6.15 |
 
 - AIBB MemTest did not move from step 6 to step 7 (pairs only come from
-  cache hits; MemTest's reads miss and its writes are 16-bit). Pairs on
-  writes and on misses, and the write queue, are what would move it.
-- SD card (sfsd.device 2.4): 2.18 MB/s in SysInfo on steps 4 to 7
+  cache hits; MemTest's reads miss and its writes are 16-bit). Step 8's
+  pair writes took it to 10.93 MB/s (+43%), and to 6.15 with the caches
+  off (pair writes work without them). Pair reads on a miss and the write
+  queue are what would move it next.
+- SD card (sfsd.device 2.4): 2.18 MB/s in SysInfo on steps 4 to 8
   (2184533 bytes/s each time); fx68k gets 1.76 MB/s.
+- xSysInfo (Glen's test suite from step 8): 15711 Dhrystones, 8.94 MIPS,
+  fast RAM 16.38 MB/s, Chip RAM 2.39 MB/s, ROM 16.38 MB/s (= fast RAM, so
+  MapROM is active), SD card 1.9 MB/s. Its Dhrystone figure is on a
+  different scale from SysInfo's; compare xSysInfo with xSysInfo only.
 - Step 5 caches-off Dhrystones (3717) are below step 4's (4007), but the
   caches-off logic is unchanged: identical clock counts for both in the
   read and copy benches with CACR=0. Step 6's caches-off run gave 3813,

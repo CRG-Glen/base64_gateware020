@@ -10,11 +10,10 @@ and the SD card. An adapter, `tg68_bus.v`, makes TG68K look like fx68k's
 ports and adds the caches and the direct SDRAM path. Changes to the fx68k
 build's own files are few and marked `TG68:`.
 
-> **Status:** steps 1-7 run on an A500+. The latest known good, step 7
-> `full`: 8728 Dhrystones, 9.11 MIPS, AIBB MemTest 7.65 MB/s with the
-> caches on, SD card 2.18 MB/s (sfsd.device). That is about 3× the 2783
-> Dhrystones of the first working build. Step 8 (32-bit SDRAM writes) is
-> simulated and timing-checked, not yet run on hardware.
+> **Status:** steps 1-8 run on an A500+. The latest, step 8 `full`: 9226
+> Dhrystones, 9.63 MIPS, AIBB MemTest 10.93 MB/s with the caches on, SD
+> card 2.18 MB/s (sfsd.device). That is about 3.3× the 2783 Dhrystones of
+> the first working build.
 >
 > **SD card: every `full` bitstream from step 4 on reads the card.** The
 > step 1-3 `full` files drove the card's data-out line (MISO) low, so the
@@ -29,8 +28,8 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
-| `bitstreams/step8_sdram32w/` | + 32-bit SDRAM writes: an aligned longword write to fast RAM is one CPU step and one SDRAM request (two WRITE commands back to back) | Simulated and timing-checked; **not yet run on hardware**. `full` only |
-| `bitstreams/step7_datapath32/` | + 32-bit data path: aligned longword reads from the caches in one CPU step (m1nl's TG68K.C fork, banked caches) | **Known good on hardware**: 8728 Dhrystones (+7% on step 6), MemTest 7.65 MB/s. `full` only |
+| `bitstreams/step8_sdram32w/` | + 32-bit SDRAM writes: an aligned longword write to fast RAM is one CPU step and one SDRAM request (two WRITE commands back to back) | **Latest. Known good on hardware**, SD card included: 9226 Dhrystones (+6% on step 7), MemTest 10.93 MB/s (+43%). `full` only |
+| `bitstreams/step7_datapath32/` | + 32-bit data path: aligned longword reads from the caches in one CPU step (m1nl's TG68K.C fork, banked caches) | **Known good on hardware**, SD card included: 8728 Dhrystones (+7% on step 6), MemTest 7.65 MB/s. `full` only |
 | `bitstreams/step6_earlylookup/` | + early cache lookup: every cache hit in 5 clocks, not 7 (replaces the pair buffers) | **Known good on hardware**, SD card included: 8144 Dhrystones (+21% on step 5), MemTest 7.65 MB/s. `full` only |
 | `bitstreams/step5_pairbuf/` | + pair buffers: the other half of a cached pair in 5 clocks, not 7 | **Known good. `full` on hardware**, SD card included: 6720 Dhrystones, MemTest 7.46 MB/s. `min` not run on hardware |
 | `bitstreams/step4_dcache/` | + 8 KB data cache, cache hits overlap SDRAM writes; SD card pin fix | **Known good on hardware**, SD card included |
@@ -113,7 +112,7 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   8/6/6 pacing 1877 Dhrystones (1.95 MIPS); 5/4/3 pacing 2313 (2.41 MIPS);
   4/3/2/2 pacing 2783 (2.9 MIPS); 4/3/1/1 + cache 4833 (5.04 MIPS), 3208
   with the cache off. The caches and the direct path that followed took it
-  to 8728 Dhrystones (9.11 MIPS) by step 7; each step below has its
+  to 9226 Dhrystones (9.63 MIPS) by step 8; each step below has its
   numbers.
 * **Data cache (step 4).** 8 KB, direct-mapped, the same size and layout
   as the instruction cache, for data reads from on-board fast RAM and the
@@ -231,7 +230,15 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   from the SDRAM after eviction, and a misaligned longword. Reads from the
   SDRAM are still two 16-bit reads (a pair read on a cache miss is the
   next step). Timing needed a second small kernel change (a registered
-  clock enable, see *Why the CPU is pre-converted Verilog*).
+  clock enable, see *Why the CPU is pre-converted Verilog*). On an A500+
+  (`full`), caches on: 8728 → 9226 Dhrystones (+6%), 9.11 → 9.63 MIPS,
+  AIBB MemTest 7.65 → 10.93 MB/s (+43%: its writes are longwords). Caches
+  off: 3982 Dhrystones (step 7: 3940), MemTest 5.71 → 6.15 MB/s (+8%;
+  pair writes don't depend on the caches). SD card 2.18 MB/s as before.
+  xSysInfo (first measured on this step): 15711 Dhrystones, 8.94 MIPS,
+  fast RAM 16.38 MB/s, Chip RAM 2.39 MB/s, ROM 16.38 MB/s (the same as
+  fast RAM: Kickstart runs from the MapROM copy in SDRAM), SD card
+  1.9 MB/s.
 * **MapROM.** The board's boot ROM (`turbomem.mem`, built with
   `DIAG_MAPROM=1`) copies Kickstart into the SDRAM shadow at every boot,
   verifies it and switches over, so it is normally already on. Both caches
@@ -362,7 +369,7 @@ actually provides:
 pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
 
-Step 8 (32-bit SDRAM writes) builds as supplied (not yet run on hardware):
+Step 8 (32-bit SDRAM writes) builds as supplied (known good on hardware):
 
 | Build | Seed | Worst 1T slack | Worst multicycle slack |
 | --- | --- | --- | --- |
