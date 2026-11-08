@@ -66,3 +66,8 @@
   here; `build.py` now checks the netlist for it instead.)
 
 Each ends with `PASS` or a list of what failed.
+
+`VLFLAGS=-DTG68_X16 sh sim/run.sh top` (or `fastmem`, `bench ...`) runs the
+same tests on the 16x build (branch `exp-16x-clock`): 113.5 MHz, clk_7m =
+/16, the RTL's TG68_X16 settings and the SDRAM model at CL3. The model
+checks the SDRAM timings in ns, so it covers the 16x clock too.

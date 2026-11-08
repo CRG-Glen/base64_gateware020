@@ -92,7 +92,13 @@ module base64_tg68_top #(
     //   6 -> 2 master clocks/CPU clock (42.6 MHz)  <-- target
     //   4 -> 3, 3 -> 4, 2 -> 6, 1 -> 12 (bit-identical to the old build)
     // See DESIGN_NOTES: only CPU_MULT<=3 relaxes the fx68k Fmax requirement.
+`ifdef TG68_X16
+    // TG68: 16x build (see CLK_MULT below). Unused by the TG68 core (fx68k's
+    // phase enables); 8 keeps MC4 = CLK_MULT / CPU_MULT whole.
+    parameter integer CPU_MULT   = 8,
+`else
     parameter integer CPU_MULT   = 6,
+`endif
 
     // ---- 7M grid alignment ----------------------------------------------
     // Larger PHASE_OFS moves our S-state grid EARLIER relative to the real
@@ -283,7 +289,23 @@ module base64_tg68_top #(
     // DESIGN_NOTES_6x.md before raising it: doubling the master clock does
     // NOT buy fx68k any settling time, it only makes STA harder. The real
     // lever is the multicycle constraints in base64_6x.fdc.
+`ifdef TG68_X16
+    // TG68: EXPERIMENTAL 16x build (build.py --x16 defines TG68_X16), for a
+    // board whose ICS570B is rewired from x12 to x16: 113.50 MHz. A 12x
+    // bitstream on such a board runs this bridge's 7M grid at 9.46 MHz (bus
+    // cycles 25% short and mostly off phase, E and so the CIA timers 33%
+    // fast). Everything 16x-specific is under TG68_X16, so the 12x build is
+    // the same text for yosys and stays bit-identical (even dead code or a
+    // default-valued parameter moves yosys's names and nextpnr's placement).
+    // At 16x: PHASE_OFS stays 2 (it mostly cancels the 7M capture pipeline,
+    // ~3 master clocks at any rate; 3 put our AS edges on the 7M edge and
+    // the simulated Gary missed AS negations), DTACK_LAT/ACK_LEAD are only
+    // used by the RETIME=0 bridge, the address/data hold after AS is 2
+    // clocks, the SDRAM runs CL3 and the SD clock's low half is stretched.
+    localparam integer CLK_MULT = 16;
+`else
     localparam integer CLK_MULT = 12;
+`endif
     localparam [4:0] PH_TOP = CLK_MULT[4:0] - 5'd1;      // counter wrap
     localparam [4:0] PH_HALF= CLK_MULT[4:0] / 5'd2;      // "falling edge"
     localparam [4:0] MC4    = CLK_MULT[4:0] / CPU_MULT;      // 2,3,4,6,12
@@ -670,7 +692,11 @@ module base64_tg68_top #(
     //
     // `make cfgdump` prints them. Log a few dozen cold starts and the delay
     // question answers itself with numbers instead of blink-counting.
+`ifdef TG68_X16
+    localparam [16:0] MS_TOP = 17'd113500;   // TG68: 1 ms at 113.50 MHz
+`else
     localparam [16:0] MS_TOP = 17'd85129;    // 1 ms at 85.13 MHz
+`endif
 
     reg [16:0] ms_div  = 17'd0;
     reg [15:0] ms_cnt  = 16'd0;
@@ -1276,6 +1302,15 @@ module base64_tg68_top #(
     reg [1:0]  rt_vst   = 2'd0;
     reg        core_as_d2 = 1'b1;
     always @(posedge clk) core_as_d2 <= core_as_n;
+`ifdef TG68_X16
+    // TG68: at 16x one master clock is 8.81 ns, so the address/data hold
+    // past AS negation below takes two (17.6 ns; 11.75 ns at 12x with one)
+    reg        core_as_d3 = 1'b1;
+    always @(posedge clk) core_as_d3 <= core_as_d2;
+    wire       rt_hold_done = core_as_d3;
+`else
+    wire       rt_hold_done = core_as_d2;
+`endif
 
     always @(posedge clk) begin
         if (ext_reset) begin
@@ -1296,7 +1331,7 @@ module base64_tg68_top #(
             // past AS negation. A 68000 keeps R/W and data valid after AS
             // goes high, and the slave latches a write ON the AS rising
             // edge -- drop them on the same edge and the write is lost.
-            if (core_as_d2) begin
+            if (rt_hold_done) begin
                 rt_a    <= core_a[23:1];
                 rt_fc   <= core_fc;
                 rt_rw   <= 1'b1;
@@ -1668,6 +1703,12 @@ module base64_tg68_top #(
     // DAT0 -> MISO, DAT3 -> CS. DAT1/DAT2 are unused in SPI mode and left
     // released. The slot has no card-detect line, so CD_n is tied asserted.
     sd_subsystem #(
+`ifdef TG68_X16
+        // TG68: at 16x the fastest SCLK settings would exceed SD's limits
+        // (56.8 / 28.4 MHz); one extra clock low gives 37.8 / 22.7 MHz
+        // (see shifter.v)
+        .SD_LO_EXTRA(1),
+`endif
         .ROM_INIT_FILE("sfsd.mem")
     ) u_sd (
         .clk          (clk),
@@ -1707,7 +1748,17 @@ module base64_tg68_top #(
     // TG68: the SDRAM controller only exists with fast RAM. Without it the
     // chip is held deselected with its clock disabled.
     generate if (ENABLE_FASTMEM) begin : g_sdram
+`ifdef TG68_X16
+    // TG68: at 16x (8.81 ns) the IS42S16160 (-7) needs CL3: CL2 wants
+    // tCK >= 10 ns. The other counts stay: the controller adds 1-2 clocks of
+    // state overhead to each, so at 113.5 MHz they give tRCD 4 clocks
+    // (35 ns, needs 20), tRP 3 (26 ns, 20), tRAS 6 (53 ns, 45) and tRFC 8
+    // (70 ns, 65); the fastmem bench's SDRAM model, which checks these in
+    // ns, reports no violation at 16x. CLK_HZ sets the init wait.
+    sdram_ctrl #(.CLK_HZ(113_500_000), .CAS_LAT(3)) u_sdram (
+`else
     sdram_ctrl #(.CLK_HZ(85_130_000), .CAS_LAT(2)) u_sdram (
+`endif
         .clk (clk), .reset (slave_reset),
         .req (sd_req), .we (sd_we), .wr_valid (sd_wr_valid),
         .addr (sd_saddr), .wdata (sd_wdata), .byte_en (sd_byte_en),

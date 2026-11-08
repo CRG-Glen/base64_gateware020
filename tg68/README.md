@@ -28,6 +28,7 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
+| `bitstreams/exp16x_seed9/` (branch `exp-16x-clock` only) | **Experimental, overclocked**: for a board whose ICS570B is rewired to x16 (113.5 MHz). Correct Amiga-side timing (bus cycles, E/CIA), SDRAM CL3, SD clock in spec. See *16x clock* | Simulated; not timing-signed (needs the chip ~36% faster than the worst-case model); **not yet run on hardware** |
 | `bitstreams/step9_sdram32r/` | + 32-bit SDRAM reads: an aligned longword read that misses the caches is one SDRAM request (two READ commands back to back) and one CPU step | **Latest. Known good on hardware**, SD card included: MemTest 12.20 MB/s (+12% on step 8), xSysInfo fast RAM 23.31 MB/s (+42%); SysInfo Dhrystones unchanged (9221). `full` only |
 | `bitstreams/step8_sdram32w/` | + 32-bit SDRAM writes: an aligned longword write to fast RAM is one CPU step and one SDRAM request (two WRITE commands back to back) | **Known good on hardware**, SD card included: 9226 Dhrystones (+6% on step 7), MemTest 10.93 MB/s (+43%). `full` only |
 | `bitstreams/step7_datapath32/` | + 32-bit data path: aligned longword reads from the caches in one CPU step (m1nl's TG68K.C fork, banked caches) | **Known good on hardware**, SD card included: 8728 Dhrystones (+7% on step 6), MemTest 7.65 MB/s. `full` only |
@@ -332,6 +333,63 @@ attempt as failed until 1.3 s after power-up and resets the machine every
 ~100 ms until then. `FORCE_RETRY_MS = 0` in `base64_tg68_top.sv` turns this
 off, if you want to see whether TG68 needs it at all. Ctrl-A-A always works
 either way.
+
+## 16x clock (experimental, branch `exp-16x-clock`)
+
+The Base64's ICS570B multiplies the Amiga's 7.09 MHz clock by 12 (85.13
+MHz). Rewired to multiply by 16, it gives 113.50 MHz. On such a board a
+normal (12x) bitstream boots and runs about a third faster, but its Amiga
+side runs at the wrong speed. The bus bridge builds its 7 MHz grid from a
+fixed count of 12 fast clocks, so it thinks the Amiga clock is 9.46 MHz.
+Its lock check doesn't notice, because the count matches again every third
+cycle. The effects:
+
+* bus cycles to the motherboard are 25% short and mostly off phase, so a
+  slow device reads wrong: a Ripple IDE's boot ROM was found but never run;
+* E, which clocks the CIAs, runs at 946 kHz instead of 709 kHz, so every
+  CIA-timed delay (timer.device microseconds, floppy stepping, driver
+  timeouts) is 25% short.
+
+`build.py full --x16` builds a bitstream for an x16 board. Everything that
+differs is under `` `ifdef TG68_X16 ``:
+
+* the 7M grid counts 16 fast clocks (`CLK_MULT`), so bus cycles, E and the
+  CIA timers are correct again; `PHASE_OFS` stays 2 (it mostly cancels the
+  7M capture pipeline, which is a fixed number of fast clocks);
+* the address, R/W and write data are held 2 fast clocks (17.6 ns) after
+  AS rises instead of 1;
+* the SDRAM runs at CAS latency 3 (the IS42S16160 -7 needs a 10 ns clock
+  for CL2). Its other timings were already in spec at 113.5 MHz, because
+  the controller adds state-machine clocks to each count; the fastmem
+  bench's SDRAM model, which checks them in ns, reports no violation;
+* the SD card's clock holds its low half one clock longer, so the fastest
+  settings give 37.8 / 22.7 MHz (within SD's 50 / 25 MHz) instead of
+  56.8 / 28.4 MHz;
+* the 1 ms counter and the SDRAM controller's start-up wait use 113.5 MHz.
+
+In simulation (`VLFLAGS=-DTG68_X16 sh sim/run.sh ...`) every test passes
+at 113.5 MHz, with no SDRAM timing violations. Against the 12x build: copy
+7.33 → 9.31 MB/s, read 12.59 → 16.22, scatter 20.35 → 25.67.
+
+**It is overclocked.** The FPGA's timing is signed off against a worst-case
+model (slowest chip, hot, low supply). At 113.5 MHz no seed comes close to
+passing it, and none could without a much faster design. The kernel's
+paths alone need the chip to be ~28% faster than the model. It works
+because real chips at room temperature usually are: the 12x step 9
+bitstream ran on Glen's x16 board, and by the same check it needs 1.28×.
+For each 16x seed, `timing.txt` (checked at 113.6 MHz) shows how far past
+the model it is. The test bitstream, seed 9, needs 1.36×: the best of
+15 seeds, but more than the 1.28× of the 12x bitstream that ran on the x16
+board, because that 12x seed was an unusually good placement (it is the
+one seed in eight that passes at 12x). So it may be less stable on the
+same board; more seeds can be tried if it is. nextpnr's clock target makes
+no difference (seeds placed for 114 MHz came out identical), so `--x16`
+keeps 86 MHz.
+
+On this branch the 12x build is logically the same as main (the sims match
+it clock for clock), but not bit-identical: with this yosys even text that
+an `` `ifdef `` skips changes its internal numbering, and with it nextpnr's
+placement. 12x releases are built from main.
 
 ## Building it yourself
 

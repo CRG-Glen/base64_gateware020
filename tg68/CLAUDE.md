@@ -326,24 +326,19 @@ that gives the "_fast" files.
 - A 2-4 entry write queue (copies are write-bound).
 - Bigger caches: 16 more block RAMs, which would crowd out RTG.
 - RTG framebuffer in SDRAM: discussed as a future add-on, no design yet.
-- 16x clock (Glen's experiment after step 9: ICS570B rewired from x12 to
-  x16, step 9 bitstream unchanged, ~113.5 MHz): boots; SysInfo 12311 /
-  5322 Dhrystones (caches on / off), xSysInfo 22117 / 10329, fast RAM
-  31.14 / 27.17 MB/s, SD 2.6 MB/s. A Ripple IDE is configured but its
-  boot ROM is not run. Cause, from the code: `CLK_MULT = 12` is fixed in
-  base64_tg68_top.sv, so the bridge's 7M grid (ph counter, tick_r/f/ack)
-  runs at 9.46 MHz. The lock check is fooled (mismatch, mismatch, match
-  every third cycle never reaches SLIP_TOL), bus cycles are 25% short
-  and mostly off phase, and the flash ROM's data is latched before it is
-  valid. E runs at 946 kHz, so CIA timers (timer.device microsecond
-  delays, floppy step timing, driver timeouts) are 33% fast. The FPGA
-  passes only because real silicon beats the worst-case model (at
-  113.5 MHz it misses by ~2.5 ns on 1T paths, ~4.6 ns on kernel ->
-  kernel). A proper 16x build: CLK_MULT = 16 (+ CPU_MULT so MC4 divides),
-  re-tune PHASE_OFS / ACK_LEAD / DTACK_LAT, MS_TOP, sdram CLK_HZ and tRFC
-  7 clocks, SD clock <= 25 MHz. Signed-off timing at 16x would need
-  STEP=5 (~7% gain) and a much faster adapter, so it would be an
-  overclocked build. Not started; Glen decides.
+- 16x clock: branch `exp-16x-clock` (not merged; README "16x clock").
+  Glen's board is rewired x16 (113.5 MHz); a 12x bitstream there runs the
+  bridge's 7M grid at 9.46 MHz (CLK_MULT fixed at 12: bus cycles short,
+  E/CIA 33% fast, a Ripple IDE's ROM not run). `build.py full --x16`
+  defines TG68_X16: CLK_MULT 16, CPU_MULT 8, MS_TOP, 2-clock rt_ hold
+  after AS, SDRAM CL3 (other counts already in spec: controller overhead),
+  SD SCLK low half +1 clock (shifter LO_EXTRA). PHASE_OFS stays 2 (3 broke
+  the sim: Gary missed AS negations). Sims: `VLFLAGS=-DTG68_X16`. Not
+  timing-signed: build.py checks at 113.6 MHz and does not fail on it;
+  score seeds by the worst delay/budget ratio (the 12x step 9 seed 7 that
+  ran on Glen's x16 board needs 1.28x). The 12x build on this branch is
+  logically identical to main but not bit-identical (yosys numbering moves
+  even for ifdef'd-out text), so 12x releases come from main.
 - Timing headroom: from step 7 on only ~1 seed in 8 passes every class,
   with a different path missing each time (README "Timing"). A new
   feature will likely need a seed search. A real fix would need fewer

@@ -5,14 +5,24 @@
 //   ROM $000000-$001FFF (overlay), RAM $008000-$009FFF, CIA reads $A5
 `timescale 1ns/1ps
 module tb;
+    // -DTG68_X16 (VLFLAGS=-DTG68_X16 sh sim/run.sh ...): the 16x build,
+    // 113.5 MHz and clk_7m = /16, the SDRAM model at CL3 (the RTL takes its
+    // 16x settings from the same define)
+`ifdef TG68_X16
+    localparam integer CM = 16;
+    reg clk12 = 0;
+    always #4.405 clk12 = ~clk12;
+`else
+    localparam integer CM = 12;
     reg clk12 = 0;
     always #5.873 clk12 = ~clk12;
+`endif
     reg [3:0] div = 0;
     reg clk7 = 0;
     always @(posedge clk12) begin
-        div <= (div == 11) ? 0 : div + 1;
-        if (div == 0)  clk7 <= 1;
-        if (div == 6)  clk7 <= 0;
+        div <= (div == CM - 1) ? 0 : div + 1;
+        if (div == 0)      clk7 <= 1;
+        if (div == CM / 2) clk7 <= 0;
     end
 
     wire [23:1] a;
@@ -64,7 +74,7 @@ module tb;
     wire [12:0] sa; wire [1:0] sba, sdqm; wire [15:0] sdq;
     wire sclk, scke, sras, scas, swe, scs;
 `ifdef FASTMEM
-    sdram_model_checked #(.CAS_LAT(2), .ADDR_BITS(24)) u_sdram (
+    sdram_model_checked #(.CAS_LAT(CM == 16 ? 3 : 2), .ADDR_BITS(24)) u_sdram (
         .clk(sclk), .a(sa), .ba(sba), .dq(sdq), .dqm(sdqm),
         .cke(scke), .cs_n(scs), .ras_n(sras), .cas_n(scas), .we_n(swe));
 `endif

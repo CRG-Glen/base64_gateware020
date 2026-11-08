@@ -4,7 +4,18 @@
  *
  * Copyright (C) 2025 Niklas Ekström
  */
+`ifdef TG68_X16
+module shifter #(
+    // TG68: 16x build only (113.5 MHz). 1 = SCLK stays low one clock longer
+    // than high: clk_div 0 gives 1 high + 2 low = 37.8 MHz (56.8 without;
+    // SD high speed allows 50, min high/low 7 ns), clk_div 1 gives 2 + 3 =
+    // 22.7 MHz (28.4 without; default speed allows 25). 12x clocks the same
+    // settings at 42.6 / 21.3 MHz.
+    parameter LO_EXTRA = 0
+)(
+`else
 module shifter(
+`endif
     input wire clk,
     input wire reset,
 
@@ -33,6 +44,9 @@ module shifter(
 reg [12:0] rx_length;
 
 reg [7:0] clk_count;
+`ifdef TG68_X16
+reg lo_stretched = 1'b0;   // TG68: LO_EXTRA's extra low clock was spent
+`endif
 reg [2:0] bit_count;
 
 reg [7:0] in_reg;
@@ -100,7 +114,15 @@ always @(posedge clk) begin
                 endcase
             end
             SHIFTING: begin
+`ifdef TG68_X16
+                // TG68: with LO_EXTRA, the low half waits one more clock
+                if (clk_count == clk_div && LO_EXTRA != 0 && !SCLK && !lo_stretched) begin
+                    lo_stretched <= 1'b1;
+                end else if (clk_count == clk_div) begin
+                    lo_stretched <= 1'b0;
+`else
                 if (clk_count == clk_div) begin
+`endif
                     if (SCLK) begin
                         sr <= {sr[6:0], MISO};
 
