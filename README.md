@@ -68,7 +68,7 @@ MapROM (the board's boot ROM already turns it on at every boot).
 
 ## Status
 
-Steps 1-7 of the speed-up work run on real hardware. See the
+Steps 1-9 of the speed-up work run on real hardware. See the
 [bitstream table](tg68/README.md#the-bitstreams) for what each step added.
 Earlier steps stay in the releases as fallbacks. Work happens on branches,
 one reviewed change at a time. [`tg68/CLAUDE.md`](tg68/CLAUDE.md) holds the
