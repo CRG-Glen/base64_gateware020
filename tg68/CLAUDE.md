@@ -95,6 +95,13 @@ that gives the "_fast" files.
 5. Changes to rtl/base64_fx68k files are marked `TG68:` with the reason.
 6. Update README.md (status, table, feature text, timing table) along with
    the code.
+7. **Keep both clocks working (Glen's decision after the 16x test).** The
+   16x build needs a board mod (ICS570B rewired to x16), so every change
+   must work in both the 12x and 16x (`TG68_X16`) builds. Run the sims at
+   both (`VLFLAGS=-DTG68_X16` for 16x), sign off 12x with check_timing as
+   usual, score the 16x build at 113.6 MHz (worst delay/budget ratio; it
+   cannot pass the worst-case model), and give Glen test bitstreams for
+   both. Anything clock-dependent goes under `ifdef TG68_X16`.
 
 ## Working in Claude Code
 
@@ -347,7 +354,11 @@ that gives the "_fast" files.
   ~7% less on SDRAM-bound work (CL3), xSysInfo caches-on Dhrystones -12%
   (22117 -> 19429) with SysInfo unchanged: not explained yet. CL2 at
   113.5 MHz is in spec only if the SDRAM is a -6 (or faster) part:
-  check the chip marking before trying it.
+  check the chip marking before trying it. Glen's chip is an
+  IS42S16160J-6BLI: ISSI's key timing table (Rev. C3) gives -6 a 10 ns
+  minimum tCK at CL2 (100 MHz), so CL3 stays at 16x.
+  Hardware: E clock 709379 Hz, a real floppy reads fine. Glen is
+  stress-testing it on the bench.
 - Timing headroom: from step 7 on only ~1 seed in 8 passes every class,
   with a different path missing each time (README "Timing"). A new
   feature will likely need a seed search. A real fix would need fewer
