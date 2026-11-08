@@ -18,31 +18,32 @@ how to build it, the timing method and the test benches.
 
 | | |
 | --- | --- |
-| CPU | TG68K.C, 68020 mode, 32-bit longword reads from the cache and writes to fast RAM |
+| CPU | TG68K.C, 68020 mode, 32-bit longword reads and writes (caches and fast RAM) |
 | Caches | 8 KB instruction + 8 KB data, write-through, invisible to software |
 | Fast RAM | up to 8 MB Zorro II + 16 MB at `$08000000`, direct SDRAM path |
 | Also | SD card boot (sfsd.device), MapROM (Kickstart in SDRAM), autoconfig |
 | Not included | MMU, FPU |
 
-Measured on an A500+ (Kickstart 3.x), step 8:
+Measured on an A500+ (Kickstart 3.x), step 9:
 
 | | Caches on | Caches off |
 | --- | --- | --- |
-| SysInfo Dhrystones | 9226 (9.63 MIPS) | 3982 |
-| AIBB MemTest | 10.93 MB/s | 6.15 MB/s |
+| SysInfo Dhrystones | 9221 (9.62 MIPS) | 4202 (4.38 MIPS) |
+| AIBB MemTest | 12.20 MB/s | 6.97 MB/s |
+| xSysInfo fast RAM | 23.31 MB/s | 20.28 MB/s |
+| xSysInfo Dhrystones | 15075 (8.57 MIPS) | 7802 (4.44 MIPS) |
 | SD card (SysInfo) | 2.18 MB/s | |
 
-xSysInfo, caches on: 15711 Dhrystones (8.94 MIPS), fast RAM 16.38 MB/s,
-Chip RAM 2.39 MB/s, ROM 16.38 MB/s (Kickstart runs from fast RAM via
-MapROM), SD card 1.9 MB/s.
+Kickstart runs from fast RAM via MapROM (xSysInfo, step 8: ROM reads as
+fast as fast RAM). Chip RAM reads at 2.39 MB/s, the Amiga's own bus.
 
 
 ## Getting it running
 
 1. Download the bitstreams from the
    [Releases](https://github.com/CRG-Glen/base64_gateware020/releases) page.
-   Take the newest release's `base64_tg68_full_plain.bit` (step 8:
-   `bitstreams/step8_sdram32w/`). From step 6 on only this `full` build
+   Take the newest release's `base64_tg68_full_plain.bit` (step 9:
+   `bitstreams/step9_sdram32r/`). From step 6 on only this `full` build
    is released; the older releases also have `min`, a cut-down build with
    no fast RAM and no SD card, for diagnosing faults.
 2. **With the module out of the Amiga** (see the warning below), plug it

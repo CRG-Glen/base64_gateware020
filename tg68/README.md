@@ -10,11 +10,10 @@ and the SD card. An adapter, `tg68_bus.v`, makes TG68K look like fx68k's
 ports and adds the caches and the direct SDRAM path. Changes to the fx68k
 build's own files are few and marked `TG68:`.
 
-> **Status:** steps 1-8 run on an A500+. The latest, step 8 `full`: 9226
-> Dhrystones, 9.63 MIPS, AIBB MemTest 10.93 MB/s with the caches on, SD
-> card 2.18 MB/s (sfsd.device). That is about 3.3× the 2783 Dhrystones of
-> the first working build. Step 9 (32-bit SDRAM reads) is simulated and
-> timing-checked, not yet run on hardware.
+> **Status:** steps 1-9 run on an A500+. The latest, step 9 `full`: 9221
+> Dhrystones, 9.62 MIPS, AIBB MemTest 12.20 MB/s with the caches on,
+> xSysInfo fast RAM 23.31 MB/s, SD card 2.18 MB/s (sfsd.device). That is
+> about 3.3× the 2783 Dhrystones of the first working build.
 >
 > **SD card: every `full` bitstream from step 4 on reads the card.** The
 > step 1-3 `full` files drove the card's data-out line (MISO) low, so the
@@ -29,7 +28,7 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
-| `bitstreams/step9_sdram32r/` | + 32-bit SDRAM reads: an aligned longword read that misses the caches is one SDRAM request (two READ commands back to back) and one CPU step | Simulated and timing-checked; **not yet run on hardware**. `full` only |
+| `bitstreams/step9_sdram32r/` | + 32-bit SDRAM reads: an aligned longword read that misses the caches is one SDRAM request (two READ commands back to back) and one CPU step | **Latest. Known good on hardware**, SD card included: MemTest 12.20 MB/s (+12% on step 8), xSysInfo fast RAM 23.31 MB/s (+42%); SysInfo Dhrystones unchanged (9221). `full` only |
 | `bitstreams/step8_sdram32w/` | + 32-bit SDRAM writes: an aligned longword write to fast RAM is one CPU step and one SDRAM request (two WRITE commands back to back) | **Known good on hardware**, SD card included: 9226 Dhrystones (+6% on step 7), MemTest 10.93 MB/s (+43%). `full` only |
 | `bitstreams/step7_datapath32/` | + 32-bit data path: aligned longword reads from the caches in one CPU step (m1nl's TG68K.C fork, banked caches) | **Known good on hardware**, SD card included: 8728 Dhrystones (+7% on step 6), MemTest 7.65 MB/s. `full` only |
 | `bitstreams/step6_earlylookup/` | + early cache lookup: every cache hit in 5 clocks, not 7 (replaces the pair buffers) | **Known good on hardware**, SD card included: 8144 Dhrystones (+21% on step 5), MemTest 7.65 MB/s. `full` only |
@@ -257,7 +256,16 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   against the write shadow, require pair reads to happen, check that a
   pair read fills both cache words (a re-read must be a pair hit), and
   read a pair on a miss, from the cache and with the caches off.
-  Timing: the sequencer state `q` is now one-hot (see *Timing*).
+  Timing: the sequencer state `q` is now one-hot (see *Timing*). On an
+  A500+ (`full`), caches on: AIBB MemTest 10.93 → 12.20 MB/s (+12%),
+  xSysInfo fast RAM 16.38 → 23.31 MB/s (+42%), SysInfo 9221 Dhrystones
+  (step 8: 9226, unchanged: Dhrystone runs from the caches). Caches off:
+  SysInfo 3982 → 4202 Dhrystones (+6%), MemTest 6.15 → 6.97 MB/s (+13%),
+  xSysInfo 7802 Dhrystones, fast RAM 20.28 MB/s. xSysInfo's caches-on
+  Dhrystones went 15711 → 15075 (−4%), which SysInfo does not show; not
+  explained yet (one candidate: a speculative read is now a pair read, so
+  one dropped on a cache hit holds the SDRAM a clock longer). SD card
+  2.18 MB/s as before.
 * **MapROM.** The board's boot ROM (`turbomem.mem`, built with
   `DIAG_MAPROM=1`) copies Kickstart into the SDRAM shadow at every boot,
   verifies it and switches over, so it is normally already on. Both caches
@@ -389,7 +397,7 @@ actually provides:
 pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
 
-Step 9 (32-bit SDRAM reads) builds as supplied (not yet run on hardware):
+Step 9 (32-bit SDRAM reads) builds as supplied (known good on hardware):
 
 | Build | Seed | Worst 1T slack | Worst multicycle slack |
 | --- | --- | --- | --- |

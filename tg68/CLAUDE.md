@@ -216,7 +216,7 @@ that gives the "_fast" files.
   (`wr_pairs`), fastmem FAILs on `wr_pairs < 4` or any SDRAM model
   violation (`u_sdram.n_err`), directed tests at 0x819C/0x81A0/0x81A4;
   mutations (2nd column, no pw_upd2, masked 2nd write) all caught.
-- **32-bit SDRAM reads (step 9, not yet on hardware):** `DP32_RD=1`.
+- **32-bit SDRAM reads (step 9, known good on hardware):** `DP32_RD=1`.
   `k_rpair`/`k_dpair` (dp_pair now carries read or write pairs; sdram_ctrl
   latches `cur_pair = pair` for both). Controller: rd2_pend/rd2_left set
   at request acceptance; second READ at col|1 in the first S_RD_WAIT
@@ -293,18 +293,26 @@ that gives the "_fast" files.
 | step 6 (early lookup, `full`) | 8144 / 3813 | 7.65 / 5.71 |
 | step 7 (32-bit data path, `full`) | 8728 / 3940 | 7.65 / 5.71 |
 | step 8 (32-bit SDRAM writes, `full`) | 9226 / 3982 | 10.93 / 6.15 |
+| step 9 (32-bit SDRAM reads, `full`) | 9221 / 4202 | 12.20 / 6.97 |
 
 - AIBB MemTest did not move from step 6 to step 7 (pairs only come from
   cache hits; MemTest's reads miss and its writes are 16-bit). Step 8's
   pair writes took it to 10.93 MB/s (+43%), and to 6.15 with the caches
-  off (pair writes work without them). Pair reads on a miss and the write
-  queue are what would move it next.
-- SD card (sfsd.device 2.4): 2.18 MB/s in SysInfo on steps 4 to 8
+  off (pair writes work without them). Step 9's pair reads on a miss:
+  12.20 / 6.97 (+12% / +13%). The write queue is what would move it next.
+- SD card (sfsd.device 2.4): 2.18 MB/s in SysInfo on steps 4 to 9
   (2184533 bytes/s each time); fx68k gets 1.76 MB/s.
 - xSysInfo (Glen's test suite from step 8): 15711 Dhrystones, 8.94 MIPS,
   fast RAM 16.38 MB/s, Chip RAM 2.39 MB/s, ROM 16.38 MB/s (= fast RAM, so
   MapROM is active), SD card 1.9 MB/s. Its Dhrystone figure is on a
   different scale from SysInfo's; compare xSysInfo with xSysInfo only.
+  Step 9, caches on / off: 15075 / 7802 Dhrystones, 8.57 / 4.44 MIPS,
+  fast RAM 23.31 / 20.28 MB/s. The caches-on Dhrystones are 4% below step
+  8's 15711 while SysInfo's are unchanged; unexplained. Candidate: the
+  speculative read at DECIDE is now a pair read, so one dropped on a hit
+  keeps the SDRAM a clock longer and a following posted write or miss
+  waits. Re-run xSysInfo on steps 8 and 9 back to back to see if it is
+  real before changing anything.
 - Step 5 caches-off Dhrystones (3717) are below step 4's (4007), but the
   caches-off logic is unchanged: identical clock counts for both in the
   read and copy benches with CACR=0. Step 6's caches-off run gave 3813,
