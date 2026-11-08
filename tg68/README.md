@@ -13,7 +13,8 @@ build's own files are few and marked `TG68:`.
 > **Status:** steps 1-8 run on an A500+. The latest, step 8 `full`: 9226
 > Dhrystones, 9.63 MIPS, AIBB MemTest 10.93 MB/s with the caches on, SD
 > card 2.18 MB/s (sfsd.device). That is about 3.3× the 2783 Dhrystones of
-> the first working build.
+> the first working build. Step 9 (32-bit SDRAM reads) is simulated and
+> timing-checked, not yet run on hardware.
 >
 > **SD card: every `full` bitstream from step 4 on reads the card.** The
 > step 1-3 `full` files drove the card's data-out line (MISO) low, so the
@@ -28,7 +29,8 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
-| `bitstreams/step8_sdram32w/` | + 32-bit SDRAM writes: an aligned longword write to fast RAM is one CPU step and one SDRAM request (two WRITE commands back to back) | **Latest. Known good on hardware**, SD card included: 9226 Dhrystones (+6% on step 7), MemTest 10.93 MB/s (+43%). `full` only |
+| `bitstreams/step9_sdram32r/` | + 32-bit SDRAM reads: an aligned longword read that misses the caches is one SDRAM request (two READ commands back to back) and one CPU step | Simulated and timing-checked; **not yet run on hardware**. `full` only |
+| `bitstreams/step8_sdram32w/` | + 32-bit SDRAM writes: an aligned longword write to fast RAM is one CPU step and one SDRAM request (two WRITE commands back to back) | **Known good on hardware**, SD card included: 9226 Dhrystones (+6% on step 7), MemTest 10.93 MB/s (+43%). `full` only |
 | `bitstreams/step7_datapath32/` | + 32-bit data path: aligned longword reads from the caches in one CPU step (m1nl's TG68K.C fork, banked caches) | **Known good on hardware**, SD card included: 8728 Dhrystones (+7% on step 6), MemTest 7.65 MB/s. `full` only |
 | `bitstreams/step6_earlylookup/` | + early cache lookup: every cache hit in 5 clocks, not 7 (replaces the pair buffers) | **Known good on hardware**, SD card included: 8144 Dhrystones (+21% on step 5), MemTest 7.65 MB/s. `full` only |
 | `bitstreams/step5_pairbuf/` | + pair buffers: the other half of a cached pair in 5 clocks, not 7 | **Known good. `full` on hardware**, SD card included: 6720 Dhrystones, MemTest 7.46 MB/s. `min` not run on hardware |
@@ -239,6 +241,23 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   fast RAM 16.38 MB/s, Chip RAM 2.39 MB/s, ROM 16.38 MB/s (the same as
   fast RAM: Kickstart runs from the MapROM copy in SDRAM), SD card
   1.9 MB/s.
+* **32-bit SDRAM reads (step 9).** An aligned longword read from fast RAM
+  that misses the caches (or with the caches off) is now one SDRAM request
+  as well: the controller issues two READ commands on consecutive clocks
+  (column even, then odd) and the two words arrive one clock apart, so the
+  pair costs one clock more than a single word. The CPU then steps once
+  with both (`long_ack`; first word on `data_in_hi` from `k_din`, second on
+  `data_in` from its own register `k_din_lo`). Before, the second word came
+  from the one-word prefetch, a separate request, and took a second CPU
+  step. Both words fill the data cache (the second through the prefetch
+  fill path). No prefetch follows a pair read. Misaligned longwords and
+  word or byte reads are unchanged. In simulation the 1 KB copy goes from
+  6.45 to 7.33 MB/s (+14%); the read benches are timed on a pass from the
+  caches and don't move. The tests check both words of every pair read
+  against the write shadow, require pair reads to happen, check that a
+  pair read fills both cache words (a re-read must be a pair hit), and
+  read a pair on a miss, from the cache and with the caches off.
+  Timing: the sequencer state `q` is now one-hot (see *Timing*).
 * **MapROM.** The board's boot ROM (`turbomem.mem`, built with
   `DIAG_MAPROM=1`) copies Kickstart into the SDRAM shadow at every boot,
   verifies it and switches over, so it is normally already on. Both caches
@@ -263,10 +282,11 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   without the SD block.
 * **16-bit data bus.** TG68's bus port is 16 bits, so a longword is two
   transfers, as on the 68000, except an aligned longword read that hits
-  the data cache (step 7) and an aligned longword write to fast RAM
-  (step 8), each handed over in one step. The SDRAM chip on the
-  iCESugar-Pro is 16 bits wide as well; step 8 writes a pair as two
-  back-to-back WRITE commands in one request.
+  the data cache (step 7), an aligned longword write to fast RAM (step 8)
+  and an aligned longword read from fast RAM on a cache miss (step 9),
+  each handed over in one step. The SDRAM chip on the iCESugar-Pro is 16
+  bits wide as well; steps 8 and 9 move a pair as two back-to-back WRITE
+  or READ commands in one request.
 * **Direct SDRAM path (step 3).** On-board fast RAM (the Zorro II window
   and $08000000) is no longer reached through the 68000-style
   AS/DS/DTACK slave. The adapter decodes it itself, from the fast RAM
@@ -323,7 +343,7 @@ either way.
    `yowasp-nextpnr-ecp5` pip packages installed (`build.py` falls back to
    them when plain `yosys` / `nextpnr-ecp5` are missing). A build takes a
    few minutes per seed.
-3. The bitstream lands in `build\full\base64_tg68_full.bit`. Step 8
+3. The bitstream lands in `build\full\base64_tg68_full.bit`. Step 9
    `full` uses ~10.5k of the FPGA's 24k LUTs and 35 of its 56 block RAMs.
    Expect to try several seeds (`--seeds 12`): the timing margins are thin.
 
@@ -368,6 +388,39 @@ actually provides:
 (`--seeds N` for more) until it gets `RESULT: PASS`, and writes `timing.txt`. Expect the 1T classes to
 pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
+
+Step 9 (32-bit SDRAM reads) builds as supplied (not yet run on hardware):
+
+| Build | Seed | Worst 1T slack | Worst multicycle slack |
+| --- | --- | --- | --- |
+| full | 7 | +0.36 ns | +1.16 ns |
+
+**How close to the edge the design is.** From step 7 on, only about one
+seed in eight passes every class, and which path misses on the other
+seeds changes from seed to seed. Step 8, known good on hardware, passed
+on seed 3 only of seeds 1-8; the others missed by 0.1 to 2.5 ns, each on a
+different class. Step 9's variants did the same. Restructuring the paths
+that failed moved the misses elsewhere rather than removing them:
+
+* The step 9 logic itself was taken out of the critical paths. The pair
+  flag for the next request loads in CCMP/CFREE whenever the port is free
+  (not per branch), a miss sets `k_long_ack` from one registered flag
+  (`rp_go`), the second word has its own register instead of another
+  `k_din` load, and it fills the cache through the prefetch fill instead
+  of a new cache write source. In the controller the pair-read flags are
+  set with the request, not in the read branches.
+* The sequencer state `q` lost its initial value, so yosys recodes it
+  one-hot (an initial value stops yosys treating a register as a state
+  machine). That shortens the 1T paths from `q` through the step decision,
+  which failed on most binary-`q` seeds. The kernel -> DECIDE paths grow
+  instead, and fail on most other seeds. Seed 7 is the cleanest build
+  found in all variants. `q` needs no power-up value: `extReset` is held
+  through the power-up hold and loads it.
+* Not kept: flag registers for the step decision (no better), and nextpnr
+  without timing-driven placement (`--no-tmdriv`: kernel -> kernel failed
+  by 3-4 ns). nextpnr has no multicycle constraints (its SDC support is
+  `create_clock` and single-object `set_false_path`), so its placer
+  optimises for a one-clock kernel that doesn't exist.
 
 Step 8 (32-bit SDRAM writes) builds as supplied (known good on hardware):
 

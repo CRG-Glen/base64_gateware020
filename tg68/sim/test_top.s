@@ -211,6 +211,20 @@ cp32:   move.l  (%a0)+,(%a1)+
         move.l  #0x81828384,0x08004E00  | pair write over cached words
         move.l  0x08004E00,%d0      | hits: both cache entries updated
         move.l  %d0,0x81A4          | 81A4 81828384
+        | -- 32-bit SDRAM reads (step 9): a miss reads both words at once --
+        move.w  #0x9192,0x08004F00  | two word writes (no pair)
+        move.w  #0x9394,0x08004F02
+        move.l  #0,0x08006F00       | same cache slots 8 KB up: evicts both
+        move.l  0x08004F00,%d0      | miss: one pair read from the SDRAM
+        move.l  0x08004F00,%d1      | both words filled: a pair hit
+        move.l  %d0,0x81A8          | 81A8 91929394
+        move.l  %d1,0x81AC          | 81AC 91929394
+        moveq   #0,%d0
+        movec   %d0,%cacr           | caches off: a direct pair read
+        move.l  0x08004F00,%d2
+        moveq   #1,%d0
+        movec   %d0,%cacr           | caches on again
+        move.l  %d2,0x81B0          | 81B0 91929394
         .endif
         moveq   #0,%d7
         jsr     romfn+0xF80000      | Kickstart-ROM range: over the 7M bus,

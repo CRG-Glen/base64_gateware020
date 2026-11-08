@@ -61,6 +61,8 @@ module tg68_bus #(
                                        // (32-BIT DATA PATH; 0 = 16-bit only)
     parameter integer DP32_WR    = 1,  // post aligned longword writes to fast RAM
                                        // as one pair (32-BIT SDRAM, step 8)
+    parameter integer DP32_RD    = 1,  // read aligned longwords from fast RAM as
+                                       // one pair on a cache miss (step 9)
     parameter integer IC_AW      = 12, // log2(cache words): 12 = 4096 = 8 KB
     parameter integer BARREL     = 0   // documentation only: which netlist
 )(
@@ -147,7 +149,17 @@ module tg68_bus #(
     // cycle asked for is chosen after them by address bit 1.)
     reg  [15:0] k_din_ce = 16'hFFFF, k_din_co = 16'hFFFF;
     reg         k_din_sel = 1'b0;
+    // 32-BIT SDRAM READS (step 9): a pair read from the SDRAM hands the
+    // kernel its first word from k_din (loaded in DDATA, as for any direct
+    // read) on data_in_hi and its second from k_din_lo (its own register,
+    // loaded in DDATA2, so k_din gains no load enable) on data_in; k_din_hsel
+    // switches both muxes. Adapter -> kernel registers like k_din: set in
+    // DDATA2, two clocks before the kernel samples (tb-asserted), the select
+    // cleared after.
+    reg  [15:0] k_din_lo = 16'hFFFF;
+    reg         k_din_hsel = 1'b0;
     wire [15:0] k_dat;                 // assigned below a_r
+    wire [15:0] k_din_hmux;            // data_in_hi: k_din_ce, or k_din (step 9)
     reg  [2:0]  k_ipl    = 3'b111;
     reg         k_berr   = 1'b0;
 
@@ -178,7 +190,7 @@ module tg68_bus #(
         .clkena_in  (k_clkena),
         .clkena_lw_in (k_clkena_lw),
         .data_in    (k_dat),
-        .data_in_hi (k_din_ce),
+        .data_in_hi (k_din_hmux),
         .long_ack   (k_long_ack),
         .ipl        (k_ipl),
         .berr       (k_berr),
@@ -204,7 +216,9 @@ module tg68_bus #(
     reg [2:0]  fc_r = 3'b110;
     reg        uds_want = 1'b1, lds_want = 1'b1;
     assign eab = a_r;
-    assign k_dat = !k_din_sel ? k_din : ((a_r[1] | k_long_ack) ? k_din_co : k_din_ce);
+    assign k_dat = !k_din_sel ? (k_din_hsel ? k_din_lo : k_din)
+                              : ((a_r[1] | k_long_ack) ? k_din_co : k_din_ce);
+    assign k_din_hmux = k_din_hsel ? k_din : k_din_ce;
     assign {FC2, FC1, FC0} = fc_r;
 
     // ------------------------------------------------------------------
@@ -217,13 +231,21 @@ module tg68_bus #(
                      Q_WAIT   = 4'd4,  // waiting for DTACK/BERR
                      Q_LATCH  = 4'd5,  // DTACK seen, counting to data latch
                      Q_FINISH = 4'd6,  // data latched, counting to clkena
+                     Q_DDATA2 = 4'd7,  // pair read: second word captured (step 9)
                      // 4'd7 unused (was CLOOK, before step 6)
                      Q_CCMP   = 4'd8,  // cache: compare tag, hit steps the CPU
                      Q_DWAIT  = 4'd9,  // direct SDRAM access in progress
                      Q_DDATA  = 4'd10, // direct SDRAM data captured
                      Q_CFREE  = 4'd11; // cache miss: waiting for the SDRAM port
 
-    reg [3:0] q    = Q_SETTLE;
+    // No initial value, on purpose (step 9): with one, yosys will not treat
+    // q as a state machine ("Register has an initialization value") and
+    // keeps it as four binary bits, so every state test costs a decode LUT
+    // on the 1T paths through the step decision. Without it yosys recodes q
+    // one-hot. It needs no power-up value: extReset is held through the
+    // power-up hold (~pwrup_done in base64_tg68_top) and loads Q_SETTLE on
+    // every clock of it.
+    reg [3:0] q;
 
     // ------------------------------------------------------------------
     // ICACHE -- instruction cache
@@ -543,6 +565,15 @@ module tg68_bus #(
     // 32-BIT SDRAM (step 8): a longword write the kernel offers as an aligned
     // pair, both bytes of the word strobed (a pair is always a whole longword)
     wire k_wpair  = (DP32_WR != 0) && k_long_cand && !k_addr[1] && !k_nuds && !k_nlds;
+    // 32-BIT SDRAM READS (step 9): the same for a read. dp_pair carries
+    // either to the controller (it latches pair with the request).
+    wire k_rpair  = (DP32_RD != 0) && k_long_cand && !k_addr[1] && !k_nuds && !k_nlds;
+    wire k_dpair  = k_nwr ? k_rpair : k_wpair;
+    // rp_go: this cycle is an aligned pair read from fast RAM (registered at
+    // DECIDE). A cache miss keeps k_long_ack = rp_go whichever way it goes
+    // on (the read is a pair read exactly then), and CCMP/CFREE issue their
+    // request with dp_pair = rp_go.
+    reg  rp_go = 1'b0;
 
     // ------------------------------------------------------------------
     // STROBE PIPELINE
@@ -587,7 +618,7 @@ module tg68_bus #(
     // CLOOK/CCMP count: a miss goes straight on to a bus cycle.
     wire in_cycle      = (q == Q_SETUP) || (q == Q_WDS) || (q == Q_WAIT)
                        || (q == Q_LATCH) || (q == Q_CCMP)
-                       || (q == Q_DWAIT) || (q == Q_DDATA) || (q == Q_CFREE)
+                       || (q == Q_DWAIT) || (q == Q_DDATA) || (q == Q_DDATA2) || (q == Q_CFREE)
                        || ~as_i || ~ASn;
 
     always @(posedge clk) begin
@@ -610,7 +641,7 @@ module tg68_bus #(
         end
         // The kernel samples data_in at the end of the clkena clock; the
         // select goes back to k_din on that same edge.
-        if (k_clkena) begin k_din_sel <= 1'b0; k_long_ack <= 1'b0; end
+        if (k_clkena) begin k_din_sel <= 1'b0; k_long_ack <= 1'b0; k_din_hsel <= 1'b0; end
         ic_ok_d  <= (ICACHE != 0) && (k_rom || k_z2 || k_cpuw || icache_win_k);
         mr_act_d <= mr_active;
         ic_on_r  <= (ICACHE != 0) && k_cacr[0] && !flush_nxt;
@@ -627,7 +658,7 @@ module tg68_bus #(
             // Hold the kernel in reset, but keep stepping it: its internal
             // synchronous Reset only advances on clkena.
             k_nreset <= 1'b0;
-            k_din_sel <= 1'b0; k_long_ack <= 1'b0;
+            k_din_sel <= 1'b0; k_long_ack <= 1'b0; k_din_hsel <= 1'b0;
             dec_r    <= 1'b0;
             as_i  <= 1'b1; uds_i <= 1'b1; lds_i <= 1'b1; eRWn <= 1'b1;
             oRESETn  <= 1'b1;
@@ -702,14 +733,14 @@ module tg68_bus #(
                 uds_want  <= k_nuds;
                 lds_want  <= k_nlds;
                 cyc_fetch <= (k_bs == 2'b00);
+                rp_go     <= k_nwr && k_rpair && k_fast;
                 if (!dp_busy) begin
                     dp_we    <= ~k_nwr;
                     dp_wdata <= k_dout;
                     dp_wdata_lo <= k_dout_lo;
                     dp_be    <= ~{k_nuds, k_nlds};
-                    // 32-BIT SDRAM: the controller only honours it on a
-                    // write (cur_pair = pair && we), so reads need not clear it
-                    dp_pair  <= k_wpair;
+                    // 32-BIT SDRAM: a pair write (step 8) or read (step 9)
+                    dp_pair  <= k_dpair;
                 end
             end
             case (q)
@@ -778,6 +809,7 @@ module tg68_bus #(
                     end else if (k_fast) begin
                         dp_req_i <= 1'b1;   // direct read
                         dp_busy  <= 1'b1; dp_kind  <= 2'd1;
+                        k_long_ack <= k_rpair;   // a pair read (step 9; dp_pair: dec_r)
                         q        <= Q_DWAIT;
                     end else
                         q <= Q_SETUP;
@@ -808,26 +840,29 @@ module tg68_bus #(
                     k_long_ack <= 1'b0;
                     q          <= Q_FINISH;
                     if (dp_spec) dp_kind <= 2'd2;
-                end else if (dp_spec) begin
-                    k_long_ack <= 1'b0;
-                    k_din_sel <= 1'b0;
-                    q        <= Q_DWAIT;     // miss: the read is already out
-                end else if (dp_busy) begin
-                    k_long_ack <= 1'b0;
-                    k_din_sel <= 1'b0;
-                    q        <= Q_CFREE;     // miss: port still busy
-                end else if (dp_fast) begin
-                    k_long_ack <= 1'b0;
-                    k_din_sel <= 1'b0;
-                    dp_req_i <= 1'b1;        // miss in fast RAM: direct
-                    dp_busy  <= 1'b1; dp_kind <= 2'd1;
-                    dp_we    <= 1'b0;
-                    q        <= Q_DWAIT;
                 end else begin
-                    k_long_ack <= 1'b0;
+                    // miss. 32-BIT SDRAM READS (step 9): an aligned pair in
+                    // fast RAM goes on as a pair read (the speculative read
+                    // already is one: dp_pair = rp_go then), so k_long_ack
+                    // stays for it; anything else drops it.
+                    k_long_ack <= rp_go;
                     k_din_sel <= 1'b0;
-                    q        <= Q_SETUP;     // miss: address is already out
+                    if (dp_spec)
+                        q        <= Q_DWAIT; // the read is already out
+                    else if (dp_busy)
+                        q        <= Q_CFREE; // port still busy
+                    else if (dp_fast) begin
+                        dp_req_i <= 1'b1;    // miss in fast RAM: direct
+                        dp_busy  <= 1'b1; dp_kind <= 2'd1;
+                        dp_we    <= 1'b0;
+                        q        <= Q_DWAIT;
+                    end else
+                        q        <= Q_SETUP; // address is already out
                 end
+                // the next request's pair flag, whenever the port is free
+                // (the request issued here, or none: every request site
+                // sets it); while busy it belongs to the request in flight
+                if (!dp_busy) dp_pair <= rp_go;
             end
             // A miss that found the port busy. fastmem_zii's SDRAM address
             // follows the kernel's address again from the clock after the
@@ -838,6 +873,7 @@ module tg68_bus #(
                     dp_req_i <= 1'b1;
                     dp_busy  <= 1'b1; dp_kind <= 2'd1;
                     dp_we    <= 1'b0;
+                    dp_pair  <= rp_go;
                     q        <= Q_DWAIT;
                 end else
                     q        <= Q_SETUP;
@@ -848,8 +884,9 @@ module tg68_bus #(
                 dp_req_i <= 1'b0;
                 dp_busy  <= 1'b0; dp_kind <= 2'd0;
                 // a data read will be followed by a prefetch: point the
-                // SDRAM address at the next word now
-                if (!cyc_fetch && (a_r[9:1] != 9'h1FF)) dp_inc <= 1'b1;
+                // SDRAM address at the next word now (not after a pair
+                // read, step 9: it already brings the next word)
+                if (!cyc_fetch && (a_r[9:1] != 9'h1FF) && !k_long_ack) dp_inc <= 1'b1;
                 q        <= Q_DDATA;
             end
             Q_DDATA: begin
@@ -867,17 +904,40 @@ module tg68_bus #(
                 k_din    <= dp_q;
                 bus_berr <= 1'b0;
                 tmr      <= 6'd0;
-                q        <= Q_FINISH;
+                // 32-BIT SDRAM READS (step 9): a pair read's second word is
+                // on dp_rdata now (the controller's second ack clock)
+                dp_q     <= dp_rdata;
+                q        <= k_long_ack ? Q_DDATA2 : Q_FINISH;
                 // Data read: fetch the next word while the kernel settles,
                 // unless that would leave this 1 KB (row/slot boundaries).
+                // A pair read (step 9) already has it: no request, but the
+                // same pf_a/pf_dc, so that DDATA2 can fill the second word
+                // into the data cache through pf_fill (pf_valid stays 0:
+                // the buffer is not used for it).
                 if (!cyc_fetch && (a_r[9:1] != 9'h1FF)) begin
-                    dp_req_i <= 1'b1;
-                    dp_busy  <= 1'b1; dp_kind  <= 2'd3;
-                    dp_we    <= 1'b0;
                     pf_a     <= a_r + 31'd1;
                     pf_valid <= 1'b0;
                     pf_dc    <= (DCACHE != 0) && ic_ok && dc_on;
+                    if (!k_long_ack) begin
+                        dp_req_i <= 1'b1;
+                        dp_busy  <= 1'b1; dp_kind  <= 2'd3;
+                        dp_we    <= 1'b0;
+                        dp_pair  <= 1'b0;
+                    end
                 end
+            end
+            // 32-BIT SDRAM READS (step 9): the pair's second word (dp_q)
+            // goes to k_din_lo (the first is in k_din, from DDATA). It fills
+            // its data-cache entry (the odd bank) through the prefetch fill,
+            // on the next clock: pf_a/pf_dc were set in DDATA, so pf_a is two
+            // clocks old when pf_fill uses it (its 2T class in
+            // check_timing.py), and the cache write ports gain no source.
+            Q_DDATA2: begin
+                k_din_lo   <= dp_q;
+                k_din_hsel <= 1'b1;
+                pf_fill    <= pf_dc;
+                tmr      <= 6'd0;
+                q        <= Q_FINISH;
             end
             // ----------------------------------------------------------
             Q_SETUP: if (tmr >= ADDR_SETUP - 1) begin

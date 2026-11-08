@@ -216,6 +216,25 @@ that gives the "_fast" files.
   (`wr_pairs`), fastmem FAILs on `wr_pairs < 4` or any SDRAM model
   violation (`u_sdram.n_err`), directed tests at 0x819C/0x81A0/0x81A4;
   mutations (2nd column, no pw_upd2, masked 2nd write) all caught.
+- **32-bit SDRAM reads (step 9, not yet on hardware):** `DP32_RD=1`.
+  `k_rpair`/`k_dpair` (dp_pair now carries read or write pairs; sdram_ctrl
+  latches `cur_pair = pair` for both). Controller: rd2_pend/rd2_left set
+  at request acceptance; second READ at col|1 in the first S_RD_WAIT
+  clock; S_RD_DONE held one more clock, so ack_early/rdata_live give word
+  1 then word 2. Adapter: `rp_go` (aligned pair read in fast RAM,
+  registered at DECIDE); a CCMP miss sets `k_long_ack <= rp_go`; dp_pair
+  loads in CCMP/CFREE when the port is free; direct (caches-off) reads set
+  `k_long_ack <= k_rpair` at DECIDE. DWAIT: word 1 -> dp_q, no dp_inc.
+  DDATA: k_din <= word 1, dp_q <= dp_rdata (word 2), pf_a/pf_dc set, no
+  prefetch request, -> Q_DDATA2 (code 7). DDATA2: `k_din_lo <= dp_q`,
+  `k_din_hsel <= 1` (switches data_in to k_din_lo and data_in_hi to
+  k_din; cleared after the step), pf_fill <= pf_dc (fills word 2: pf_a is
+  2 clocks old by then, its 2T class). `q` has no initial value so yosys
+  recodes it one-hot. Tests: miss pairs checked against the shadow
+  (`rd_pairs` >= 4), a pair hit at 0x08004F00 required (`hit_4f00`),
+  checks at 0x81A8/0x81AC/0x81B0; mutations (2nd column, S_RD_DONE not
+  held, select off, wrong word, no fill) all caught. Timing: seed 7
+  +0.36 / +1.16 ns; ~1 seed in 8 passes, as step 8 (README "Timing").
 - **Cache enable:** both caches follow CACR EI. The data cache must NOT get
   the 68030 CACR bit 8: software tells an 020 from an 030 by setting that bit
   and reading it back, so storing it would make the CPU detect as a 68030 and
@@ -299,5 +318,7 @@ that gives the "_fast" files.
 - A 2-4 entry write queue (copies are write-bound).
 - Bigger caches: 16 more block RAMs, which would crowd out RTG.
 - RTG framebuffer in SDRAM: discussed as a future add-on, no design yet.
-- Step 8 follow-up: pair READS from the direct SDRAM path on a cache miss
-  (two READ commands back to back, both words returned, both banks filled).
+- Timing headroom: from step 7 on only ~1 seed in 8 passes every class,
+  with a different path missing each time (README "Timing"). A new
+  feature will likely need a seed search. A real fix would need fewer
+  levels on the adapter's 1T paths, or a lower clock.

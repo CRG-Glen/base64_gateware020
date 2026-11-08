@@ -53,6 +53,9 @@ module sdram_ctrl #(
     // (addr even): wdata/byte_en to addr, then wdata_lo (both bytes) to
     // addr+1 with a second WRITE on the next clock, same open row. Latched
     // with the request like we; sampled live like wdata. Tie to 0 if unused.
+    // Step 9: on a read, pair = read addr and addr+1 with two READs on
+    // consecutive clocks; ack_early/rdata_live then present the first word
+    // and, on the next clock, the second (S_RD_DONE is held one clock).
     input  wire        pair,
     input  wire [15:0] wdata_lo,
     output reg         ack,
@@ -160,7 +163,9 @@ module sdram_ctrl #(
     reg [12:0] cur_row;
     reg [8:0]  cur_col;
     reg        cur_we;
-    reg        cur_pair;   // TG68: the request is a pair write
+    reg        cur_pair;   // TG68: the request is a pair (write: step 8, read: step 9)
+    reg        rd2_pend;   // TG68: a pair read's second READ is still to issue
+    reg        rd2_left;   // TG68: ...and its second word is still to come
 
     assign ready = init_done;
 
@@ -180,6 +185,8 @@ module sdram_ctrl #(
             ack         <= 1'b0;
             rdata       <= 16'd0;
             cur_pair    <= 1'b0;
+            rd2_pend    <= 1'b0;
+            rd2_left    <= 1'b0;
             timer       <= 4'd0;
             refresh_timer <= 11'd0;
             refresh_due <= 1'b0;
@@ -303,7 +310,12 @@ module sdram_ctrl #(
                     cur_row   <= a_row;
                     cur_col   <= a_col;
                     cur_we    <= we;
-                    cur_pair  <= pair && we;   // TG68
+                    cur_pair  <= pair;   // TG68 (reads too, step 9)
+                    // TG68: a pair read's second READ and second word, set
+                    // here with the request (not in the read branches below,
+                    // which keeps them out of the open-row decision)
+                    rd2_pend  <= pair && !we;
+                    rd2_left  <= pair && !we;
                     // open-row decision
                     if (row_open[a_bank] && open_row[a_bank] == a_row) begin
                         // HIT: row already open. OPT B -- issue the READ in
@@ -396,13 +408,25 @@ module sdram_ctrl #(
                 // the CPU will assert data strobes within a couple of clocks.
             end
             S_RD_WAIT: begin
+                // TG68: a pair read's second READ, to the odd column, on the
+                // clock after the first (tCCD = 1): its word follows the
+                // first one clock later
+                if (rd2_pend) begin
+                    rd2_pend  <= 1'b0;
+                    sdram_ba  <= cur_bank;
+                    sdram_a   <= {4'b0000, cur_col[8:1], 1'b1};   // A10=0
+                    set_cmd(CMD_READ);
+                    sdram_dqm <= 2'b00;
+                end
                 if (timer > 1) timer <= timer - 1'b1;
                 else state <= S_RD_DONE;
             end
             S_RD_DONE: begin
                 rdata <= sdram_dq;
                 ack   <= 1'b1;
-                state <= S_ACK_WAIT;          // row stays OPEN; wait req low
+                // TG68: a pair read stays one more clock for its second word
+                if (rd2_left) rd2_left <= 1'b0;
+                else          state <= S_ACK_WAIT;  // row stays OPEN; wait req low
             end
             // Wait for the requester to drop req before accepting a new access.
             // Prevents a lingering req (deasserted a cycle after ack) from being

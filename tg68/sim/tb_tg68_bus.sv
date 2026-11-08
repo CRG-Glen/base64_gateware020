@@ -53,12 +53,13 @@ module tb;
     // k_long_ack and k_din_sel feed the kernel and are classed adapter ->
     // kernel (2 clocks) by check_timing.py: neither may change in the clock
     // just before the kernel samples (the clkena clock).
-    integer ks_cyc = 0, ks_chg = -10, ks_bad = 0; reg ks_la = 0, ks_ds = 0;
+    integer ks_cyc = 0, ks_chg = -10, ks_bad = 0; reg ks_la = 0, ks_ds = 0, ks_hs = 0;
+    integer rd_pairs = 0;                // pair reads from the SDRAM (step 9)
     integer n_clw = 0;                   // steps with clkena_lw (kernel change 2)
     always @(posedge clk) begin
         ks_cyc = ks_cyc + 1;
-        if (dut.k_long_ack !== ks_la || dut.k_din_sel !== ks_ds) ks_chg = ks_cyc;
-        ks_la = dut.k_long_ack; ks_ds = dut.k_din_sel;
+        if (dut.k_long_ack !== ks_la || dut.k_din_sel !== ks_ds || dut.k_din_hsel !== ks_hs) ks_chg = ks_cyc;
+        ks_la = dut.k_long_ack; ks_ds = dut.k_din_sel; ks_hs = dut.k_din_hsel;
         // The kernel's l1 <= long_ack (Base64 change, was long_ack AND cand)
         // relies on this: long_ack only ever answers an offered pair.
         if (dut.k_long_ack && !dut.k_long_cand) begin
@@ -112,6 +113,13 @@ module tb;
         // A hit is recorded in CCMP and checked on the clock the kernel
         // samples it (k_clkena): data_in (k_dat), and for a pair hit also
         // data_in_hi (k_din_ce) and long_ack. Checked first, then recorded.
+        // A pair read from the SDRAM (step 9: k_long_ack on a read that is
+        // not a cache hit, k_din_sel low): both words against the shadow.
+        if (dut.k_clkena && dut.k_long_ack && dut.eRWn && !dut.k_din_sel) begin
+            rd_pairs = rd_pairs + 1;
+            chk_word(dut.a_r, dut.k_din_hmux);
+            chk_word(dut.a_r + 31'd1, dut.k_dat);
+        end
         if (hp_pend && dut.k_clkena) begin
             hp_pend = 0;
             if (dut.k_long_ack !== hp_long) begin
@@ -120,7 +128,7 @@ module tb;
             end
             if (hp_long) begin
                 long_hits = long_hits + 1;
-                chk_word(hp_a, dut.k_din_ce);
+                chk_word(hp_a, dut.k_din_hmux);
                 chk_word(hp_a + 31'd1, dut.k_dat);
             end else
                 chk_word(hp_a, dut.k_dat);
