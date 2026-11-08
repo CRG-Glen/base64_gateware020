@@ -1,0 +1,586 @@
+Multicycle timing check at 86.00 MHz (T = 11.63 ns), STEP=4 SETTLE=3 DIN=1 DATA=2
+path class                          budget  worst ns  slack ns  paths
+adapter ctrl -> logic                  1T     11.32      0.31    759
+logic -> logic                         1T     10.87      0.33   2245
+kernel -> read-data latch              3T     34.38      0.50     49
+kernel -> logic                        3T     33.89      0.57    231
+icache/direct -> logic                 1T     10.93      0.70    189
+icache/direct -> read-data latch       1T     10.47      1.16     97
+adapter ctrl -> read-data latch        1T     10.03      1.60    149
+clkena -> kernel                       1T      9.71      1.92   1149
+icache/direct -> kernel                1T      9.65      1.97      3
+kernel -> kernel                       4T     43.10      3.41   2265
+icache/direct -> cache RAM             1T      7.91      3.72    458
+adapter->kernel -> kernel              2T     18.82      4.43    411
+bus outputs -> window decode           1T      7.12      4.51      2
+logic -> read-data latch               2T     18.32      4.93    115
+adapter->kernel -> logic               1T      5.54      6.08     22
+adapter ctrl -> kernel                 1T      5.47      6.16      6
+logic -> kernel                        1T      5.04      6.59      6
+bus outputs -> kernel                  2T     16.61      6.64    255
+logic -> window decode                 1T      4.77      6.86      1
+clkena -> logic                        1T      4.65      6.97      2
+clkena -> read-data latch              1T      3.95      7.68      2
+kernel -> cache RAM                    2T     15.26      8.00    180
+adapter->kernel -> read-data latch     1T      3.52      8.11      1
+config regs -> window decode           1T      3.24      8.39      1
+bus outputs -> read-data latch         2T     13.58      9.68     65
+bus outputs -> logic                   2T     11.94     10.89    890
+config regs -> logic                   4T     10.95     35.14    353
+config regs -> read-data latch         4T      9.31     37.20     17
+
+[adapter ctrl -> logic] slack 0.31 ns, delay 11.32 ns
+      cpu.HALTn_TRELLIS_FF_Q
+      led_b_LUT4_Z
+      cpu.mr_act_d_LUT4_B
+      cpu.dc_wt_TRELLIS_FF_Q_2_DI_LUT4_Z_D_LUT4_Z_D_LUT4_Z_D_LUT4_D_Z_LUT4_Z_C_LUT4_D_Z_LUT4_D_Z_LUT4_Z
+      cpu.ic_wt_TRELLIS_FF_Q_DI_LUT4_Z
+      cpu.ic_wt_TRELLIS_FF_Q
+[adapter ctrl -> logic] slack 0.41 ns, delay 11.22 ns
+      cpu.HALTn_TRELLIS_FF_Q
+      led_b_LUT4_Z
+      cpu.mr_act_d_LUT4_B
+      cpu.dc_wt_TRELLIS_FF_Q_2_DI_LUT4_Z_D_LUT4_Z_D_LUT4_Z_D_LUT4_D_Z_LUT4_Z_C_LUT4_D_Z_LUT4_D_Z_LUT4_Z
+      cpu.ic_wt_TRELLIS_FF_Q_3_DI_LUT4_Z
+      cpu.ic_wt_TRELLIS_FF_Q_3
+[adapter ctrl -> logic] slack 0.56 ns, delay 11.07 ns
+      cpu.HALTn_TRELLIS_FF_Q
+      led_b_LUT4_Z
+      cpu.mr_act_d_LUT4_B
+      cpu.dc_wt_TRELLIS_FF_Q_2_DI_LUT4_Z_D_LUT4_Z_D_LUT4_Z_D_LUT4_D_Z_LUT4_Z_C_LUT4_D_Z_LUT4_D_Z_LUT4_Z
+      cpu.ic_wt_TRELLIS_FF_Q_1_DI_LUT4_Z
+      cpu.ic_wt_TRELLIS_FF_Q_1
+[logic -> logic] slack 0.33 ns, delay 10.87 ns
+      g_fastmem.u_fastmem.fm_cfg_match_TRELLIS_FF_Q_5
+      g_fastmem.u_fastmem.configured_LUT4_B_Z_L6MUX21_Z_1_SD_LUT4_Z
+      g_fastmem.u_fastmem.configured_LUT4_B_Z_L6MUX21_Z_1_D1_PFUMX_Z_ALUT_LUT4_Z
+      ... (3 more)
+      cpu.rp_go_LUT4_B_Z_LUT4_Z_D_LUT4_D
+      cpu.pw_upd_TRELLIS_FF_Q_LSR_LUT4_Z
+      cpu.pw_upd_TRELLIS_FF_Q
+[logic -> logic] slack 0.46 ns, delay 11.16 ns
+      g_fastmem.u_fastmem.fm_cfg_match_TRELLIS_FF_Q_5
+      g_fastmem.u_fastmem.configured_LUT4_B_Z_L6MUX21_Z_1_SD_LUT4_Z
+      g_fastmem.u_fastmem.configured_LUT4_B_Z_L6MUX21_Z_1_D1_PFUMX_Z_ALUT_LUT4_Z
+      ... (3 more)
+      cpu.rp_go_LUT4_B_Z_LUT4_Z_D_LUT4_D
+      cpu.q_TRELLIS_FF_Q_2_DI_LUT4_Z
+      cpu.q_TRELLIS_FF_Q_2
+[logic -> logic] slack 0.66 ns, delay 10.97 ns
+      g_fastmem.u_fastmem.fm_cfg_match_TRELLIS_FF_Q_5
+      g_fastmem.u_fastmem.configured_LUT4_B_Z_L6MUX21_Z_1_SD_LUT4_Z
+      g_fastmem.u_fastmem.configured_LUT4_B_Z_L6MUX21_Z_1_D1_PFUMX_Z_ALUT_LUT4_Z
+      ... (3 more)
+      cpu.rp_go_LUT4_B_Z_LUT4_Z_D_LUT4_D
+      cpu.q_TRELLIS_FF_Q_6_DI_PFUMX_Z_BLUT_LUT4_Z
+      cpu.q_TRELLIS_FF_Q_6
+[kernel -> read-data latch] slack 0.50 ns, delay 34.38 ns
+      cpu.core.cpu.regfile.1.1_RAD_1_TRELLIS_FF_Q
+      cpu.core.cpu.regfile.1.0$DPRAM_COMB0
+      cpu.core.cpu.addr_out_CCU2C_S1_15_A0_LUT4_Z
+      ... (16 more)
+      cpu.core.cpu_skipfetch_LUT4_D_Z_LUT4_D_Z_LUT4_D
+      cpu.bus_berr_TRELLIS_FF_Q_LSR_LUT4_Z_B_LUT4_D
+      cpu.k_din_TRELLIS_FF_Q_14
+[kernel -> read-data latch] slack 0.75 ns, delay 34.13 ns
+      cpu.core.cpu.regfile.1.1_RAD_1_TRELLIS_FF_Q
+      cpu.core.cpu.regfile.1.0$DPRAM_COMB0
+      cpu.core.cpu.addr_out_CCU2C_S1_15_A0_LUT4_Z
+      ... (16 more)
+      cpu.core.cpu_skipfetch_LUT4_D_Z_LUT4_D_Z_LUT4_D
+      cpu.bus_berr_TRELLIS_FF_Q_LSR_LUT4_Z_B_LUT4_D
+      cpu.k_din_TRELLIS_FF_Q_1
+[kernel -> read-data latch] slack 0.75 ns, delay 34.13 ns
+      cpu.core.cpu.regfile.1.1_RAD_1_TRELLIS_FF_Q
+      cpu.core.cpu.regfile.1.0$DPRAM_COMB0
+      cpu.core.cpu.addr_out_CCU2C_S1_15_A0_LUT4_Z
+      ... (16 more)
+      cpu.core.cpu_skipfetch_LUT4_D_Z_LUT4_D_Z_LUT4_D
+      cpu.bus_berr_TRELLIS_FF_Q_LSR_LUT4_Z_B_LUT4_D
+      cpu.k_din_TRELLIS_FF_Q_2
+[kernel -> logic] slack 0.57 ns, delay 33.89 ns
+      cpu.core.cpu.regfile.1.1_RAD_1_TRELLIS_FF_Q
+      cpu.core.cpu.regfile.1.0$DPRAM_COMB0
+      cpu.core.cpu.addr_out_CCU2C_S1_15_A0_LUT4_Z
+      ... (18 more)
+      cpu.bus_berr_TRELLIS_FF_Q_LSR_LUT4_Z_D_PFUMX_Z_BLUT_LUT4_Z
+      cpu.bus_berr_TRELLIS_FF_Q_LSR_LUT4_Z
+      cpu.bus_berr_TRELLIS_FF_Q
+[kernel -> logic] slack 1.34 ns, delay 33.54 ns
+      cpu.core.cpu.regfile.1.1_RAD_1_TRELLIS_FF_Q
+      cpu.core.cpu.regfile.1.0$DPRAM_COMB0
+      cpu.core.cpu.addr_out_CCU2C_S1_15_A0_LUT4_Z
+      ... (18 more)
+      cpu.bus_berr_TRELLIS_FF_Q_CE_L6MUX21_Z_D0_PFUMX_Z_BLUT_LUT4_Z
+      cpu.bus_berr_TRELLIS_FF_Q_CE_L6MUX21_Z_D1_PFUMX_Z_ALUT_LUT4_Z
+      cpu.bus_berr_TRELLIS_FF_Q
+[kernel -> logic] slack 1.45 ns, delay 33.43 ns
+      cpu.core.cpu.regfile.1.1_RAD_1_TRELLIS_FF_Q
+      cpu.core.cpu.regfile.1.0$DPRAM_COMB0
+      cpu.core.cpu.addr_out_CCU2C_S1_15_A0_LUT4_Z
+      ... (18 more)
+      cpu.dp_req_i_TRELLIS_FF_Q_CE_L6MUX21_Z_D0_PFUMX_Z_BLUT_LUT4_Z
+      cpu.dp_req_i_TRELLIS_FF_Q_CE_L6MUX21_Z_D1_PFUMX_Z_ALUT_LUT4_Z
+      cpu.dp_req_i_TRELLIS_FF_Q
+[icache/direct -> logic] slack 0.70 ns, delay 10.93 ns
+      cpu.ic_qt_e_TRELLIS_FF_Q_2
+      cpu.ic_ok_d_LUT4_D_Z_PFUMX_Z_2_C0_L6MUX21_Z_SD_LUT4_Z
+      cpu.ic_ok_d_LUT4_D_Z_PFUMX_Z_2_C0_L6MUX21_Z_D1_L6MUX21_Z_D0_PFUMX_Z_ALUT_LUT4_Z
+      ... (4 more)
+      cpu.dp_kind_TRELLIS_FF_Q_1_DI_PFUMX_Z_ALUT_LUT4_Z
+      cpu.dp_kind_TRELLIS_FF_Q_1_DI_PFUMX_Z_BLUT_LUT4_Z
+      cpu.dp_kind_TRELLIS_FF_Q_1
+[icache/direct -> logic] slack 0.76 ns, delay 10.87 ns
+      cpu.ic_qt_e_TRELLIS_FF_Q_2
+      cpu.ic_ok_d_LUT4_D_Z_PFUMX_Z_2_C0_L6MUX21_Z_SD_LUT4_Z
+      cpu.ic_ok_d_LUT4_D_Z_PFUMX_Z_2_C0_L6MUX21_Z_D1_L6MUX21_Z_D0_PFUMX_Z_ALUT_LUT4_Z
+      ... (3 more)
+      cpu.core.cpu_skipfetch_LUT4_D_Z_LUT4_D_Z_LUT4_D_Z_L6MUX21_Z_D1_L6MUX21_Z_D0_PFUMX_Z_ALUT_LUT4_Z
+      cpu.k_clkena_lw_TRELLIS_FF_Q_DI_PFUMX_Z_BLUT_LUT4_Z
+      cpu.k_clkena_lw_TRELLIS_FF_Q
+[icache/direct -> logic] slack 0.78 ns, delay 10.85 ns
+      cpu.ic_qt_e_TRELLIS_FF_Q_2
+      cpu.ic_ok_d_LUT4_D_Z_PFUMX_Z_2_C0_L6MUX21_Z_SD_LUT4_Z
+      cpu.ic_ok_d_LUT4_D_Z_PFUMX_Z_2_C0_L6MUX21_Z_D1_L6MUX21_Z_D0_PFUMX_Z_ALUT_LUT4_Z
+      ... (5 more)
+      cpu.q_TRELLIS_FF_Q_4_DI_L6MUX21_Z_D1_L6MUX21_Z_D1_PFUMX_Z_ALUT_LUT4_Z
+      cpu.q_TRELLIS_FF_Q_4_DI_L6MUX21_Z_D1_L6MUX21_Z_D0_PFUMX_Z_ALUT_LUT4_Z
+      cpu.q_TRELLIS_FF_Q_4
+[icache/direct -> read-data latch] slack 1.16 ns, delay 10.47 ns
+      cpu.g_dcache.dc_data_o.0.1
+      cpu.ic_data_o.0.1_DOB2_LUT4_Z
+      cpu.k_din_co_TRELLIS_FF_Q_10_DI_PFUMX_Z_BLUT_LUT4_Z
+      cpu.k_din_co_TRELLIS_FF_Q_10
+[icache/direct -> read-data latch] slack 1.33 ns, delay 10.30 ns
+      cpu.g_dcache.dc_data_o.0.1
+      cpu.ic_data_o.0.1_DOB4_LUT4_Z
+      cpu.k_din_co_TRELLIS_FF_Q_12_DI_PFUMX_Z_BLUT_LUT4_Z
+      cpu.k_din_co_TRELLIS_FF_Q_12
+[icache/direct -> read-data latch] slack 1.34 ns, delay 10.28 ns
+      cpu.g_dcache.dc_data_e.0.1
+      cpu.ic_data_e.0.1_DOB2_LUT4_Z
+      cpu.k_din_ce_TRELLIS_FF_Q_10_DI_PFUMX_Z_BLUT_LUT4_Z
+      cpu.k_din_ce_TRELLIS_FF_Q_10
+[adapter ctrl -> read-data latch] slack 1.60 ns, delay 10.03 ns
+      cpu.dp_busy_TRELLIS_FF_Q
+      cpu.core.cpu_busstate_LUT4_D
+      cpu.bus_berr_TRELLIS_FF_Q_LSR_LUT4_Z_B_PFUMX_Z_BLUT_LUT4_Z_B_L6MUX21_Z_D1_PFUMX_Z_ALUT_LUT4_Z_B_LUT4_Z
+      ... (3 more)
+      cpu.bus_berr_TRELLIS_FF_Q_LSR_LUT4_Z_B_PFUMX_Z_BLUT_LUT4_Z
+      cpu.bus_berr_TRELLIS_FF_Q_LSR_LUT4_Z_B_LUT4_D
+      cpu.k_din_TRELLIS_FF_Q_14
+[adapter ctrl -> read-data latch] slack 1.85 ns, delay 9.78 ns
+      cpu.dp_busy_TRELLIS_FF_Q
+      cpu.core.cpu_busstate_LUT4_D
+      cpu.bus_berr_TRELLIS_FF_Q_LSR_LUT4_Z_B_PFUMX_Z_BLUT_LUT4_Z_B_L6MUX21_Z_D1_PFUMX_Z_ALUT_LUT4_Z_B_LUT4_Z
+      ... (3 more)
+      cpu.bus_berr_TRELLIS_FF_Q_LSR_LUT4_Z_B_PFUMX_Z_BLUT_LUT4_Z
+      cpu.bus_berr_TRELLIS_FF_Q_LSR_LUT4_Z_B_LUT4_D
+      cpu.k_din_TRELLIS_FF_Q_1
+[adapter ctrl -> read-data latch] slack 1.85 ns, delay 9.78 ns
+      cpu.dp_busy_TRELLIS_FF_Q
+      cpu.core.cpu_busstate_LUT4_D
+      cpu.bus_berr_TRELLIS_FF_Q_LSR_LUT4_Z_B_PFUMX_Z_BLUT_LUT4_Z_B_L6MUX21_Z_D1_PFUMX_Z_ALUT_LUT4_Z_B_LUT4_Z
+      ... (3 more)
+      cpu.bus_berr_TRELLIS_FF_Q_LSR_LUT4_Z_B_PFUMX_Z_BLUT_LUT4_Z
+      cpu.bus_berr_TRELLIS_FF_Q_LSR_LUT4_Z_B_LUT4_D
+      cpu.k_din_TRELLIS_FF_Q_2
+[clkena -> kernel] slack 1.92 ns, delay 9.71 ns
+      cpu.k_clkena_lw_TRELLIS_FF_Q
+      cpu.core.cpu.n9813_q_TRELLIS_FF_Q_CE_LUT4_Z_C_LUT4_C_Z_LUT4_C_Z_PFUMX_BLUT_Z_LUT4_D_Z_LUT4_Z
+      cpu.core.cpu.n1628_o_LUT4_C
+      cpu.core.cpu.n9870_q_TRELLIS_FF_Q_3
+[clkena -> kernel] slack 1.98 ns, delay 9.22 ns
+      cpu.k_clkena_lw_TRELLIS_FF_Q
+      cpu.core.cpu.n8603_o_TRELLIS_FF_Q_CE_LUT4_Z_D_LUT4_Z
+      cpu.core.cpu.n2006_o_TRELLIS_FF_Q_CE_LUT4_Z
+      cpu.core.cpu.n2006_o_TRELLIS_FF_Q_LSR_LUT4_Z
+      cpu.core.cpu.n2006_o_TRELLIS_FF_Q
+[clkena -> kernel] slack 2.16 ns, delay 9.46 ns
+      cpu.k_clkena_lw_TRELLIS_FF_Q
+      cpu.core.cpu.n9813_q_TRELLIS_FF_Q_CE_LUT4_Z_C_LUT4_C_Z_LUT4_C_Z_PFUMX_BLUT_Z_LUT4_D_Z_LUT4_Z
+      cpu.core.cpu.n979_o_LUT4_B_Z_LUT4_D
+      cpu.core.cpu.n9809_q_TRELLIS_FF_Q_29
+[icache/direct -> kernel] slack 1.97 ns, delay 9.65 ns
+      cpu.ic_qt_e_TRELLIS_FF_Q_2
+      cpu.ic_ok_d_LUT4_D_Z_PFUMX_Z_2_C0_L6MUX21_Z_SD_LUT4_Z
+      cpu.ic_ok_d_LUT4_D_Z_PFUMX_Z_2_C0_L6MUX21_Z_D1_L6MUX21_Z_D0_PFUMX_Z_ALUT_LUT4_Z
+      ... (3 more)
+      cpu.core.cpu_skipfetch_LUT4_D_Z_LUT4_D_1_Z_L6MUX21_Z_D1_PFUMX_Z_ALUT_LUT4_Z
+      cpu.core.ipl_TRELLIS_FF_Q_CE_PFUMX_Z_BLUT_LUT4_Z
+      cpu.core.ipl_TRELLIS_FF_Q
+[icache/direct -> kernel] slack 1.97 ns, delay 9.65 ns
+      cpu.ic_qt_e_TRELLIS_FF_Q_2
+      cpu.ic_ok_d_LUT4_D_Z_PFUMX_Z_2_C0_L6MUX21_Z_SD_LUT4_Z
+      cpu.ic_ok_d_LUT4_D_Z_PFUMX_Z_2_C0_L6MUX21_Z_D1_L6MUX21_Z_D0_PFUMX_Z_ALUT_LUT4_Z
+      ... (3 more)
+      cpu.core.cpu_skipfetch_LUT4_D_Z_LUT4_D_1_Z_L6MUX21_Z_D1_PFUMX_Z_ALUT_LUT4_Z
+      cpu.core.ipl_TRELLIS_FF_Q_CE_PFUMX_Z_BLUT_LUT4_Z
+      cpu.core.ipl_TRELLIS_FF_Q_1
+[icache/direct -> kernel] slack 1.97 ns, delay 9.65 ns
+      cpu.ic_qt_e_TRELLIS_FF_Q_2
+      cpu.ic_ok_d_LUT4_D_Z_PFUMX_Z_2_C0_L6MUX21_Z_SD_LUT4_Z
+      cpu.ic_ok_d_LUT4_D_Z_PFUMX_Z_2_C0_L6MUX21_Z_D1_L6MUX21_Z_D0_PFUMX_Z_ALUT_LUT4_Z
+      ... (3 more)
+      cpu.core.cpu_skipfetch_LUT4_D_Z_LUT4_D_1_Z_L6MUX21_Z_D1_PFUMX_Z_ALUT_LUT4_Z
+      cpu.core.ipl_TRELLIS_FF_Q_CE_PFUMX_Z_BLUT_LUT4_Z
+      cpu.core.ipl_TRELLIS_FF_Q_2
+[kernel -> kernel] slack 3.41 ns, delay 43.10 ns
+      cpu.core.cpu.n9823_q_TRELLIS_FF_Q
+      cpu.core.cpu.n831_o_LUT4_B_Z_LUT4_Z
+      cpu.core.cpu.regfile.0.3_DO_3_LUT4_C_Z_LUT4_Z_1
+      ... (27 more)
+      cpu.core.cpu.n9844_q_LUT4_A_1_Z_CCU2C_S1_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_S0_PFUMX_Z_BLUT_LUT4_Z
+      cpu.core.cpu.n9812_q_TRELLIS_FF_Q_5_DI_PFUMX_Z_BLUT_LUT4_Z
+      cpu.core.cpu.n9812_q_TRELLIS_FF_Q_5
+[kernel -> kernel] slack 3.85 ns, delay 42.66 ns
+      cpu.core.cpu.n9823_q_TRELLIS_FF_Q
+      cpu.core.cpu.n831_o_LUT4_B_Z_LUT4_Z
+      cpu.core.cpu.regfile.0.3_DO_3_LUT4_C_Z_LUT4_Z_1
+      ... (29 more)
+      cpu.core.cpu.n9844_q_LUT4_A_1_Z_CCU2C_S1_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_S1_LUT4_Z
+      cpu.core.cpu.n9812_q_TRELLIS_FF_Q_6_DI_PFUMX_Z_BLUT_LUT4_Z
+      cpu.core.cpu.n9812_q_TRELLIS_FF_Q_6
+[kernel -> kernel] slack 4.14 ns, delay 42.38 ns
+      cpu.core.cpu.n9823_q_TRELLIS_FF_Q
+      cpu.core.cpu.n831_o_LUT4_B_Z_LUT4_Z
+      cpu.core.cpu.regfile.0.3_DO_3_LUT4_C_Z_LUT4_Z_1
+      ... (26 more)
+      cpu.core.cpu.n9844_q_LUT4_A_1_Z_CCU2C_S1_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_S0_PFUMX_Z_BLUT_LUT4_Z
+      cpu.core.cpu.n9812_q_TRELLIS_FF_Q_3_DI_PFUMX_Z_BLUT_LUT4_Z
+      cpu.core.cpu.n9812_q_TRELLIS_FF_Q_3
+[icache/direct -> cache RAM] slack 3.72 ns, delay 7.91 ns
+      cpu.g_dcache.dc_tag_o.0.1_ADA13_TRELLIS_FF_Q
+      cpu.g_dcache.dc_tag_o.0.1_ADA10_LUT4_B
+      cpu.g_dcache.dc_tag_o.0.1_ADA13_LUT4_A_Z_LUT4_Z
+      cpu.g_dcache.dc_tag_o.0.1_ADA10_LUT4_A_Z_LUT4_Z
+      cpu.g_dcache.dc_tag_o.0.1_ADA10_LUT4_A_Z_LUT4_D
+      cpu.dc_we_LUT4_D_1_Z_TRELLIS_FF_DI_Q_LUT4_Z
+      cpu.g_dcache.dc_data_e.0.0_DOB4_TRELLIS_FF_Q_1_DI_LUT4_Z
+      cpu.g_dcache.dc_data_e.0.0_DOB4_TRELLIS_FF_Q_1
+[icache/direct -> cache RAM] slack 4.30 ns, delay 7.33 ns
+      cpu.g_dcache.dc_tag_o.0.1_ADA13_TRELLIS_FF_Q
+      cpu.g_dcache.dc_tag_o.0.1_ADA10_LUT4_B
+      cpu.g_dcache.dc_tag_o.0.1_ADA13_LUT4_A_Z_LUT4_Z
+      cpu.g_dcache.dc_tag_o.0.1_ADA10_LUT4_A_Z_LUT4_Z
+      cpu.g_dcache.dc_tag_o.0.1_ADA10_LUT4_A_Z_LUT4_D
+      cpu.dc_we_LUT4_D_1_Z_TRELLIS_FF_DI_Q_LUT4_Z
+      cpu.g_dcache.dc_tag_o.0.0_DOB1_TRELLIS_FF_Q_1_DI_LUT4_Z
+      cpu.g_dcache.dc_tag_o.0.0_DOB1_TRELLIS_FF_Q_1
+[icache/direct -> cache RAM] slack 5.39 ns, delay 6.23 ns
+      cpu.ic_tag_e.0.1_ADA8_TRELLIS_FF_Q
+      cpu.ic_tag_e.0.1_ADA8_LUT4_B
+      cpu.ic_tag_e.0.1_ADA12_LUT4_Z_1_D_PFUMX_Z_BLUT_LUT4_Z
+      cpu.ic_tag_e.0.1_ADA12_LUT4_Z_1
+      cpu.ic_we_LUT4_C_Z_TRELLIS_FF_DI_Q_LUT4_Z
+      cpu.ic_tag_o.0.1_DOB1_TRELLIS_FF_Q_1_DI_LUT4_Z
+      cpu.ic_tag_o.0.1_DOB1_TRELLIS_FF_Q_1
+[adapter->kernel -> kernel] slack 4.43 ns, delay 18.82 ns
+      cpu.k_long_ack_TRELLIS_FF_Q
+      cpu.core.cpu.n474_o_LUT4_C_Z_LUT4_Z
+      cpu.core.cpu.n9844_q_LUT4_A_1_Z_CCU2C_S1_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_B1_LUT4_D_Z_LUT4_Z_C_LUT4_Z
+      ... (19 more)
+      cpu.core.cpu.n9809_q_TRELLIS_FF_Q_19_DI_PFUMX_Z_C0_LUT4_D_Z_PFUMX_Z_BLUT_LUT4_Z
+      cpu.core.cpu.n9804_q_TRELLIS_FF_Q_19_DI_L6MUX21_Z_D1_PFUMX_Z_ALUT_LUT4_Z
+      cpu.core.cpu.n9804_q_TRELLIS_FF_Q_19
+[adapter->kernel -> kernel] slack 4.65 ns, delay 18.60 ns
+      cpu.k_long_ack_TRELLIS_FF_Q
+      cpu.core.cpu.n474_o_LUT4_C_Z_LUT4_Z
+      cpu.core.cpu.n9844_q_LUT4_A_1_Z_CCU2C_S1_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_B1_LUT4_D_Z_LUT4_Z_C_LUT4_Z
+      ... (10 more)
+      cpu.core.cpu.alu_op2out_15_LUT4_D_Z_LUT4_D_Z_PFUMX_Z_BLUT_LUT4_Z
+      cpu.core.cpu.n9804_q_TRELLIS_FF_Q_29_DI_L6MUX21_Z_D1_PFUMX_Z_ALUT_LUT4_Z
+      cpu.core.cpu.n9804_q_TRELLIS_FF_Q_29
+[adapter->kernel -> kernel] slack 4.75 ns, delay 18.51 ns
+      cpu.k_long_ack_TRELLIS_FF_Q
+      cpu.core.cpu.n474_o_LUT4_C_Z_LUT4_Z
+      cpu.core.cpu.n9844_q_LUT4_A_1_Z_CCU2C_S1_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_B1_LUT4_D_Z_LUT4_Z_C_LUT4_Z
+      ... (11 more)
+      cpu.core.cpu.n9809_q_TRELLIS_FF_Q_30_DI_PFUMX_Z_C0_LUT4_D_Z_PFUMX_Z_BLUT_LUT4_Z
+      cpu.core.cpu.n9804_q_TRELLIS_FF_Q_30_DI_L6MUX21_Z_D1_PFUMX_Z_ALUT_LUT4_Z
+      cpu.core.cpu.n9804_q_TRELLIS_FF_Q_30
+[bus outputs -> window decode] slack 4.51 ns, delay 7.12 ns
+      g_fastmem.u_fastmem.a_TRELLIS_FF_Q_8
+      cpu.ic_ok_d_LUT4_D_Z_LUT4_Z_D_LUT4_Z_C_LUT4_Z
+      g_fastmem.u_turbomem.configured_PFUMX_C0_Z_L6MUX21_Z_D1_L6MUX21_Z_D0_PFUMX_Z_ALUT_LUT4_Z
+      g_fastmem.u_fastmem.configured_LUT4_A
+      g_fastmem.u_fastmem.owns_r_TRELLIS_FF_Q_DI_PFUMX_Z_BLUT_LUT4_Z
+      g_fastmem.u_fastmem.owns_r_TRELLIS_FF_Q
+[bus outputs -> window decode] slack 6.75 ns, delay 4.88 ns
+      g_fastmem.u_fastmem.a_TRELLIS_FF_Q_5
+      cpu.ic_ok_d_LUT4_D_Z_LUT4_Z_D_LUT4_Z_C_L6MUX21_SD_D1_L6MUX21_Z_D0_PFUMX_Z_ALUT_LUT4_Z
+      cpu.ic_ok_d_LUT4_D_Z_LUT4_Z_D_LUT4_Z_C_L6MUX21_SD_D1_L6MUX21_Z_D0_PFUMX_Z_BLUT_LUT4_Z
+      cpu.ic_ok_d_LUT4_D_Z_LUT4_Z_D_LUT4_Z_C_L6MUX21_SD_D1_L6MUX21_Z_D1_PFUMX_Z_ALUT_LUT4_Z
+      cpu.ic_ok_d_LUT4_D_Z_LUT4_Z_D_LUT4_Z_C_L6MUX21_SD_D1_L6MUX21_Z_D0_PFUMX_Z_ALUT_LUT4_Z
+      g_fastmem.u_fastmem.cpu_win_r_TRELLIS_FF_Q
+[logic -> read-data latch] slack 4.93 ns, delay 18.32 ns
+      g_sd.u_sd.rom_mem.0.14
+      g_sd.u_sd.rom_mem.0.11_DOA3_LUT4_Z
+      g_sd.u_sd.rom_mem.0.9_DOA5_LUT4_D_Z_PFUMX_Z_BLUT_LUT4_Z
+      g_sd.u_sd.rom_mem.0.1_DOA5_LUT4_D_Z_LUT4_D_Z_PFUMX_Z_BLUT_LUT4_Z
+      g_sd.u_sd.rom_mem.0.1_DOA5_LUT4_D_Z_LUT4_D_Z_LUT4_D_1
+      g_sd.u_sd.rom_mem.0.1_DOA5_LUT4_D_Z_LUT4_D_Z_LUT4_D_1_Z_LUT4_D
+      cpu.dc_wd_TRELLIS_FF_Q_5_DI_PFUMX_Z_BLUT_LUT4_Z
+      cpu.dc_wd_TRELLIS_FF_Q_5
+[logic -> read-data latch] slack 5.52 ns, delay 17.74 ns
+      g_sd.u_sd.rom_mem.0.14
+      g_sd.u_sd.rom_mem.0.11_DOA3_LUT4_Z
+      g_sd.u_sd.rom_mem.0.9_DOA5_LUT4_D_Z_PFUMX_Z_BLUT_LUT4_Z
+      ... (3 more)
+      cpu.dc_wd_TRELLIS_FF_Q_13_DI_LUT4_Z_D_L6MUX21_Z_D1_PFUMX_Z_ALUT_LUT4_Z
+      cpu.k_din_TRELLIS_FF_Q_13_DI_LUT4_Z
+      cpu.k_din_TRELLIS_FF_Q_13
+[logic -> read-data latch] slack 5.72 ns, delay 17.54 ns
+      g_sd.u_sd.rom_mem.0.14
+      g_sd.u_sd.rom_mem.0.11_DOA3_LUT4_Z
+      g_sd.u_sd.rom_mem.0.9_DOA5_LUT4_D_Z_PFUMX_Z_BLUT_LUT4_Z
+      ... (3 more)
+      cpu.dc_wd_TRELLIS_FF_Q_13_DI_LUT4_Z_D_L6MUX21_Z_D1_PFUMX_Z_ALUT_LUT4_Z
+      cpu.ic_wd_TRELLIS_FF_Q_13_DI_LUT4_Z
+      cpu.ic_wd_TRELLIS_FF_Q_13
+[adapter->kernel -> logic] slack 6.08 ns, delay 5.54 ns
+      cpu.k_long_ack_TRELLIS_FF_Q
+      cpu.pf_ic_TRELLIS_FF_Q_CE_LUT4_Z_D_LUT4_D_Z_LUT4_D_2_C_LUT4_Z
+      cpu.pf_ic_TRELLIS_FF_Q_CE_LUT4_Z_D_LUT4_D_Z_LUT4_D_2
+      g_sdram.u_sdram.ack_LUT4_C_Z_LUT4_D_1_Z_PFUMX_Z_BLUT_LUT4_Z
+      cpu.dp_req_i_TRELLIS_FF_Q_CE_L6MUX21_Z_D0_PFUMX_Z_BLUT_LUT4_Z
+      cpu.dp_req_i_TRELLIS_FF_Q_CE_L6MUX21_Z_D1_PFUMX_Z_ALUT_LUT4_Z
+      cpu.dp_req_i_TRELLIS_FF_Q
+[adapter->kernel -> logic] slack 6.58 ns, delay 5.05 ns
+      cpu.k_long_ack_TRELLIS_FF_Q
+      cpu.core.cpu_skipfetch_LUT4_D_Z_LUT4_D_1_Z_L6MUX21_Z_D1_PFUMX_Z_BLUT_LUT4_Z
+      cpu.core.cpu_skipfetch_LUT4_D_Z_LUT4_D_1_Z_L6MUX21_Z_D1_PFUMX_Z_ALUT_LUT4_Z
+      cpu.dec_r_TRELLIS_FF_Q_CE_LUT4_Z
+      cpu.dec_r_TRELLIS_FF_Q
+[adapter->kernel -> logic] slack 6.68 ns, delay 4.94 ns
+      cpu.k_long_ack_TRELLIS_FF_Q
+      cpu.core.cpu_skipfetch_LUT4_D_Z_LUT4_D_1_Z_L6MUX21_Z_D1_PFUMX_Z_BLUT_LUT4_Z
+      cpu.core.cpu_skipfetch_LUT4_D_Z_LUT4_D_1_Z_L6MUX21_Z_D1_PFUMX_Z_ALUT_LUT4_Z
+      cpu.k_berr_TRELLIS_FF_Q_CE_LUT4_Z
+      cpu.k_berr_TRELLIS_FF_Q
+[adapter ctrl -> kernel] slack 6.16 ns, delay 5.47 ns
+      cpu.HALTn_TRELLIS_FF_Q
+      led_b_LUT4_Z
+      cpu.IPL0n_LUT4_C_D_LUT4_Z
+      cpu.IPL1n_LUT4_B
+      cpu.core.ipl_TRELLIS_FF_Q
+[adapter ctrl -> kernel] slack 6.16 ns, delay 5.47 ns
+      cpu.HALTn_TRELLIS_FF_Q
+      led_b_LUT4_Z
+      cpu.IPL0n_LUT4_C_D_LUT4_Z
+      cpu.IPL2n_LUT4_B
+      cpu.core.ipl_TRELLIS_FF_Q_1
+[adapter ctrl -> kernel] slack 6.16 ns, delay 5.47 ns
+      cpu.HALTn_TRELLIS_FF_Q
+      led_b_LUT4_Z
+      cpu.IPL0n_LUT4_C_D_LUT4_Z
+      cpu.IPL0n_LUT4_C
+      cpu.core.ipl_TRELLIS_FF_Q_2
+[logic -> kernel] slack 6.59 ns, delay 5.04 ns
+      cold_armed_TRELLIS_FF_Q
+      led_b_LUT4_Z
+      cpu.IPL0n_LUT4_C_D_LUT4_Z
+      cpu.IPL1n_LUT4_B
+      cpu.core.ipl_TRELLIS_FF_Q
+[logic -> kernel] slack 6.59 ns, delay 5.04 ns
+      cold_armed_TRELLIS_FF_Q
+      led_b_LUT4_Z
+      cpu.IPL0n_LUT4_C_D_LUT4_Z
+      cpu.IPL2n_LUT4_B
+      cpu.core.ipl_TRELLIS_FF_Q_1
+[logic -> kernel] slack 6.59 ns, delay 5.04 ns
+      cold_armed_TRELLIS_FF_Q
+      led_b_LUT4_Z
+      cpu.IPL0n_LUT4_C_D_LUT4_Z
+      cpu.IPL0n_LUT4_C
+      cpu.core.ipl_TRELLIS_FF_Q_2
+[bus outputs -> kernel] slack 6.64 ns, delay 16.61 ns
+      g_fastmem.u_fastmem.a_TRELLIS_FF_Q_9
+      cpu.core.cpu_data_in_15_PFUMX_Z_C0_LUT4_Z
+      cpu.core.cpu_data_in_15_PFUMX_Z_BLUT_LUT4_Z
+      ... (5 more)
+      cpu.core.cpu.n9844_q_LUT4_A_1_Z_CCU2C_S1_COUT_CCU2C_CIN_COUT_CCU2C_CIN_COUT_CCU2C_CIN_COUT_CCU2C_CIN_COUT_CCU2C_CIN_COUT_CCU2C_CIN_COUT_CCU2C_CIN_S1_PFUMX_Z_BLUT_LUT4_Z
+      cpu.core.cpu.n9812_q_TRELLIS_FF_Q_26_DI_PFUMX_Z_BLUT_LUT4_Z
+      cpu.core.cpu.n9812_q_TRELLIS_FF_Q_26
+[bus outputs -> kernel] slack 6.91 ns, delay 16.34 ns
+      g_fastmem.u_fastmem.a_TRELLIS_FF_Q_9
+      cpu.core.cpu_data_in_15_PFUMX_Z_C0_LUT4_Z
+      cpu.core.cpu_data_in_15_PFUMX_Z_BLUT_LUT4_Z
+      ... (6 more)
+      cpu.core.cpu.n9812_q_TRELLIS_FF_Q_29_DI_LUT4_Z_D_PFUMX_Z_BLUT_LUT4_Z
+      cpu.core.cpu.n9812_q_TRELLIS_FF_Q_29_DI_LUT4_Z
+      cpu.core.cpu.n9812_q_TRELLIS_FF_Q_29
+[bus outputs -> kernel] slack 7.04 ns, delay 16.22 ns
+      g_fastmem.u_fastmem.a_TRELLIS_FF_Q_9
+      cpu.core.cpu_data_in_15_PFUMX_Z_C0_LUT4_Z
+      cpu.core.cpu_data_in_15_PFUMX_Z_BLUT_LUT4_Z
+      ... (6 more)
+      cpu.core.cpu.n9844_q_LUT4_A_1_Z_CCU2C_S1_COUT_CCU2C_CIN_COUT_CCU2C_CIN_COUT_CCU2C_CIN_COUT_CCU2C_CIN_COUT_CCU2C_CIN_COUT_CCU2C_CIN_S0_LUT4_Z
+      cpu.core.cpu.n9812_q_TRELLIS_FF_Q_23_DI_PFUMX_Z_BLUT_LUT4_Z
+      cpu.core.cpu.n9812_q_TRELLIS_FF_Q_23
+[logic -> window decode] slack 6.86 ns, delay 4.77 ns
+      g_fastmem.u_fastmem.fm_cfg_match_TRELLIS_FF_Q_4
+      g_fastmem.u_fastmem.configured_LUT4_A_Z_LUT4_Z_1_D_LUT4_Z_1
+      g_fastmem.u_fastmem.configured_LUT4_A_Z_LUT4_Z_1
+      g_fastmem.u_fastmem.owns_r_TRELLIS_FF_Q_DI_PFUMX_Z_ALUT_LUT4_Z
+      g_fastmem.u_fastmem.owns_r_TRELLIS_FF_Q_DI_PFUMX_Z_BLUT_LUT4_Z
+      g_fastmem.u_fastmem.owns_r_TRELLIS_FF_Q
+[clkena -> logic] slack 6.97 ns, delay 4.65 ns
+      cpu.k_clkena_TRELLIS_FF_Q
+      cpu.k_clkena_LUT4_C
+      cpu.rp_go_LUT4_B_Z_PFUMX_Z_1_BLUT_LUT4_Z
+      cpu.k_long_ack_TRELLIS_FF_Q_DI_L6MUX21_Z_D1_PFUMX_Z_BLUT_LUT4_Z
+      cpu.k_long_ack_TRELLIS_FF_Q_DI_L6MUX21_Z_D1_PFUMX_Z_ALUT_LUT4_Z
+      cpu.k_long_ack_TRELLIS_FF_Q
+[clkena -> logic] slack 7.64 ns, delay 3.98 ns
+      cpu.k_clkena_TRELLIS_FF_Q
+      cpu.k_nreset_TRELLIS_FF_Q_DI_LUT4_Z
+      cpu.k_nreset_TRELLIS_FF_Q
+[clkena -> read-data latch] slack 7.68 ns, delay 3.95 ns
+      cpu.k_clkena_TRELLIS_FF_Q
+      cpu.k_din_sel_TRELLIS_FF_Q_DI_LUT4_Z_C_PFUMX_Z_ALUT_LUT4_Z_C_LUT4_Z
+      cpu.k_din_sel_TRELLIS_FF_Q_DI_LUT4_Z_C_PFUMX_Z_BLUT_LUT4_Z
+      cpu.k_din_sel_TRELLIS_FF_Q_DI_LUT4_Z
+      cpu.k_din_sel_TRELLIS_FF_Q
+[clkena -> read-data latch] slack 7.89 ns, delay 3.73 ns
+      cpu.k_clkena_TRELLIS_FF_Q
+      cpu.k_din_hsel_TRELLIS_FF_Q_CE_LUT4_Z
+      cpu.k_din_hsel_TRELLIS_FF_Q
+[kernel -> cache RAM] slack 8.00 ns, delay 15.26 ns
+      cpu.core.cpu.n9806_q_TRELLIS_FF_Q_28
+      cpu.core.cpu.addr_out_CCU2C_S1_2_B1_CCU2C_S1_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT$CCU2_COMB1
+      cpu.core.cpu.addr_out_CCU2C_S1_2_B1_CCU2C_S1_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT_CIN_CCU2C_COUT$CCU2_COMB0
+      ... (10 more)
+      cpu.dc_we_LUT4_D_1_Z_TRELLIS_FF_DI_Q_LUT4_Z
+      cpu.g_dcache.dc_data_e.0.0_DOB4_TRELLIS_FF_Q_1_DI_LUT4_Z
+      cpu.g_dcache.dc_data_e.0.0_DOB4_TRELLIS_FF_Q_1
+[kernel -> cache RAM] slack 8.10 ns, delay 15.15 ns
+      cpu.core.cpu.regfile.1.1_RAD_2_TRELLIS_FF_Q
+      cpu.core.cpu.regfile.1.1$DPRAM_COMB0
+      cpu.core.cpu.addr_out_CCU2C_S1_13_A0_LUT4_Z
+      ... (5 more)
+      cpu.ic_we_LUT4_C_Z_TRELLIS_FF_DI_Q_LUT4_Z
+      cpu.ic_tag_o.0.1_DOB1_TRELLIS_FF_Q_1_DI_LUT4_Z
+      cpu.ic_tag_o.0.1_DOB1_TRELLIS_FF_Q_1
+[kernel -> cache RAM] slack 8.15 ns, delay 15.11 ns
+      cpu.core.cpu.regfile.1.1_RAD_2_TRELLIS_FF_Q
+      cpu.core.cpu.regfile.1.1$DPRAM_COMB0
+      cpu.core.cpu.addr_out_CCU2C_S1_13_A0_LUT4_Z
+      ... (5 more)
+      cpu.ic_we_LUT4_C_Z_TRELLIS_FF_DI_Q_LUT4_Z
+      cpu.ic_tag_e.0.0_DOB3_TRELLIS_FF_Q_1_DI_LUT4_Z
+      cpu.ic_tag_e.0.0_DOB3_TRELLIS_FF_Q_1
+[adapter->kernel -> read-data latch] slack 8.11 ns, delay 3.52 ns
+      cpu.k_din_sel_TRELLIS_FF_Q
+      cpu.k_din_sel_TRELLIS_FF_Q_DI_LUT4_Z_C_PFUMX_Z_ALUT_LUT4_Z_C_LUT4_Z
+      cpu.k_din_sel_TRELLIS_FF_Q_DI_LUT4_Z_C_PFUMX_Z_BLUT_LUT4_Z
+      cpu.k_din_sel_TRELLIS_FF_Q_DI_LUT4_Z
+      cpu.k_din_sel_TRELLIS_FF_Q
+[config regs -> window decode] slack 8.39 ns, delay 3.24 ns
+      g_fastmem.u_fastmem.configured_TRELLIS_FF_Q
+      g_fastmem.u_fastmem.configured_LUT4_A
+      g_fastmem.u_fastmem.owns_r_TRELLIS_FF_Q_DI_PFUMX_Z_BLUT_LUT4_Z
+      g_fastmem.u_fastmem.owns_r_TRELLIS_FF_Q
+[bus outputs -> read-data latch] slack 9.68 ns, delay 13.58 ns
+      g_fastmem.u_fastmem.a_TRELLIS_FF_Q_29
+      g_fastmem.u_fastmem.cfgin_n_LUT4_C_Z_LUT4_Z_2_C_PFUMX_Z_C0_LUT4_Z
+      g_fastmem.u_fastmem.cfgin_n_LUT4_C_Z_LUT4_Z_2_C_PFUMX_Z_BLUT_LUT4_Z
+      g_sd.u_sd_autoconfig.cfgout_n_LUT4_D_Z_LUT4_Z_1
+      g_sd.u_sd.rom_mem.0.8_DOA4_LUT4_D_Z_LUT4_D_Z_LUT4_D_Z_PFUMX_BLUT_Z_PFUMX_Z_BLUT_LUT4_Z
+      g_sd.u_sd.rom_mem.0.1_DOA5_LUT4_D_Z_LUT4_D_Z_LUT4_D_1_Z_LUT4_D_Z_LUT4_Z
+      cpu.dc_wd_TRELLIS_FF_Q_5_DI_PFUMX_Z_BLUT_LUT4_Z
+      cpu.dc_wd_TRELLIS_FF_Q_5
+[bus outputs -> read-data latch] slack 10.63 ns, delay 12.62 ns
+      g_fastmem.u_fastmem.a_TRELLIS_FF_Q_29
+      g_fastmem.u_fastmem.cfgin_n_LUT4_C_Z_LUT4_Z_2_C_PFUMX_Z_C0_LUT4_Z
+      g_fastmem.u_fastmem.cfgin_n_LUT4_C_Z_LUT4_Z_2_C_PFUMX_Z_BLUT_LUT4_Z
+      g_sd.u_sd_autoconfig.cfgout_n_LUT4_D_Z_LUT4_Z_1
+      g_sd.u_sd.rom_mem.0.8_DOA4_LUT4_D_Z_LUT4_D_Z_LUT4_D_Z_PFUMX_BLUT_Z_PFUMX_Z_BLUT_LUT4_Z
+      av_num_LUT4_C_Z_PFUMX_BLUT_Z_LUT4_D_1_Z_LUT4_Z_1
+      cpu.dc_wd_TRELLIS_FF_Q_15_DI_PFUMX_Z_BLUT_LUT4_Z
+      cpu.dc_wd_TRELLIS_FF_Q_15
+[bus outputs -> read-data latch] slack 10.82 ns, delay 12.43 ns
+      g_fastmem.u_fastmem.a_TRELLIS_FF_Q_29
+      g_fastmem.u_fastmem.cfgin_n_LUT4_C_Z_LUT4_Z_2_C_PFUMX_Z_C0_LUT4_Z
+      g_fastmem.u_fastmem.cfgin_n_LUT4_C_Z_LUT4_Z_2_C_PFUMX_Z_BLUT_LUT4_Z
+      g_sd.u_sd_autoconfig.cfgout_n_LUT4_D_Z_LUT4_Z_1
+      g_sd.u_sd.rom_mem.0.8_DOA4_LUT4_D_Z_LUT4_D_Z_LUT4_D_Z_PFUMX_BLUT_Z_PFUMX_Z_BLUT_LUT4_Z
+      g_sd.u_sd.rom_mem.0.8_DOA7_LUT4_D_Z_LUT4_D_Z_LUT4_D_Z_LUT4_D_Z_LUT4_D_Z_PFUMX_BLUT_Z_LUT4_Z
+      cpu.dc_wd_TRELLIS_FF_Q_6_DI_PFUMX_Z_BLUT_LUT4_Z
+      cpu.dc_wd_TRELLIS_FF_Q_6
+[bus outputs -> logic] slack 10.89 ns, delay 11.94 ns
+      g_fastmem.u_fastmem.a_TRELLIS_FF_Q_8
+      cpu.ic_ok_d_LUT4_D_Z_LUT4_Z_D_LUT4_Z_C_LUT4_Z
+      g_fastmem.u_turbomem.configured_PFUMX_C0_Z_L6MUX21_Z_D1_L6MUX21_Z_D0_PFUMX_Z_ALUT_LUT4_Z
+      ... (3 more)
+      cpu.bus_berr_TRELLIS_FF_Q_LSR_LUT4_Z_D_PFUMX_Z_BLUT_LUT4_Z
+      cpu.bus_berr_TRELLIS_FF_Q_LSR_LUT4_Z
+      cpu.bus_berr_TRELLIS_FF_Q
+[bus outputs -> logic] slack 10.93 ns, delay 11.91 ns
+      cpu.pf_a_TRELLIS_FF_Q_30
+      cpu.pf_valid_LUT4_B_Z_LUT4_Z_D_LUT4_Z_D_LUT4_Z
+      cpu.pf_valid_LUT4_B_Z_LUT4_Z_D_LUT4_Z
+      ... (4 more)
+      cpu.rp_go_LUT4_B_Z_LUT4_Z_D_LUT4_D
+      cpu.pw_upd_TRELLIS_FF_Q_LSR_LUT4_Z
+      cpu.pw_upd_TRELLIS_FF_Q
+[bus outputs -> logic] slack 11.02 ns, delay 12.23 ns
+      g_fastmem.u_fastmem.a_TRELLIS_FF_Q_26
+      cpu.ic_ok_d_LUT4_D_Z_PFUMX_Z_2_C0_L6MUX21_Z_D1_L6MUX21_Z_D1_PFUMX_Z_BLUT_LUT4_Z
+      cpu.ic_ok_d_LUT4_D_Z_PFUMX_Z_2_C0_L6MUX21_Z_D1_L6MUX21_Z_D1_PFUMX_Z_ALUT_LUT4_Z
+      ... (5 more)
+      cpu.dp_kind_TRELLIS_FF_Q_1_DI_PFUMX_Z_ALUT_LUT4_Z
+      cpu.dp_kind_TRELLIS_FF_Q_1_DI_PFUMX_Z_BLUT_LUT4_Z
+      cpu.dp_kind_TRELLIS_FF_Q_1
+[config regs -> logic] slack 35.14 ns, delay 10.95 ns
+      cpu.mr_load_TRELLIS_FF_Q
+      cpu.mr_load_LUT4_C
+      cpu.core.cpu_busstate_LUT4_D_Z_LUT4_Z_1
+      cpu.pf_valid_LUT4_A_Z_PFUMX_ALUT_Z_L6MUX21_D1_Z_L6MUX21_D1_Z_L6MUX21_Z_D1_PFUMX_Z_ALUT_LUT4_Z
+      cpu.rp_go_LUT4_B_Z_LUT4_Z_D_L6MUX21_Z_1_D1_L6MUX21_Z_D0_PFUMX_Z_ALUT_LUT4_Z
+      cpu.rp_go_LUT4_B_Z_LUT4_Z_D_LUT4_D
+      cpu.pw_upd_TRELLIS_FF_Q_LSR_LUT4_Z
+      cpu.pw_upd_TRELLIS_FF_Q
+[config regs -> logic] slack 35.27 ns, delay 11.25 ns
+      cpu.mr_load_TRELLIS_FF_Q
+      cpu.mr_load_LUT4_C
+      cpu.core.cpu_busstate_LUT4_D_Z_LUT4_Z_1
+      cpu.pf_valid_LUT4_A_Z_PFUMX_ALUT_Z_L6MUX21_D1_Z_L6MUX21_D1_Z_L6MUX21_Z_D1_PFUMX_Z_ALUT_LUT4_Z
+      cpu.rp_go_LUT4_B_Z_LUT4_Z_D_L6MUX21_Z_1_D1_L6MUX21_Z_D0_PFUMX_Z_ALUT_LUT4_Z
+      cpu.rp_go_LUT4_B_Z_LUT4_Z_D_LUT4_D
+      cpu.q_TRELLIS_FF_Q_2_DI_LUT4_Z
+      cpu.q_TRELLIS_FF_Q_2
+[config regs -> logic] slack 35.46 ns, delay 11.05 ns
+      cpu.mr_load_TRELLIS_FF_Q
+      cpu.mr_load_LUT4_C
+      cpu.core.cpu_busstate_LUT4_D_Z_LUT4_Z_1
+      cpu.pf_valid_LUT4_A_Z_PFUMX_ALUT_Z_L6MUX21_D1_Z_L6MUX21_D1_Z_L6MUX21_Z_D1_PFUMX_Z_ALUT_LUT4_Z
+      cpu.rp_go_LUT4_B_Z_LUT4_Z_D_L6MUX21_Z_1_D1_L6MUX21_Z_D0_PFUMX_Z_ALUT_LUT4_Z
+      cpu.rp_go_LUT4_B_Z_LUT4_Z_D_LUT4_D
+      cpu.q_TRELLIS_FF_Q_6_DI_PFUMX_Z_BLUT_LUT4_Z
+      cpu.q_TRELLIS_FF_Q_6
+[config regs -> read-data latch] slack 37.20 ns, delay 9.31 ns
+      cpu.mr_load_TRELLIS_FF_Q
+      cpu.mr_load_LUT4_C
+      cpu.core.cpu_busstate_LUT4_D_Z_LUT4_Z_1
+      cpu.bus_berr_TRELLIS_FF_Q_LSR_LUT4_Z_B_PFUMX_Z_ALUT_LUT4_Z
+      cpu.bus_berr_TRELLIS_FF_Q_LSR_LUT4_Z_B_PFUMX_Z_BLUT_LUT4_Z
+      cpu.bus_berr_TRELLIS_FF_Q_LSR_LUT4_Z_B_LUT4_D
+      cpu.k_din_TRELLIS_FF_Q_14
+[config regs -> read-data latch] slack 37.45 ns, delay 9.06 ns
+      cpu.mr_load_TRELLIS_FF_Q
+      cpu.mr_load_LUT4_C
+      cpu.core.cpu_busstate_LUT4_D_Z_LUT4_Z_1
+      cpu.bus_berr_TRELLIS_FF_Q_LSR_LUT4_Z_B_PFUMX_Z_ALUT_LUT4_Z
+      cpu.bus_berr_TRELLIS_FF_Q_LSR_LUT4_Z_B_PFUMX_Z_BLUT_LUT4_Z
+      cpu.bus_berr_TRELLIS_FF_Q_LSR_LUT4_Z_B_LUT4_D
+      cpu.k_din_TRELLIS_FF_Q_1
+[config regs -> read-data latch] slack 37.45 ns, delay 9.06 ns
+      cpu.mr_load_TRELLIS_FF_Q
+      cpu.mr_load_LUT4_C
+      cpu.core.cpu_busstate_LUT4_D_Z_LUT4_Z_1
+      cpu.bus_berr_TRELLIS_FF_Q_LSR_LUT4_Z_B_PFUMX_Z_ALUT_LUT4_Z
+      cpu.bus_berr_TRELLIS_FF_Q_LSR_LUT4_Z_B_PFUMX_Z_BLUT_LUT4_Z
+      cpu.bus_berr_TRELLIS_FF_Q_LSR_LUT4_Z_B_LUT4_D
+      cpu.k_din_TRELLIS_FF_Q_2
+RESULT: PASS
