@@ -242,6 +242,22 @@ that gives the "_fast" files.
   checks at 0x81A8/0x81AC/0x81B0; mutations (2nd column, S_RD_DONE not
   held, select off, wrong word, no fill) all caught. Timing: seed 7
   +0.36 / +1.16 ns; ~1 seed in 8 passes, as step 8 (README "Timing").
+- **Instruction prefetch and instruction-stream pairs (step 10, not yet on
+  hardware):** after an instruction read the DDATA prefetch runs for
+  fetches too (`pf_ic` = the buffered word is an instruction word: pf_fill
+  then writes the instruction cache, `pf_dc` holds its fill conditions);
+  k_pf_hit takes fetches (`!k_bs[0]`). Core regenerated with DP32=7
+  (wrapper and gen_tg68.sh default 7; `DP32=1` for data only): 32-bit
+  immediates and abs.L addresses as pairs. The adapter needed nothing for
+  them: the cache-hit pair logic and step 9's pair read are kind-agnostic,
+  and the prefetch change gave the fetch pair's second word its icache
+  fill. Tests: `ipair_hit`/`ipair_rd` counters (fn32 in test_top.s gives 2
+  of each), `bench readoff` (caches off). Gains in sim are small (readoff
+  +7%); hardware will tell for Dhrystone-type code. Timing: 1 seed in 16
+  passed (seed 14: +0.31 / +0.50 ns); kernel -> logic is 1.3-2 ns worse
+  with DP32=7 (long_cand now waits for addr[1:0]). Possible follow-up: a
+  separate instruction prefetch buffer that chains (each hit issues the
+  next prefetch), since a data read in between replaces the shared buffer.
 - **Cache enable:** both caches follow CACR EI. The data cache must NOT get
   the 68030 CACR bit 8: software tells an 020 from an 030 by setting that bit
   and reading it back, so storing it would make the CPU detect as a 68030 and
@@ -333,6 +349,10 @@ that gives the "_fast" files.
 - A 2-4 entry write queue (copies are write-bound).
 - Bigger caches: 16 more block RAMs, which would crowd out RTG.
 - RTG framebuffer in SDRAM: discussed as a future add-on, no design yet.
+- References for speed-ups and tweaks (Glen's backlog, not yet reviewed):
+  the Amiga Bootcamp guide, https://arisamiga.github.io/amiga-bootcamp/,
+  and Emu68 (68k JIT emulator for the Raspberry Pi, used in PiStorm
+  accelerators), https://github.com/michalsc/Emu68.
 - 16x clock: branch `exp-16x-clock` (not merged; README "16x clock").
   Glen's board is rewired x16 (113.5 MHz); a 12x bitstream there runs the
   bridge's 7M grid at 9.46 MHz (CLK_MULT fixed at 12: bus cycles short,

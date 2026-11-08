@@ -421,7 +421,13 @@ module tg68_bus #(
         tag_of = {1'b1, (ad[31:24] == 8'h08), (ad[31:24] == 8'h00), ad[23:IC_AW+1]};
     endfunction
     wire k_rom   = (k_addr[31:19] == 13'h001F);           // $F80000-$FFFFFF
-    reg  pf_dc   = 1'b0;   // the prefetch in flight may fill the data cache
+    reg  pf_dc   = 1'b0;   // the prefetch in flight may fill a cache
+    // INSTRUCTION PREFETCH (step 10): an instruction read from the SDRAM is
+    // followed by a prefetch of the next word too, not only a data read.
+    // pf_ic: the prefetched word is an instruction word, so it fills the
+    // instruction cache (pf_dc then holds the instruction cache's fill
+    // conditions); the buffer itself serves a fetch or a data read alike.
+    reg  pf_ic   = 1'b0;
     reg  pf_fill = 1'b0;   // prefetched word arrived: write it to the cache
     // A posted write updates the caches one clock after DECIDE, from the
     // registers DECIDE latched (a_r, dp_wdata), so none of DECIDE's branch
@@ -559,7 +565,8 @@ module tg68_bus #(
     assign dp_hold = dp_busy;
     // k_fast too: if MapROM was switched off after a shadow word was
     // prefetched, that address now belongs to the motherboard ROM again.
-    wire k_pf_hit = (DIRECT != 0) && pf_valid && (k_bs == 2'b10) && k_nwr
+    // a data read or (step 10) an instruction fetch: k_bs 10 or 00
+    wire k_pf_hit = (DIRECT != 0) && pf_valid && !k_bs[0] && k_nwr
                     && (k_addr[31:1] == pf_a) && k_fast;
     wire k_pf_ok  = k_pf_hit && !dp_busy;
     // 32-BIT SDRAM (step 8): a longword write the kernel offers as an aligned
@@ -667,7 +674,7 @@ module tg68_bus #(
             dp_busy  <= 1'b0; dp_kind <= 2'd0;
             dp_inc   <= 1'b0;
             pf_valid <= 1'b0;
-            pf_fill  <= 1'b0; pf_dc <= 1'b0;
+            pf_fill  <= 1'b0; pf_dc <= 1'b0; pf_ic <= 1'b0;
             pw_upd   <= 1'b0; pw_upd2 <= 1'b0;
             dp_pair  <= 1'b0;
             dp_spec  <= 1'b0;
@@ -692,7 +699,11 @@ module tg68_bus #(
             if (pf_fill) begin
                 pf_fill <= 1'b0;
                 dc_wa <= pf_a[IC_AW:1]; dc_wt <= tag_of(pf_a); dc_wd <= dp_q;
-                if (dc_on) dc_we <= 1'b1;
+                if (dc_on && !pf_ic) dc_we <= 1'b1;
+                // step 10: an instruction word fills the instruction cache
+                // (same rule: loads regardless, the condition on the enable)
+                ic_wa <= pf_a[IC_AW:1]; ic_wt <= tag_of(pf_a); ic_wd <= dp_q;
+                if (ICACHE != 0 && pf_ic && ic_on && !ic_flush) ic_we <= 1'b1;
             end
             if (pw_upd) begin
                 pw_upd <= 1'b0;
@@ -886,7 +897,7 @@ module tg68_bus #(
                 // a data read will be followed by a prefetch: point the
                 // SDRAM address at the next word now (not after a pair
                 // read, step 9: it already brings the next word)
-                if (!cyc_fetch && (a_r[9:1] != 9'h1FF) && !k_long_ack) dp_inc <= 1'b1;
+                if ((a_r[9:1] != 9'h1FF) && !k_long_ack) dp_inc <= 1'b1;   // (step 10: fetches too)
                 q        <= Q_DDATA;
             end
             Q_DDATA: begin
@@ -914,10 +925,15 @@ module tg68_bus #(
                 // same pf_a/pf_dc, so that DDATA2 can fill the second word
                 // into the data cache through pf_fill (pf_valid stays 0:
                 // the buffer is not used for it).
-                if (!cyc_fetch && (a_r[9:1] != 9'h1FF)) begin
+                // Step 10: after an instruction read as well, filling the
+                // instruction cache (pf_ic); the pair-read second word of an
+                // instruction-stream pair takes the same route.
+                if (a_r[9:1] != 9'h1FF) begin
                     pf_a     <= a_r + 31'd1;
                     pf_valid <= 1'b0;
-                    pf_dc    <= (DCACHE != 0) && ic_ok && dc_on;
+                    pf_ic    <= cyc_fetch;
+                    pf_dc    <= cyc_fetch ? ((ICACHE != 0) && ic_ok && ic_on && !k_cacr[1])
+                                          : ((DCACHE != 0) && ic_ok && dc_on);
                     if (!k_long_ack) begin
                         dp_req_i <= 1'b1;
                         dp_busy  <= 1'b1; dp_kind  <= 2'd3;

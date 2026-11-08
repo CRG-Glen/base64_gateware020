@@ -14,6 +14,8 @@ build's own files are few and marked `TG68:`.
 > Dhrystones, 9.62 MIPS, AIBB MemTest 12.20 MB/s with the caches on,
 > xSysInfo fast RAM 23.31 MB/s, SD card 2.18 MB/s (sfsd.device). That is
 > about 3.3× the 2783 Dhrystones of the first working build.
+> Step 10 (instruction prefetch and 32-bit instruction-stream pairs) is
+> simulated and timing-checked, not yet run on hardware.
 >
 > **SD card: every `full` bitstream from step 4 on reads the card.** The
 > step 1-3 `full` files drove the card's data-out line (MISO) low, so the
@@ -28,6 +30,7 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
+| `bitstreams/step10_ifetch32/` | + instruction prefetch (the next word after an instruction read from SDRAM) and 32-bit instruction-stream pairs (32-bit immediates and absolute-long addresses in one CPU step). 12x and 16x files | Simulated and timing-checked (12x seed 14; 16x seed 2 needs 1.31×); **not yet run on hardware** |
 | `bitstreams/exp16x_seed9/` (branch `exp-16x-clock` only) | **Experimental, overclocked**: for a board whose ICS570B is rewired to x16 (113.5 MHz). Correct Amiga-side timing (bus cycles, E/CIA), SDRAM CL3, SD clock in spec. See *16x clock* | **Works on Glen's x16 board** (`_fast` file), Ripple IDE ROM included: 12311 Dhrystones, MemTest 15.81 MB/s. Not timing-signed (needs the chip ~36% faster than the worst-case model) |
 | `bitstreams/step9_sdram32r/` | + 32-bit SDRAM reads: an aligned longword read that misses the caches is one SDRAM request (two READ commands back to back) and one CPU step | **Latest. Known good on hardware**, SD card included: MemTest 12.20 MB/s (+12% on step 8), xSysInfo fast RAM 23.31 MB/s (+42%); SysInfo Dhrystones unchanged (9221). `full` only |
 | `bitstreams/step8_sdram32w/` | + 32-bit SDRAM writes: an aligned longword write to fast RAM is one CPU step and one SDRAM request (two WRITE commands back to back) | **Known good on hardware**, SD card included: 9226 Dhrystones (+6% on step 7), MemTest 10.93 MB/s (+43%). `full` only |
@@ -267,6 +270,30 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   explained yet (one candidate: a speculative read is now a pair read, so
   one dropped on a cache hit holds the SDRAM a clock longer). SD card
   2.18 MB/s as before.
+* **Instruction prefetch and 32-bit instruction-stream pairs (step 10).**
+  Two changes for code that runs from SDRAM, as it does with the caches
+  off or on an instruction-cache miss:
+  * After an instruction read from SDRAM, the next word is prefetched
+    into the one-word buffer, as data reads already did. A following
+    fetch of that word takes it from the buffer, and the word fills the
+    instruction cache.
+  * The CPU core's two instruction-stream pair kinds are on (`DP32 = 7`):
+    a 32-bit immediate (MOVE.L #, ADDI/SUBI/CMPI/ANDI/ORI/EORI.L #,
+    ADDA/SUBA/CMPA.L #) or an absolute-long address (MOVE, LEA, PEA, TST,
+    CLR, ADD/SUB/CMP/AND/OR from abs.L) is taken in one CPU step instead
+    of two, from the instruction cache (both banks) or from SDRAM (a step
+    9 pair read). In step 7 these modes failed the clock-enable paths by
+    2-5 ns on every seed; with step 8's registered `clkena_lw` they now
+    cost ~1-2 ns on kernel -> logic.
+  The core never fetches opcodes 32 bits at a time, so the pairs only help
+  instructions with those operands. In simulation, the caches-off read
+  loop (`bench readoff`) goes from 5.06 to 5.42 MB/s at 12x (+7%) and
+  6.32 to 6.72 MB/s at 16x; the other benches don't move (their loops have
+  no such operands and run from the caches). The prefetch is small because
+  the single buffer is shared: a data read in between replaces the
+  prefetched instruction word, and a buffer hit doesn't chain the next
+  prefetch. The tests count instruction-stream pairs from the cache and
+  from SDRAM and check them against the write shadow.
 * **MapROM.** The board's boot ROM (`turbomem.mem`, built with
   `DIAG_MAPROM=1`) copies Kickstart into the SDRAM shadow at every boot,
   verifies it and switches over, so it is normally already on. Both caches
@@ -475,6 +502,22 @@ actually provides:
 pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
 
+Step 10 (instruction prefetch, instruction-stream pairs) builds as supplied
+(not yet run on hardware):
+
+| Build | Seed | Worst 1T slack | Worst multicycle slack |
+| --- | --- | --- | --- |
+| full | 14 | +0.31 ns | +0.50 ns |
+
+Seed 14 was the only one of 16 to pass. Without the pair modes (prefetch
+only) seeds 1-4 missed by 0.16-1.79 ns, the usual spread; with them
+kernel -> logic missed by 1.3-2 ns on most seeds, because the core's pair
+offer for an instruction word now depends on the low address bits, which
+come from its address adder, and DECIDE waits for it. The 16x file
+(`--x16`, seed 2) needs the chip 1.31× faster than the worst-case model
+(see *16x clock*), less than the 1.36× of the 16x build that works on
+Glen's board.
+
 Step 9 (32-bit SDRAM reads) builds as supplied (known good on hardware):
 
 | Build | Seed | Worst 1T slack | Worst multicycle slack |
@@ -663,12 +706,14 @@ changes (below): upstream
 TG68K.C (our kernel was identical to its base) plus a cheaper rotate unit and
 the 32-bit data path (`long_cand`/`long_ack`, `data_in_hi`,
 `data_write_lo`). The wrapper `tg68_020.vhd` passes those ports through and
-sets `DataPath32` with its `DP32` generic. It is 1: longword data reads
-only. The fork can also pair 32-bit immediates and absolute-long address
-extensions (bits 1 and 2), but either of those put the kernel's clock-enable
-paths 2-5 ns over budget on every seed tried (they sit in its program-counter
-and fetch logic), while data pairs alone leave the kernel's address timing as
-it was.
+sets `DataPath32` with its `DP32` generic. Up to step 9 it was 1: longword
+data reads only. The fork can also pair 32-bit immediates and absolute-long
+address extensions (bits 1 and 2), but in step 7 either of those put the
+kernel's clock-enable paths 2-5 ns over budget on every seed tried (they sit
+in its program-counter and fetch logic). From step 10 it is 7, all three:
+with `clkena_lw` registered (kernel change 2) the cost fell to ~1-2 ns on
+kernel -> logic (see *Timing*). `DP32=1 scripts/gen_tg68.sh` regenerates
+the data-only core.
 
 **The changes to the fork** (`TG68KdotC_Kernel.vhd`, marked "Base64"):
 

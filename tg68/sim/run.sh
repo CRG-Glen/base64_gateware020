@@ -38,8 +38,11 @@ bench)
   case "${2:-copy}" in
     copy) SRC=test_mem.s; D=-DBENCH_COPY ;; read) SRC=test_rd.s; D= ;; scatter) SRC=test_rnd.s; D= ;;
     sd) SRC=test_sd.s; D=-DSDTEST ;;
+    # the read loop with the caches off: every instruction fetch and data
+    # read goes to the SDRAM (step 10: instruction prefetch)
+    readoff) SRC=test_rd.s; D=; ASD="--defsym NOCACHE=1" ;;
   esac
-  $AS -o tm.o $SRC && $LD -o tm.elf tm.o 2>/dev/null && $OC tm.elf tm.bin && mem tm.bin rom_mem.mem
+  $AS $ASD -o tm.o $SRC && $LD -o tm.elf tm.o 2>/dev/null && $OC tm.elf tm.bin && mem tm.bin rom_mem.mem
   $VL -DFASTMEM -DMEMBENCH $D tb_top.sv sdram_model_checked.v $R/base64_tg68/base64_tg68_top.sv $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v $SLAVES -o tb_bench > build_bench.log 2>&1
   ./obj_dir/tb_bench | grep -v "^per cycle\|^AS->DTACK" ;;
 esac

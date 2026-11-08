@@ -118,6 +118,8 @@ module tb;
     integer long_hits = 0;               // pair hits (32-bit data path)
     integer wr_pairs = 0;                // pair writes (32-bit SDRAM)
     integer hit_4f00 = 0;                // pair hits at 0x08004F00 (step 9)
+    integer ipair_hit = 0, ipair_rd = 0; // instruction-stream pairs (step 10)
+    reg     hp_f = 0;
     // k_long_ack and k_din_sel feed the kernel and are classed adapter ->
     // kernel (2 clocks) by check_timing.py: neither may change in the clock
     // just before the kernel samples (the clkena clock).
@@ -193,6 +195,7 @@ module tb;
         // not a cache hit, k_din_sel low): both words against the shadow.
         if (dut.cpu.k_clkena && dut.cpu.k_long_ack && dut.cpu.eRWn && !dut.cpu.k_din_sel) begin
             rd_pairs = rd_pairs + 1;
+            if (dut.cpu.cyc_fetch) ipair_rd = ipair_rd + 1;
             chk_word(dut.cpu.a_r, dut.cpu.k_din_hmux);
             chk_word(dut.cpu.a_r + 31'd1, dut.cpu.k_dat);
         end
@@ -204,6 +207,7 @@ module tb;
             end
             if (hp_long) begin
                 long_hits = long_hits + 1;
+                if (hp_f) ipair_hit = ipair_hit + 1;
                 // step 9: the re-read at 0x08004F00 (test_top.s) must be a
                 // pair hit, i.e. the pair read filled the second word too
                 if (hp_a == 31'h04002780) hit_4f00 = hit_4f00 + 1;
@@ -213,7 +217,7 @@ module tb;
                 chk_word(hp_a, dut.cpu.k_dat);
         end
         if (dut.cpu.q == 4'd8 && (dut.cpu.cc_long || dut.cpu.cc_hit)) begin
-            hp_pend = 1; hp_long = dut.cpu.cc_long; hp_a = dut.cpu.a_r;
+            hp_pend = 1; hp_long = dut.cpu.cc_long; hp_a = dut.cpu.a_r; hp_f = dut.cpu.cyc_fetch;
         end
     end
     always @(negedge as_n) if (ba[23:19] == 5'b11111) romf = romf + 1;
@@ -389,7 +393,7 @@ module tb;
         check(24'h81A8, 32'h91929394, "pair read, miss");
         check(24'h81AC, 32'h91929394, "pair read, then hit");
         check(24'h81B0, 32'h91929394, "pair read, caches off");
-        $display("pair reads from the SDRAM: %0d", rd_pairs);
+        $display("pair reads from the SDRAM: %0d; instruction-stream pairs: %0d from the cache, %0d from the SDRAM", rd_pairs, ipair_hit, ipair_rd);
         if (rd_pairs < 4) begin $display("FAIL: pair reads (32-bit SDRAM) barely used"); errors = errors + 1; end
         if (hit_4f00 < 1) begin $display("FAIL: a pair read did not fill both words of the data cache"); errors = errors + 1; end
         $display("pair writes: %0d; SDRAM model timing violations: %0d", wr_pairs, u_sdram.n_err);

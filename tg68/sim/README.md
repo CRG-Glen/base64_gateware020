@@ -60,6 +60,10 @@
   pass with the loop running from the instruction cache. `copy` copies
   1 KB, `read` sums 1 KB sequentially, `scatter` reads four longs in
   different SDRAM rows round and round.
+* **bench readoff**: the `read` loop with the caches off, so every
+  instruction fetch and data read goes to the SDRAM (step 10's instruction
+  prefetch). The fastmem bench also counts step 10's instruction-stream
+  pairs (from the cache and from SDRAM; `fn32` makes two of each).
 * **bench sd**: the SD controller with MOSI looped back to MISO: register
   read-back, 16 bytes shifted out and back in, and a single byte. (The
   simulator honours `1'bz`, so the pin bug fixed in step 4b could not show
