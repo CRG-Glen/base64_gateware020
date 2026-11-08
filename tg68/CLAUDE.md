@@ -46,7 +46,7 @@ Upstream (jbilander's files outside `tg68/`) is not modified by this work.
 ## Commands
 
 ```
-python3 scripts/build.py full --seeds 12      # or min / fastmem; Windows: build.bat full
+python3 scripts/build.py full --seeds 12      # Windows: build.bat full (only full is released/timed since step 6)
 sh sim/run.sh bus | top | fastmem              # the three regression benches
 sh sim/run.sh bench copy|read|scatter|sd       # throughput and SD loopback
 python3 scripts/check_timing.py build/full/base64_tg68.sdf --paths 4
@@ -253,7 +253,7 @@ that gives the "_fast" files.
 - AIBB MemTest did not move from step 6 to step 7 (pairs only come from
   cache hits; MemTest's reads miss and its writes are 16-bit). Pairs on
   writes and on misses, and the write queue, are what would move it.
-- SD card (sfsd.device 2.4): 2.18 MB/s in SysInfo on steps 4, 5 and 6
+- SD card (sfsd.device 2.4): 2.18 MB/s in SysInfo on steps 4 to 7
   (2184533 bytes/s each time); fx68k gets 1.76 MB/s.
 - Step 5 caches-off Dhrystones (3717) are below step 4's (4007), but the
   caches-off logic is unchanged: identical clock counts for both in the

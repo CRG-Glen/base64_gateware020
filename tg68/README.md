@@ -10,18 +10,18 @@ and the SD card. An adapter, `tg68_bus.v`, makes TG68K look like fx68k's
 ports and adds the caches and the direct SDRAM path. Changes to the fx68k
 build's own files are few and marked `TG68:`.
 
-> **Status:** steps 1-7 run on an A500+ (step 7 `full`: 8728 Dhrystones,
-> 9.11 MIPS, AIBB MemTest 7.65 MB/s with the caches on; SD card 2.18 MB/s on
-> step 6).
+> **Status:** steps 1-7 run on an A500+. The latest, step 7 `full`: 8728
+> Dhrystones, 9.11 MIPS, AIBB MemTest 7.65 MB/s with the caches on, SD card
+> 2.18 MB/s (sfsd.device). That is about 3× the 2783 Dhrystones of the
+> first working build.
 >
-> **SD card: only the step 4 `full` bitstream reads the card.** Every
-> earlier yosys build drove the card's data-out line (MISO) low, so the
+> **SD card: every `full` bitstream from step 4 on reads the card.** The
+> step 1-3 `full` files drove the card's data-out line (MISO) low, so the
 > driver loaded but could never talk to the card (HDToolBox: "Drive does
-> not support the SCSI inquiry command"). The step 1-3 `full` files still
-> have that bug.
+> not support the SCSI inquiry command"). Don't use them with an SD card.
 
 The bitstreams are not kept in git: download them from this repository's
-**Releases** page (each release has the `bitstreams/` folders below and the
+**Releases** page (each release has that step's `bitstreams/` folder and the
 `maprom` command), or build them yourself.
 
 ## The bitstreams
@@ -38,8 +38,10 @@ The bitstreams are not kept in git: download them from this repository's
 | `bitstreams_prev/v3_*` | 4/3/2/2 pacing: 2783 Dhrystones on an A500+ | **Known good on hardware** |
 | `bitstreams_prev/base64_tg68_fastmem_*` | Fast RAM, no SD, 5/4/3 pacing | Known good, for bring-up |
 
-Each folder has `min` (68020 + motherboard only) and `full` (+ fast RAM:
-Zorro II and 16 MB at `$08000000`, + SD card boot). `_plain` files are
+From step 6 on only `full` is built and released: the 68020 with fast RAM
+(Zorro II and 16 MB at `$08000000`) and SD card boot. Steps 1-5 also had
+`min` (68020 + motherboard only); `min` and `fastmem` still build
+(`build.py min`), but they are no longer timing-checked or tested. `_plain` files are
 packed like Muse Lab's own examples and take ~2 s to load at power-on.
 `_fast` files are the same designs, compressed, with single-SPI reads at
 38.8 MHz; both work on hardware. (The very first files used the Diamond
@@ -58,10 +60,11 @@ protection between USB 5 V and the Amiga's 5 V), plug in USB-C, drop the
 
 ## Bring-up
 
-### 1. `base64_tg68_min.bit`
-
-Fit the module and power on with a Workbench floppy in DF0:.
-The cold boot takes ~1.3 s longer than usual (see *Cold boot* below).
+Flash `base64_tg68_full_plain.bit`, fit the module and power on. With an SD
+card prepared as for the fx68k build it boots from the card (same `Mask`
+advice, `0x001FFFFE`, and the same DMA limitation); without one, use a
+Workbench floppy in DF0:. The cold boot takes ~1.3 s longer than usual (see
+*Cold boot* below).
 
 | LED | Meaning |
 | --- | --- |
@@ -75,21 +78,14 @@ The cold boot takes ~1.3 s longer than usual (see *Cold boot* below).
   points at the bridge or the address it put out, not at the core.
 * **Blue on, red off, black or grey screen.** The CPU runs but the machine
   doesn't boot. Try Ctrl-A-A once. If a warm reset works and a cold boot
-  doesn't, that's the cold-boot behaviour below, not the core.
+  doesn't, that's the cold-boot behaviour below, not the core. If a
+  bitstream that should work does nothing at all, copy it to the iCELink
+  drive again: an incomplete copy can light the LEDs without running.
 
-Once it boots, run **SysInfo** or `ShowConfig` and it should report a
-**68020**. No fast RAM is expected in this build.
-
-### 2. `base64_tg68_fastmem.bit`
-
-`ShowConfig` should list the 5194/13 fast RAM board and the 5194/14 ROM
-board. `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
+Once it boots, **SysInfo** should report a **68020**, `ShowConfig` should
+list the 5194/13 fast RAM board, the 5194/14 ROM board and the SD card
+board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
 `$08000000`.
-
-### 3. `base64_tg68_full.bit`
-
-Boots from SD exactly like the fx68k build. Same `Mask` advice applies
-(`0x001FFFFE`), and so does the DMA limitation.
 
 ## What's different from a real 68020
 
@@ -114,7 +110,9 @@ Boots from SD exactly like the fx68k build. Same `Mask` advice applies
   fast RAM logic (see `tg68_bus.v`). Measured in SysInfo on an A500+:
   8/6/6 pacing 1877 Dhrystones (1.95 MIPS); 5/4/3 pacing 2313 (2.41 MIPS);
   4/3/2/2 pacing 2783 (2.9 MIPS); 4/3/1/1 + cache 4833 (5.04 MIPS), 3208
-  with the cache off.
+  with the cache off. The caches and the direct path that followed took it
+  to 8728 Dhrystones (9.11 MIPS) by step 7; each step below has its
+  numbers.
 * **Data cache (step 4).** 8 KB, direct-mapped, the same size and layout
   as the instruction cache, for data reads from on-board fast RAM and the
   Kickstart ROM (never Chip RAM). It is write-through: every write still
@@ -188,9 +186,9 @@ Boots from SD exactly like the fx68k build. Same `Mask` advice applies
 * **32-bit data path (step 7).** The CPU core is now m1nl's fork of
   TG68K.C, which can move an aligned pair of words in one step instead of
   two. Of its three kinds of pair (longword data, 32-bit immediates,
-  absolute-long addresses) only longword data reads are switched on; the
-  other two cost more timing in the kernel than it has
-  when the memory side agrees. Each cache is split into an even-word and an
+  absolute-long addresses) only longword data reads are switched on, when
+  the memory side agrees; the other two cost more timing in the kernel than
+  it has (see *Why the CPU is pre-converted Verilog*). Each cache is split into an even-word and an
   odd-word bank (same total size), so one lookup reads both words of a pair.
   When the core offers a pair and both words hit, the adapter answers
   `long_ack` and hands over both words: the pair costs 5 clocks instead of
@@ -233,8 +231,10 @@ Boots from SD exactly like the fx68k build. Same `Mask` advice applies
   RAM (`min`), where they were driven low before. The only constant bits
   `build.py` accepts are the SD card's MOSI and chip select in a build
   without the SD block.
-* **16-bit data bus.** TG68's bus port is 16 bits, so every longword is two
-  transfers, as on the 68000.
+* **16-bit data bus.** TG68's bus port is 16 bits, so a longword is two
+  transfers, as on the 68000, except an aligned longword read that hits
+  the data cache, which step 7 hands over in one step. The SDRAM chip on
+  the iCESugar-Pro is 16 bits wide as well.
 * **Direct SDRAM path (step 3).** On-board fast RAM (the Zorro II window
   and $08000000) is no longer reached through the 68000-style
   AS/DS/DTACK slave. The adapter decodes it itself, from the fast RAM
@@ -282,18 +282,18 @@ either way.
 2. From this folder:
 
    ```
-   build.bat min            (or fastmem / full)
+   build.bat full
    build.bat full --seed 9  (start the seed search somewhere else)
    ```
 
-   On Linux/macOS: `python3 scripts/build.py min` with oss-cad-suite's
+   On Linux/macOS: `python3 scripts/build.py full` with oss-cad-suite's
    `bin` on your PATH, or with the `yowasp-yosys` and
    `yowasp-nextpnr-ecp5` pip packages installed (`build.py` falls back to
    them when plain `yosys` / `nextpnr-ecp5` are missing). A build takes a
    few minutes per seed.
-3. The bitstream lands in `build\<config>\base64_tg68_<config>.bit`.
-   The design uses ~8.8k (min) to ~10.3k (full) of the FPGA's 24k LUTs,
-and 16 (min) or 35 (full) of its 56 block RAMs.
+3. The bitstream lands in `build\full\base64_tg68_full.bit`. Step 7
+   `full` uses ~10.4k of the FPGA's 24k LUTs and 35 of its 56 block RAMs.
+   Expect to try several seeds (`--seeds 12`): the timing margins are thin.
 
 **One trap, already handled in `build.py`:** the TG68 kernel and ALU must
 keep their own hierarchy during synthesis (`keep_hierarchy`, then
@@ -332,8 +332,8 @@ actually provides:
 | kernel → adapter | 3T | `TG_SETTLE` |
 | kernel → kernel | 4T | `TG_STEP` |
 
-`build.py` runs it after every place-and-route, tries up to 8 seeds until
-it gets `RESULT: PASS`, and writes `timing.txt`. Expect the 1T classes to
+`build.py` runs it after every place-and-route, tries up to 8 seeds
+(`--seeds N` for more) until it gets `RESULT: PASS`, and writes `timing.txt`. Expect the 1T classes to
 pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
 
@@ -425,7 +425,7 @@ To pick the best of several seeds rather than the first that passes, run
 nextpnr by hand with `--seed N` for a few values and compare each
 `check_timing.py` result. `build.py` stops at the first pass.
 
-At 4/3/2/2 pacing the **fastmem** configuration did not close timing on 26
+(Historical, steps 1-2:) at 4/3/2/2 pacing the **fastmem** configuration did not close timing on 26
 seeds: the fast RAM request path (AS/DS → fast RAM → SDRAM command) misses
 by 0.03–3.8 ns. `full` contains the same logic and passed, so it's a
 placement problem, not a design one. `bitstreams_prev/` keeps the 5/4/3
@@ -450,7 +450,7 @@ rtl/base64_tg68/
   base64_tg68_top.sv            fx68k top with the CPU swapped ("TG68:" marks changes)
   tg68_bus.v                    TG68K -> 68000-style bus adapter
 rtl/tg68/
-  TG68K*.vhd                    TG68K.C sources, unmodified
+  TG68K*.vhd                    TG68K.C (m1nl's fork), one change marked "Base64"
   tg68_020.vhd                  68020-mode wrapper
   tg68_020_b0.v                 the same, converted to Verilog (what the build uses)
 rtl/base64_fx68k/               the fx68k build's slaves; changes marked "TG68:"

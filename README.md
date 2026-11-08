@@ -2,8 +2,9 @@
 
 A **68020** for the Amiga 500, on jbilander's
 [Base64](https://github.com/jbilander/Base64) accelerator. Tobias Gubener's
-**TG68K.C** core runs in 68020 mode on the board's iCESugar-Pro (Lattice
-ECP5), built entirely with the **open-source** FPGA tools. It keeps
+**TG68K.C** core (in m1nl's fork with a 32-bit data path) runs in 68020
+mode on the board's iCESugar-Pro (Lattice ECP5), built entirely with the
+**open-source** FPGA tools. It keeps
 everything the fx68k gateware offers: fast RAM, SD card boot, autoconfig
 and MapROM.
 
@@ -17,28 +18,31 @@ how to build it, the timing method and the test benches.
 
 | | |
 | --- | --- |
-| CPU | TG68K.C, 68020 mode, about 25 MHz 68030 class in AIBB |
+| CPU | TG68K.C, 68020 mode, 32-bit reads of longwords from the cache |
 | Caches | 8 KB instruction + 8 KB data, write-through, invisible to software |
 | Fast RAM | up to 8 MB Zorro II + 16 MB at `$08000000`, direct SDRAM path |
 | Also | SD card boot (sfsd.device), MapROM (Kickstart in SDRAM), autoconfig |
 | Not included | MMU, FPU |
 
-Measured on an A500+ (Kickstart 3.x):
+Measured on an A500+ (Kickstart 3.x), step 7:
 
 | | Caches on | Caches off |
 | --- | --- | --- |
-| SysInfo Dhrystones | 6076 (6.34 MIPS) | 4007 |
-| AIBB Dhrystone | 11712 | 7638 |
-| AIBB MemTest | 7.28 MB/s | 5.71 MB/s |
+| SysInfo Dhrystones | 8728 (9.11 MIPS) | 3940 |
+| AIBB MemTest | 7.65 MB/s | 5.71 MB/s |
 | SD card (SysInfo) | 2.18 MB/s | |
+
+(AIBB's own Dhrystone was last measured on step 4: 11712 with the caches
+on, about a 25 MHz 68030; SysInfo has risen 44% since then.)
 
 ## Getting it running
 
 1. Download the bitstreams from the
    [Releases](https://github.com/CRG-Glen/base64_gateware020/releases) page.
-   For normal use, take `bitstreams/step4_dcache/base64_tg68_full_plain.bit`.
-   `min` is a cut-down build for diagnosing faults: it has no fast RAM and
-   no SD card.
+   Take the newest release's `base64_tg68_full_plain.bit` (step 7:
+   `bitstreams/step7_datapath32/`). From step 6 on only this `full` build
+   is released; the older releases also have `min`, a cut-down build with
+   no fast RAM and no SD card, for diagnosing faults.
 2. **With the module out of the Amiga** (see the warning below), plug it
    into your PC by USB-C and copy the `.bit` file onto the iCELink drive it
    shows up as. Wait a few seconds while it writes the flash.
@@ -61,7 +65,7 @@ MapROM (the board's boot ROM already turns it on at every boot).
 
 ## Status
 
-Steps 1-4 of the speed-up work run on real hardware. See the
+Steps 1-7 of the speed-up work run on real hardware. See the
 [bitstream table](tg68/README.md#the-bitstreams) for what each step added.
 Earlier steps stay in the releases as fallbacks. Work happens on branches,
 one reviewed change at a time. [`tg68/CLAUDE.md`](tg68/CLAUDE.md) holds the
@@ -71,6 +75,8 @@ timing check).
 ## Credits and licences
 
 - **Tobias Gubener** (TobiFlex): the TG68K.C core (LGPL-3.0).
+- **m1nl**: the TG68K.C fork with the 32-bit data path (LGPL-3.0), and the
+  IcePi Zero Minimig that showed how fast this core can go.
 - **jbilander**: the Base64 hardware (CC BY-SA 4.0) and the fx68k gateware
   this build is derived from.
 - **Alastair M. Robinson**: the original Base64 gateware and its TG68 work.
