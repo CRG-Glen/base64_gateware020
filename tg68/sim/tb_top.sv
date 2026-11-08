@@ -106,14 +106,18 @@ module tb;
     // addresses return.
     integer hit_chk = 0, hit_bad = 0;
     integer long_hits = 0;               // pair hits (32-bit data path)
+    integer wr_pairs = 0;                // pair writes (32-bit SDRAM)
+    integer hit_4f00 = 0;                // pair hits at 0x08004F00 (step 9)
     // k_long_ack and k_din_sel feed the kernel and are classed adapter ->
     // kernel (2 clocks) by check_timing.py: neither may change in the clock
     // just before the kernel samples (the clkena clock).
-    integer ks_cyc = 0, ks_chg = -10, ks_bad = 0; reg ks_la = 0, ks_ds = 0;
+    integer ks_cyc = 0, ks_chg = -10, ks_bad = 0; reg ks_la = 0, ks_ds = 0, ks_hs = 0;
+    integer rd_pairs = 0;                // pair reads from the SDRAM (step 9)
+    integer n_clw = 0;                   // steps with clkena_lw (kernel change 2)
     always @(posedge dut.clk) begin
         ks_cyc = ks_cyc + 1;
-        if (dut.cpu.k_long_ack !== ks_la || dut.cpu.k_din_sel !== ks_ds) ks_chg = ks_cyc;
-        ks_la = dut.cpu.k_long_ack; ks_ds = dut.cpu.k_din_sel;
+        if (dut.cpu.k_long_ack !== ks_la || dut.cpu.k_din_sel !== ks_ds || dut.cpu.k_din_hsel !== ks_hs) ks_chg = ks_cyc;
+        ks_la = dut.cpu.k_long_ack; ks_ds = dut.cpu.k_din_sel; ks_hs = dut.cpu.k_din_hsel;
         // The kernel's l1 <= long_ack (Base64 change, was long_ack AND cand)
         // relies on this: long_ack only ever answers an offered pair.
         if (dut.cpu.k_long_ack && !dut.cpu.k_long_cand) begin
@@ -124,6 +128,15 @@ module tb;
             $display("FAIL dec_r out of step with q (q=%0d dec_r=%b)", dut.cpu.q, dut.cpu.dec_r);
             ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
         end
+        // Kernel change 2: the registered clkena_lw must equal what the
+        // kernel computed itself, clkena AND (NOT longword OR long_ack), on
+        // every clock (kernel outputs read live).
+        if (dut.cpu.k_clkena_lw !== (dut.cpu.k_clkena && (!dut.cpu.k_longword || dut.cpu.k_long_ack))) begin
+            $display("FAIL k_clkena_lw %b, kernel formula %b", dut.cpu.k_clkena_lw,
+                     dut.cpu.k_clkena && (!dut.cpu.k_longword || dut.cpu.k_long_ack));
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
+        if (dut.cpu.k_clkena) n_clw = n_clw + dut.cpu.k_clkena_lw;
         if (dut.cpu.k_clkena && ks_cyc - ks_chg < 1) begin
             $display("FAIL long_ack/k_din_sel changed in the clock before the kernel sampled them");
             ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
@@ -157,10 +170,22 @@ module tb;
             if (!dut.cpu.uds_want) begin pb_s[17] = 1'b1; pb_s[15:8] = dut.cpu.oEdb[15:8]; end
             if (!dut.cpu.lds_want) begin pb_s[16] = 1'b1; pb_s[7:0]  = dut.cpu.oEdb[7:0];  end
             shadow[pb_k] = pb_s;
+            // a pair write (32-bit SDRAM, step 8) also writes the next word
+            if (dut.cpu.k_long_ack) begin
+                shadow[pb_k + 31'd1] = {2'b11, dut.cpu.dp_wdata_lo};
+                wr_pairs = wr_pairs + 1;
+            end
         end
         // A hit is recorded in CCMP and checked on the clock the kernel
         // samples it (k_clkena): data_in (k_dat), and for a pair hit also
         // data_in_hi (k_din_ce) and long_ack. Checked first, then recorded.
+        // A pair read from the SDRAM (step 9: k_long_ack on a read that is
+        // not a cache hit, k_din_sel low): both words against the shadow.
+        if (dut.cpu.k_clkena && dut.cpu.k_long_ack && dut.cpu.eRWn && !dut.cpu.k_din_sel) begin
+            rd_pairs = rd_pairs + 1;
+            chk_word(dut.cpu.a_r, dut.cpu.k_din_hmux);
+            chk_word(dut.cpu.a_r + 31'd1, dut.cpu.k_dat);
+        end
         if (hp_pend && dut.cpu.k_clkena) begin
             hp_pend = 0;
             if (dut.cpu.k_long_ack !== hp_long) begin
@@ -169,7 +194,10 @@ module tb;
             end
             if (hp_long) begin
                 long_hits = long_hits + 1;
-                chk_word(hp_a, dut.cpu.k_din_ce);
+                // step 9: the re-read at 0x08004F00 (test_top.s) must be a
+                // pair hit, i.e. the pair read filled the second word too
+                if (hp_a == 31'h04002780) hit_4f00 = hit_4f00 + 1;
+                chk_word(hp_a, dut.cpu.k_din_hmux);
                 chk_word(hp_a + 31'd1, dut.cpu.k_dat);
             end else
                 chk_word(hp_a, dut.cpu.k_dat);
@@ -285,7 +313,8 @@ module tb;
 `ifdef MEMBENCH
         $display("kernel steps %0d: internal %0d, cache hits %0d, direct %0d, bus %0d; clocks %0d",
                  n_step, n_int, n_hit, n_dir, n_bus, n_clk);
-        $display("cache hits checked against the CPU's writes (whole run) %0d, stale %0d; pair hits %0d", hit_chk, hit_bad, long_hits);
+        $display("cache hits checked against the CPU's writes (whole run) %0d, stale %0d; pair hits %0d; pair writes %0d; pair reads %0d; SDRAM violations %0d; clkena_lw steps %0d", hit_chk, hit_bad, long_hits, wr_pairs, rd_pairs, u_sdram.n_err, n_clw);
+        if (u_sdram.n_err) errors = errors + 1;
         if (hit_bad) errors = errors + 1;
         $display("1 KB: %0.1f us -> %0.2f MB/s; %0d CPU bus cycles", (t1-t0)/1000.0, 1024.0/((t1-t0)/1000.0), n_fm);
         $display("per cycle, in 11.75 ns clocks: AS->DTACK %0.1f, DTACK->AS up %0.1f, AS up->next AS %0.1f",
@@ -344,6 +373,18 @@ module tb;
         check(24'h8190, 32'h00000000, "cache: MapROM flush");
         check(24'h8194, 32'h8AACCEF0, "pair: imm32 + abs.L");
         check(24'h8198, 32'h31323399, "pair: partner not cached");
+        check(24'h819C, 32'h51525354, "pair write, from SDRAM");
+        check(24'h81A0, 32'h61626364, "misaligned long write");
+        check(24'h81A4, 32'h81828384, "pair write over cache");
+        check(24'h81A8, 32'h91929394, "pair read, miss");
+        check(24'h81AC, 32'h91929394, "pair read, then hit");
+        check(24'h81B0, 32'h91929394, "pair read, caches off");
+        $display("pair reads from the SDRAM: %0d", rd_pairs);
+        if (rd_pairs < 4) begin $display("FAIL: pair reads (32-bit SDRAM) barely used"); errors = errors + 1; end
+        if (hit_4f00 < 1) begin $display("FAIL: a pair read did not fill both words of the data cache"); errors = errors + 1; end
+        $display("pair writes: %0d; SDRAM model timing violations: %0d", wr_pairs, u_sdram.n_err);
+        if (wr_pairs < 4) begin $display("FAIL: pair writes (32-bit SDRAM) barely used"); errors = errors + 1; end
+        if (u_sdram.n_err) begin $display("FAIL: SDRAM model timing violations"); errors = errors + 1; end
         $display("data cache hits: %0d; hits checked against the CPU's writes %0d (stale: %0d); pair hits %0d; shortest direct request->ack %0d clocks",
                  dc_hits, hit_chk, hit_bad, long_hits, dp_min);
         if (long_hits < 4) begin $display("FAIL: pair hits (32-bit data path) barely used"); errors = errors + 1; end

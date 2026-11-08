@@ -10,10 +10,10 @@ and the SD card. An adapter, `tg68_bus.v`, makes TG68K look like fx68k's
 ports and adds the caches and the direct SDRAM path. Changes to the fx68k
 build's own files are few and marked `TG68:`.
 
-> **Status:** steps 1-7 run on an A500+. The latest, step 7 `full`: 8728
-> Dhrystones, 9.11 MIPS, AIBB MemTest 7.65 MB/s with the caches on, SD card
-> 2.18 MB/s (sfsd.device). That is about 3× the 2783 Dhrystones of the
-> first working build.
+> **Status:** steps 1-9 run on an A500+. The latest, step 9 `full`: 9221
+> Dhrystones, 9.62 MIPS, AIBB MemTest 12.20 MB/s with the caches on,
+> xSysInfo fast RAM 23.31 MB/s, SD card 2.18 MB/s (sfsd.device). That is
+> about 3.3× the 2783 Dhrystones of the first working build.
 >
 > **SD card: every `full` bitstream from step 4 on reads the card.** The
 > step 1-3 `full` files drove the card's data-out line (MISO) low, so the
@@ -28,7 +28,9 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
-| `bitstreams/step7_datapath32/` | + 32-bit data path: aligned longword reads from the caches in one CPU step (m1nl's TG68K.C fork, banked caches) | **Latest. Known good on hardware**: 8728 Dhrystones (+7% on step 6), MemTest 7.65 MB/s. `full` only |
+| `bitstreams/step9_sdram32r/` | + 32-bit SDRAM reads: an aligned longword read that misses the caches is one SDRAM request (two READ commands back to back) and one CPU step | **Latest. Known good on hardware**, SD card included: MemTest 12.20 MB/s (+12% on step 8), xSysInfo fast RAM 23.31 MB/s (+42%); SysInfo Dhrystones unchanged (9221). `full` only |
+| `bitstreams/step8_sdram32w/` | + 32-bit SDRAM writes: an aligned longword write to fast RAM is one CPU step and one SDRAM request (two WRITE commands back to back) | **Known good on hardware**, SD card included: 9226 Dhrystones (+6% on step 7), MemTest 10.93 MB/s (+43%). `full` only |
+| `bitstreams/step7_datapath32/` | + 32-bit data path: aligned longword reads from the caches in one CPU step (m1nl's TG68K.C fork, banked caches) | **Known good on hardware**, SD card included: 8728 Dhrystones (+7% on step 6), MemTest 7.65 MB/s. `full` only |
 | `bitstreams/step6_earlylookup/` | + early cache lookup: every cache hit in 5 clocks, not 7 (replaces the pair buffers) | **Known good on hardware**, SD card included: 8144 Dhrystones (+21% on step 5), MemTest 7.65 MB/s. `full` only |
 | `bitstreams/step5_pairbuf/` | + pair buffers: the other half of a cached pair in 5 clocks, not 7 | **Known good. `full` on hardware**, SD card included: 6720 Dhrystones, MemTest 7.46 MB/s. `min` not run on hardware |
 | `bitstreams/step4_dcache/` | + 8 KB data cache, cache hits overlap SDRAM writes; SD card pin fix | **Known good on hardware**, SD card included |
@@ -111,7 +113,7 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   8/6/6 pacing 1877 Dhrystones (1.95 MIPS); 5/4/3 pacing 2313 (2.41 MIPS);
   4/3/2/2 pacing 2783 (2.9 MIPS); 4/3/1/1 + cache 4833 (5.04 MIPS), 3208
   with the cache off. The caches and the direct path that followed took it
-  to 8728 Dhrystones (9.11 MIPS) by step 7; each step below has its
+  to 9226 Dhrystones (9.63 MIPS) by step 8; each step below has its
   numbers.
 * **Data cache (step 4).** 8 KB, direct-mapped, the same size and layout
   as the instruction cache, for data reads from on-board fast RAM and the
@@ -209,6 +211,61 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   covers both words of every pair and that `long_ack` is set exactly for
   pair hits, and asserts that `long_ack` never changes in the clock before
   the CPU samples it.
+* **32-bit SDRAM writes (step 8).** An aligned longword write to fast RAM
+  (the Zorro II window, $08000000) now goes as a pair as well: the adapter
+  answers `long_ack` for it, the CPU steps once, and the write is posted
+  to the SDRAM controller as one request carrying both words. The
+  controller issues two WRITE commands on consecutive clocks to the open
+  row (column even, then odd; the chip allows a new command every clock),
+  so the pair costs the SDRAM one clock more than a single word, instead
+  of a second request (precharge, activate, write). Both words go into the
+  data cache, one clock apart, and are dropped from the instruction cache
+  as before; the prefetch buffer is dropped if it holds either word.
+  Misaligned longwords, byte and word writes, and writes to Chip RAM or the
+  Amiga bus are unchanged (16-bit). In simulation the 1 KB copy goes from
+  5.35 to 6.45 MB/s (+21%); reads are unchanged (sequential 12.59 MB/s,
+  scattered longwords 20.35 MB/s). The write shadow in the test benches
+  records both words of a pair, the SDRAM model's timing checker now fails
+  the run on any violation, and the `fastmem` bench requires pair writes
+  to happen and checks a pair written over cached words, a pair read back
+  from the SDRAM after eviction, and a misaligned longword. Reads from the
+  SDRAM are still two 16-bit reads (a pair read on a cache miss is the
+  next step). Timing needed a second small kernel change (a registered
+  clock enable, see *Why the CPU is pre-converted Verilog*). On an A500+
+  (`full`), caches on: 8728 → 9226 Dhrystones (+6%), 9.11 → 9.63 MIPS,
+  AIBB MemTest 7.65 → 10.93 MB/s (+43%: its writes are longwords). Caches
+  off: 3982 Dhrystones (step 7: 3940), MemTest 5.71 → 6.15 MB/s (+8%;
+  pair writes don't depend on the caches). SD card 2.18 MB/s as before.
+  xSysInfo (first measured on this step): 15711 Dhrystones, 8.94 MIPS,
+  fast RAM 16.38 MB/s, Chip RAM 2.39 MB/s, ROM 16.38 MB/s (the same as
+  fast RAM: Kickstart runs from the MapROM copy in SDRAM), SD card
+  1.9 MB/s.
+* **32-bit SDRAM reads (step 9).** An aligned longword read from fast RAM
+  that misses the caches (or with the caches off) is now one SDRAM request
+  as well: the controller issues two READ commands on consecutive clocks
+  (column even, then odd) and the two words arrive one clock apart, so the
+  pair costs one clock more than a single word. The CPU then steps once
+  with both (`long_ack`; first word on `data_in_hi` from `k_din`, second on
+  `data_in` from its own register `k_din_lo`). Before, the second word came
+  from the one-word prefetch, a separate request, and took a second CPU
+  step. Both words fill the data cache (the second through the prefetch
+  fill path). No prefetch follows a pair read. Misaligned longwords and
+  word or byte reads are unchanged. In simulation the 1 KB copy goes from
+  6.45 to 7.33 MB/s (+14%); the read benches are timed on a pass from the
+  caches and don't move. The tests check both words of every pair read
+  against the write shadow, require pair reads to happen, check that a
+  pair read fills both cache words (a re-read must be a pair hit), and
+  read a pair on a miss, from the cache and with the caches off.
+  Timing: the sequencer state `q` is now one-hot (see *Timing*). On an
+  A500+ (`full`), caches on: AIBB MemTest 10.93 → 12.20 MB/s (+12%),
+  xSysInfo fast RAM 16.38 → 23.31 MB/s (+42%), SysInfo 9221 Dhrystones
+  (step 8: 9226, unchanged: Dhrystone runs from the caches). Caches off:
+  SysInfo 3982 → 4202 Dhrystones (+6%), MemTest 6.15 → 6.97 MB/s (+13%),
+  xSysInfo 7802 Dhrystones, fast RAM 20.28 MB/s. xSysInfo's caches-on
+  Dhrystones went 15711 → 15075 (−4%), which SysInfo does not show; not
+  explained yet (one candidate: a speculative read is now a pair read, so
+  one dropped on a cache hit holds the SDRAM a clock longer). SD card
+  2.18 MB/s as before.
 * **MapROM.** The board's boot ROM (`turbomem.mem`, built with
   `DIAG_MAPROM=1`) copies Kickstart into the SDRAM shadow at every boot,
   verifies it and switches over, so it is normally already on. Both caches
@@ -233,8 +290,11 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   without the SD block.
 * **16-bit data bus.** TG68's bus port is 16 bits, so a longword is two
   transfers, as on the 68000, except an aligned longword read that hits
-  the data cache, which step 7 hands over in one step. The SDRAM chip on
-  the iCESugar-Pro is 16 bits wide as well.
+  the data cache (step 7), an aligned longword write to fast RAM (step 8)
+  and an aligned longword read from fast RAM on a cache miss (step 9),
+  each handed over in one step. The SDRAM chip on the iCESugar-Pro is 16
+  bits wide as well; steps 8 and 9 move a pair as two back-to-back WRITE
+  or READ commands in one request.
 * **Direct SDRAM path (step 3).** On-board fast RAM (the Zorro II window
   and $08000000) is no longer reached through the 68000-style
   AS/DS/DTACK slave. The adapter decodes it itself, from the fast RAM
@@ -291,8 +351,8 @@ either way.
    `yowasp-nextpnr-ecp5` pip packages installed (`build.py` falls back to
    them when plain `yosys` / `nextpnr-ecp5` are missing). A build takes a
    few minutes per seed.
-3. The bitstream lands in `build\full\base64_tg68_full.bit`. Step 7
-   `full` uses ~10.4k of the FPGA's 24k LUTs and 35 of its 56 block RAMs.
+3. The bitstream lands in `build\full\base64_tg68_full.bit`. Step 9
+   `full` uses ~10.5k of the FPGA's 24k LUTs and 35 of its 56 block RAMs.
    Expect to try several seeds (`--seeds 12`): the timing margins are thin.
 
 **One trap, already handled in `build.py`:** the TG68 kernel and ALU must
@@ -320,7 +380,7 @@ actually provides:
 | Path class | Budget | Why |
 | --- | --- | --- |
 | logic → logic | 1T | Ordinary 86 MHz logic: the bridge, slaves, SDRAM |
-| clkena → kernel | 1T | The one genuinely single-cycle path into the CPU |
+| clkena → kernel | 1T | The one genuinely single-cycle path into the CPU (`k_clkena`, and from step 8 `k_clkena_lw`) |
 | bus outputs → … | 2T | Address/FC/R/W/write data (and the slaves' registered decodes of them) change only while AS is high, 3 clocks before AS falls |
 | … → read-data latch | 2T | The adapter latches read data (and the cache's fill copy) 2 clocks after DTACK; slaves hold data from DTACK on |
 | icache/direct → … | 1T | The cache RAMs and their registers, the direct path's read-data and prefetch registers |
@@ -336,6 +396,53 @@ actually provides:
 (`--seeds N` for more) until it gets `RESULT: PASS`, and writes `timing.txt`. Expect the 1T classes to
 pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
+
+Step 9 (32-bit SDRAM reads) builds as supplied (known good on hardware):
+
+| Build | Seed | Worst 1T slack | Worst multicycle slack |
+| --- | --- | --- | --- |
+| full | 7 | +0.36 ns | +1.16 ns |
+
+**How close to the edge the design is.** From step 7 on, only about one
+seed in eight passes every class, and which path misses on the other
+seeds changes from seed to seed. Step 8, known good on hardware, passed
+on seed 3 only of seeds 1-8; the others missed by 0.1 to 2.5 ns, each on a
+different class. Step 9's variants did the same. Restructuring the paths
+that failed moved the misses elsewhere rather than removing them:
+
+* The step 9 logic itself was taken out of the critical paths. The pair
+  flag for the next request loads in CCMP/CFREE whenever the port is free
+  (not per branch), a miss sets `k_long_ack` from one registered flag
+  (`rp_go`), the second word has its own register instead of another
+  `k_din` load, and it fills the cache through the prefetch fill instead
+  of a new cache write source. In the controller the pair-read flags are
+  set with the request, not in the read branches.
+* The sequencer state `q` lost its initial value, so yosys recodes it
+  one-hot (an initial value stops yosys treating a register as a state
+  machine). That shortens the 1T paths from `q` through the step decision,
+  which failed on most binary-`q` seeds. The kernel -> DECIDE paths grow
+  instead, and fail on most other seeds. Seed 7 is the cleanest build
+  found in all variants. `q` needs no power-up value: `extReset` is held
+  through the power-up hold and loads it.
+* Not kept: flag registers for the step decision (no better), and nextpnr
+  without timing-driven placement (`--no-tmdriv`: kernel -> kernel failed
+  by 3-4 ns). nextpnr has no multicycle constraints (its SDC support is
+  `create_clock` and single-object `set_false_path`), so its placer
+  optimises for a one-clock kernel that doesn't exist.
+
+Step 8 (32-bit SDRAM writes) builds as supplied (known good on hardware):
+
+| Build | Seed | Worst 1T slack | Worst multicycle slack |
+| --- | --- | --- | --- |
+| full | 3 | +0.37 ns | +1.70 ns |
+
+Both margins are wider than step 7's. Getting there took two structural
+changes. First, the pair-write flags (`dp_pair`, and the cache update's copy
+of it) load on every DECIDE clock with the other port data instead of in
+the posted-write branch: set inside the branch they added fan-out to the
+DECIDE decode, and kernel → logic failed by 1-2 ns on most seeds. Second,
+kernel change 2 above (the registered `clkena_lw`). Of seeds 1-4, seed 3
+passes everything; the others miss by 0.1-0.8 ns, the same spread as step 7.
 
 Step 7 (32-bit data path) builds as supplied (known good on hardware):
 
@@ -450,7 +557,7 @@ rtl/base64_tg68/
   base64_tg68_top.sv            fx68k top with the CPU swapped ("TG68:" marks changes)
   tg68_bus.v                    TG68K -> 68000-style bus adapter
 rtl/tg68/
-  TG68K*.vhd                    TG68K.C (m1nl's fork), one change marked "Base64"
+  TG68K*.vhd                    TG68K.C (m1nl's fork), two changes marked "Base64"
   tg68_020.vhd                  68020-mode wrapper
   tg68_020_b0.v                 the same, converted to Verilog (what the build uses)
 rtl/base64_fx68k/               the fx68k build's slaves; changes marked "TG68:"
@@ -473,8 +580,8 @@ committed netlist byte for byte). Its arguments select variants: barrel
 shifter, no bitfields, iterative multiply.
 
 From step 7 the VHDL is m1nl's fork of TG68K.C
-(<https://github.com/m1nl/TG68K.C>, commit `a8e6f38`), with one marked
-change (below): upstream
+(<https://github.com/m1nl/TG68K.C>, commit `a8e6f38`), with two marked
+changes (below): upstream
 TG68K.C (our kernel was identical to its base) plus a cheaper rotate unit and
 the 32-bit data path (`long_cand`/`long_ack`, `data_in_hi`,
 `data_write_lo`). The wrapper `tg68_020.vhd` passes those ports through and
@@ -485,8 +592,9 @@ paths 2-5 ns over budget on every seed tried (they sit in its program-counter
 and fetch logic), while data pairs alone leave the kernel's address timing as
 it was.
 
-**The one change to the fork** (`TG68KdotC_Kernel.vhd`, marked "Base64"):
-`l1 <= long_ack AND cand` became `l1 <= long_ack`. `l1` is part of the
+**The changes to the fork** (`TG68KdotC_Kernel.vhd`, marked "Base64"):
+
+1. (step 7) `l1 <= long_ack AND cand` became `l1 <= long_ack`. `l1` is part of the
 kernel's `clkena_lw`, which gates most of its registers, and with the AND that
 path failed timing on 11 of 12 seeds (by up to 5 ns); without it it passed on
 every seed tried (+0.3 to +1.8 ns). The AND is redundant here: the adapter
@@ -494,6 +602,21 @@ raises `long_ack` only for a pair the kernel offered on `long_cand` (which,
 with data pairs only, is `cand`), and `cand` is decoded from kernel registers
 that cannot change before the step. Both test benches assert that `long_ack`
 is never high without `long_cand`.
+
+2. (step 8) A generic `ClkenaLW_Ext` and an input `clkena_lw_in`: with the
+generic at 1 (the wrapper's `CLKLW`), `clkena_lw` comes from that input
+instead of being computed as `clkena_in AND (memmaskmux(3) OR l1)`. The
+adapter supplies it from a register, `k_clkena_lw`, set on the same edge as
+`k_clkena` to `NOT longword OR long_ack`. Both inputs are settled there:
+`longword` (the kernel's existing output, `NOT memmaskmux(3)`) is final
+SETTLE clocks after a step, and `long_ack` never changes on a step edge.
+`clkena_lw` has about 320 loads; computed in the kernel it put a LUT and a
+second high-fanout hop on every clkena → kernel path. Step 8's first builds
+failed that path on 11 of 12 seeds (−0.5 to −3.4 ns) on a kernel netlist
+identical to step 7's, and so did a build with the pair writes switched off,
+so the path was simply fragile under any change elsewhere. With the register
+it gets +0.3 to +1.7 ns on three of four seeds. Both test benches check on
+every clock that `k_clkena_lw` equals the kernel's original formula.
 
 GHDL turns a handful of VHDL `case ... when others => null` statements into
 latches that yosys rejects. `fix_latches.py` neutralises exactly those.

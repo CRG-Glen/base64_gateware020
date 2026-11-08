@@ -18,27 +18,32 @@ how to build it, the timing method and the test benches.
 
 | | |
 | --- | --- |
-| CPU | TG68K.C, 68020 mode, 32-bit reads of longwords from the cache |
+| CPU | TG68K.C, 68020 mode, 32-bit longword reads and writes (caches and fast RAM) |
 | Caches | 8 KB instruction + 8 KB data, write-through, invisible to software |
 | Fast RAM | up to 8 MB Zorro II + 16 MB at `$08000000`, direct SDRAM path |
 | Also | SD card boot (sfsd.device), MapROM (Kickstart in SDRAM), autoconfig |
 | Not included | MMU, FPU |
 
-Measured on an A500+ (Kickstart 3.x), step 7:
+Measured on an A500+ (Kickstart 3.x), step 9:
 
 | | Caches on | Caches off |
 | --- | --- | --- |
-| SysInfo Dhrystones | 8728 (9.11 MIPS) | 3940 |
-| AIBB MemTest | 7.65 MB/s | 5.71 MB/s |
+| SysInfo Dhrystones | 9221 (9.62 MIPS) | 4202 (4.38 MIPS) |
+| AIBB MemTest | 12.20 MB/s | 6.97 MB/s |
+| xSysInfo fast RAM | 23.31 MB/s | 20.28 MB/s |
+| xSysInfo Dhrystones | 15075 (8.57 MIPS) | 7802 (4.44 MIPS) |
 | SD card (SysInfo) | 2.18 MB/s | |
+
+Kickstart runs from fast RAM via MapROM (xSysInfo, step 8: ROM reads as
+fast as fast RAM). Chip RAM reads at 2.39 MB/s, the Amiga's own bus.
 
 
 ## Getting it running
 
 1. Download the bitstreams from the
    [Releases](https://github.com/CRG-Glen/base64_gateware020/releases) page.
-   Take the newest release's `base64_tg68_full_plain.bit` (step 7:
-   `bitstreams/step7_datapath32/`). From step 6 on only this `full` build
+   Take the newest release's `base64_tg68_full_plain.bit` (step 9:
+   `bitstreams/step9_sdram32r/`). From step 6 on only this `full` build
    is released; the older releases also have `min`, a cut-down build with
    no fast RAM and no SD card, for diagnosing faults.
 2. **With the module out of the Amiga** (see the warning below), plug it
@@ -63,7 +68,7 @@ MapROM (the board's boot ROM already turns it on at every boot).
 
 ## Status
 
-Steps 1-7 of the speed-up work run on real hardware. See the
+Steps 1-9 of the speed-up work run on real hardware. See the
 [bitstream table](tg68/README.md#the-bitstreams) for what each step added.
 Earlier steps stay in the releases as fallbacks. Work happens on branches,
 one reviewed change at a time. [`tg68/CLAUDE.md`](tg68/CLAUDE.md) holds the

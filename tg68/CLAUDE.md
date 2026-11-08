@@ -23,8 +23,9 @@ MapROM.
 ```
 rtl/base64_tg68/   top level (base64_tg68_top.sv) and the bus adapter tg68_bus.v
 rtl/tg68/          TG68K.C VHDL: m1nl's fork (github.com/m1nl/TG68K.C, a8e6f38,
-                   32-bit data path) with ONE marked change (l1 <= long_ack,
-                   see README), + the tg68_020.vhd wrapper;
+                   32-bit data path) with TWO marked changes (l1 <= long_ack;
+                   clkena_lw from the clkena_lw_in port, see README), + the
+                   tg68_020.vhd wrapper;
                    tg68_020_b0.v is the GHDL-converted netlist actually built
                    (regenerate: YOSYS=yowasp-yosys sh scripts/gen_tg68.sh, needs
                    Ubuntu's ghdl 4.1.0; reproduces the netlist byte for byte)
@@ -192,6 +193,48 @@ that gives the "_fast" files.
   DECIDE clock under `dec_r` (= q is DECIDE, tb-asserted); `cyc_start` marks a
   real cycle start for the tb write shadow. Timing margins are thin (seed 4:
   +0.06 ns 1T, +0.86 ns kernel -> logic).
+- **32-bit SDRAM writes (step 8, known good on hardware):** `DP32_WR=1`.
+  `k_wpair` = pair offered, aligned, both strobes. Only `k_long_ack` is
+  set in the posted-write branch (fast RAM only). `dp_pair` (= k_wpair) and
+  `dp_wdata_lo` (the kernel's `data_write_lo`) load under `dec_r` with the
+  other port data; sdram_ctrl (`TG68:`) latches `cur_pair = pair && we`,
+  so reads ignore dp_pair. S_WR2: a second WRITE at col|1 the clock after
+  the first (tCCD=1, same open row). Cache: pw_upd writes the even word,
+  then pw_upd2 (<= dp_pair, held while the port is busy) the odd word a
+  clock later. The prefetch drop compares k_addr[31:2] (either word).
+  First version set dp_pair/pw_pair inside the DECIDE branches: kernel ->
+  logic failed by ~1-2 ns on most seeds (decode fan-out); moving them out
+  fixed that class. clkena -> kernel then failed 11/12 seeds on an
+  identical kernel netlist, and with DP32_WR=0 too: the path was fragile.
+  Kernel change 2 fixed it: `k_clkena_lw` (set with k_clkena to
+  `!k_longword || k_long_ack`) drives the kernel's clkena_lw (~320 loads)
+  through `clkena_lw_in` (wrapper generic CLKLW=1, kernel generic
+  ClkenaLW_Ext). Both tbs assert it equals the kernel's own formula every
+  clock. check_timing's CLKENA pattern includes `clkena_lw` (yosys could
+  name the register after the port). Seed 3: +0.37 ns 1T, +1.70 ns
+  multicycle; seeds 1, 2, 4 miss by 0.1-0.8 ns. Tests: tb shadow records both words
+  (`wr_pairs`), fastmem FAILs on `wr_pairs < 4` or any SDRAM model
+  violation (`u_sdram.n_err`), directed tests at 0x819C/0x81A0/0x81A4;
+  mutations (2nd column, no pw_upd2, masked 2nd write) all caught.
+- **32-bit SDRAM reads (step 9, known good on hardware):** `DP32_RD=1`.
+  `k_rpair`/`k_dpair` (dp_pair now carries read or write pairs; sdram_ctrl
+  latches `cur_pair = pair` for both). Controller: rd2_pend/rd2_left set
+  at request acceptance; second READ at col|1 in the first S_RD_WAIT
+  clock; S_RD_DONE held one more clock, so ack_early/rdata_live give word
+  1 then word 2. Adapter: `rp_go` (aligned pair read in fast RAM,
+  registered at DECIDE); a CCMP miss sets `k_long_ack <= rp_go`; dp_pair
+  loads in CCMP/CFREE when the port is free; direct (caches-off) reads set
+  `k_long_ack <= k_rpair` at DECIDE. DWAIT: word 1 -> dp_q, no dp_inc.
+  DDATA: k_din <= word 1, dp_q <= dp_rdata (word 2), pf_a/pf_dc set, no
+  prefetch request, -> Q_DDATA2 (code 7). DDATA2: `k_din_lo <= dp_q`,
+  `k_din_hsel <= 1` (switches data_in to k_din_lo and data_in_hi to
+  k_din; cleared after the step), pf_fill <= pf_dc (fills word 2: pf_a is
+  2 clocks old by then, its 2T class). `q` has no initial value so yosys
+  recodes it one-hot. Tests: miss pairs checked against the shadow
+  (`rd_pairs` >= 4), a pair hit at 0x08004F00 required (`hit_4f00`),
+  checks at 0x81A8/0x81AC/0x81B0; mutations (2nd column, S_RD_DONE not
+  held, select off, wrong word, no fill) all caught. Timing: seed 7
+  +0.36 / +1.16 ns; ~1 seed in 8 passes, as step 8 (README "Timing").
 - **Cache enable:** both caches follow CACR EI. The data cache must NOT get
   the 68030 CACR bit 8: software tells an 020 from an 030 by setting that bit
   and reading it back, so storing it would make the CPU detect as a 68030 and
@@ -249,12 +292,27 @@ that gives the "_fast" files.
 | step 5 (pair buffers, `full`) | 6720 / 3717 | 7.46 / 5.71 |
 | step 6 (early lookup, `full`) | 8144 / 3813 | 7.65 / 5.71 |
 | step 7 (32-bit data path, `full`) | 8728 / 3940 | 7.65 / 5.71 |
+| step 8 (32-bit SDRAM writes, `full`) | 9226 / 3982 | 10.93 / 6.15 |
+| step 9 (32-bit SDRAM reads, `full`) | 9221 / 4202 | 12.20 / 6.97 |
 
 - AIBB MemTest did not move from step 6 to step 7 (pairs only come from
-  cache hits; MemTest's reads miss and its writes are 16-bit). Pairs on
-  writes and on misses, and the write queue, are what would move it.
-- SD card (sfsd.device 2.4): 2.18 MB/s in SysInfo on steps 4 to 7
+  cache hits; MemTest's reads miss and its writes are 16-bit). Step 8's
+  pair writes took it to 10.93 MB/s (+43%), and to 6.15 with the caches
+  off (pair writes work without them). Step 9's pair reads on a miss:
+  12.20 / 6.97 (+12% / +13%). The write queue is what would move it next.
+- SD card (sfsd.device 2.4): 2.18 MB/s in SysInfo on steps 4 to 9
   (2184533 bytes/s each time); fx68k gets 1.76 MB/s.
+- xSysInfo (Glen's test suite from step 8): 15711 Dhrystones, 8.94 MIPS,
+  fast RAM 16.38 MB/s, Chip RAM 2.39 MB/s, ROM 16.38 MB/s (= fast RAM, so
+  MapROM is active), SD card 1.9 MB/s. Its Dhrystone figure is on a
+  different scale from SysInfo's; compare xSysInfo with xSysInfo only.
+  Step 9, caches on / off: 15075 / 7802 Dhrystones, 8.57 / 4.44 MIPS,
+  fast RAM 23.31 / 20.28 MB/s. The caches-on Dhrystones are 4% below step
+  8's 15711 while SysInfo's are unchanged; unexplained. Candidate: the
+  speculative read at DECIDE is now a pair read, so one dropped on a hit
+  keeps the SDRAM a clock longer and a following posted write or miss
+  waits. Re-run xSysInfo on steps 8 and 9 back to back to see if it is
+  real before changing anything.
 - Step 5 caches-off Dhrystones (3717) are below step 4's (4007), but the
   caches-off logic is unchanged: identical clock counts for both in the
   read and copy benches with CACR=0. Step 6's caches-off run gave 3813,
@@ -268,5 +326,25 @@ that gives the "_fast" files.
 - A 2-4 entry write queue (copies are write-bound).
 - Bigger caches: 16 more block RAMs, which would crowd out RTG.
 - RTG framebuffer in SDRAM: discussed as a future add-on, no design yet.
-- Step 7 follow-ups: longword WRITES as pairs (two posted SDRAM writes per
-  pair), and pairs from the direct SDRAM path on a miss.
+- 16x clock (Glen's experiment after step 9: ICS570B rewired from x12 to
+  x16, step 9 bitstream unchanged, ~113.5 MHz): boots; SysInfo 12311 /
+  5322 Dhrystones (caches on / off), xSysInfo 22117 / 10329, fast RAM
+  31.14 / 27.17 MB/s, SD 2.6 MB/s. A Ripple IDE is configured but its
+  boot ROM is not run. Cause, from the code: `CLK_MULT = 12` is fixed in
+  base64_tg68_top.sv, so the bridge's 7M grid (ph counter, tick_r/f/ack)
+  runs at 9.46 MHz. The lock check is fooled (mismatch, mismatch, match
+  every third cycle never reaches SLIP_TOL), bus cycles are 25% short
+  and mostly off phase, and the flash ROM's data is latched before it is
+  valid. E runs at 946 kHz, so CIA timers (timer.device microsecond
+  delays, floppy step timing, driver timeouts) are 33% fast. The FPGA
+  passes only because real silicon beats the worst-case model (at
+  113.5 MHz it misses by ~2.5 ns on 1T paths, ~4.6 ns on kernel ->
+  kernel). A proper 16x build: CLK_MULT = 16 (+ CPU_MULT so MC4 divides),
+  re-tune PHASE_OFS / ACK_LEAD / DTACK_LAT, MS_TOP, sdram CLK_HZ and tRFC
+  7 clocks, SD clock <= 25 MHz. Signed-off timing at 16x would need
+  STEP=5 (~7% gain) and a much faster adapter, so it would be an
+  overclocked build. Not started; Glen decides.
+- Timing headroom: from step 7 on only ~1 seed in 8 passes every class,
+  with a different path missing each time (README "Timing"). A new
+  feature will likely need a seed search. A real fix would need fewer
+  levels on the adapter's 1T paths, or a lower clock.

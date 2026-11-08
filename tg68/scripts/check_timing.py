@@ -97,7 +97,12 @@ for ctype, inst, body in cells(txt):
         setup[node] = (inst, max(setup.get(node, (inst, 0))[1], dmax(d)))
 
 # ---- classify --------------------------------------------------------------
-CLKENA = re.compile(r'(^|\.)(k_clkena|clkena_in)(\[|_|$)')
+# k_clkena_lw (kernel change 2) is a second clkena register, set on the same
+# edge: a single-cycle start into the kernel. yosys may name it after the
+# kernel port it drives (cpu.core.clkena_lw_in) or the kernel net
+# (clkena_lw); without 'clkena_lw' here that name would class it as a
+# kernel register and give its paths a fake 4T budget.
+CLKENA = re.compile(r'(^|\.)(k_clkena|clkena_in|clkena_lw)(\[|_|$)')
 # k_long_ack (step 7, the 32-bit data path) is set at DECIDE and only ever
 # changes >= 2 clocks before the kernel samples it, like data_in; tb_top.sv
 # and tb_tg68_bus.sv assert that on every kernel step.

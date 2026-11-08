@@ -755,6 +755,8 @@ module base64_tg68_top #(
     wire        dp_hold;
     wire [15:0] dp_wdata, dp_rdata;
     wire [1:0]  dp_be;
+    wire        dp_pair;                        // TG68: 32-bit SDRAM pair write
+    wire [15:0] dp_wdata_lo;                    //   ...and its second word
     wire        fm_cfg_on;
     wire [7:0]  fm_cfg_match;
     tg68_bus #(.STEP(TG_STEP), .SETTLE(TG_SETTLE), .DIN_SETUP(TG_DIN),
@@ -801,6 +803,8 @@ module base64_tg68_top #(
         .dp_we    (dp_we),
         .dp_wdata (dp_wdata),
         .dp_be    (dp_be),
+        .dp_pair  (dp_pair),
+        .dp_wdata_lo (dp_wdata_lo),
         .dp_ack   (dp_ack),
         .dp_rdata (dp_rdata),
         .oEdb     (core_dout),
@@ -1707,6 +1711,9 @@ module base64_tg68_top #(
         .clk (clk), .reset (slave_reset),
         .req (sd_req), .we (sd_we), .wr_valid (sd_wr_valid),
         .addr (sd_saddr), .wdata (sd_wdata), .byte_en (sd_byte_en),
+        // TG68: pair writes come straight from the adapter (fastmem_zii only
+        // passes dp_wdata through when BUS_RAM=0, as built here)
+        .pair (dp_pair), .wdata_lo (dp_wdata_lo),
         .ack (sd_ack), .ack_early (sd_ack_early),
         .rdata_live (sd_rdata_live), .rdata (sd_rdata), .ready (sd_ready),
         .sdram_a (sdram_a), .sdram_ba (sdram_ba), .sdram_dq (sdram_dq),

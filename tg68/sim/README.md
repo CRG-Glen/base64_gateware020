@@ -38,6 +38,24 @@
   them. (Checked against broken versions: a pair hit ignoring the second
   word's tag, the wrong word on `data_in_hi`, stepping with `long_ack`
   still set, and dropping it a clock too late: all caught.)
+  Step 8 (32-bit SDRAM writes): the shadow records both words of a pair
+  write; the run fails if fewer than 4 pair writes happen or if the SDRAM
+  model reports any timing violation (in every `top`-based run, benches
+  included). Three cases: a pair written, evicted and read back from the
+  SDRAM; a misaligned longword (no pair); a pair written over two cached
+  words. Both benches also check on every clock that the registered
+  `k_clkena_lw` equals the kernel's own `clkena_lw` formula (kernel change
+  2). (Checked against broken versions: the second WRITE to the wrong
+  column, the second word's byte enables off, no cache update for the
+  second word, and `k_clkena_lw` ignoring `long_ack`: all caught.)
+  Step 9 (32-bit SDRAM reads): every pair read from the SDRAM is checked
+  word by word against the shadow at the CPU's sample clock; the run fails
+  on fewer than 4 pair reads, or if the re-read at 0x08004F00 is not a
+  pair hit (the pair read must fill both cache words). Directed: a pair
+  read on a miss, the same pair from the cache, and with the caches off.
+  (Checked against broken versions: the second READ to the wrong column,
+  `S_RD_DONE` not held, the data-input select never set, the second word
+  replaced by the first, and no fill of the second word: all caught.)
 * **bench copy | read | scatter | sd**: fast RAM throughput, timed on a second
   pass with the loop running from the instruction cache. `copy` copies
   1 KB, `read` sums 1 KB sequentially, `scatter` reads four longs in

@@ -53,11 +53,13 @@ module tb;
     // k_long_ack and k_din_sel feed the kernel and are classed adapter ->
     // kernel (2 clocks) by check_timing.py: neither may change in the clock
     // just before the kernel samples (the clkena clock).
-    integer ks_cyc = 0, ks_chg = -10, ks_bad = 0; reg ks_la = 0, ks_ds = 0;
+    integer ks_cyc = 0, ks_chg = -10, ks_bad = 0; reg ks_la = 0, ks_ds = 0, ks_hs = 0;
+    integer rd_pairs = 0;                // pair reads from the SDRAM (step 9)
+    integer n_clw = 0;                   // steps with clkena_lw (kernel change 2)
     always @(posedge clk) begin
         ks_cyc = ks_cyc + 1;
-        if (dut.k_long_ack !== ks_la || dut.k_din_sel !== ks_ds) ks_chg = ks_cyc;
-        ks_la = dut.k_long_ack; ks_ds = dut.k_din_sel;
+        if (dut.k_long_ack !== ks_la || dut.k_din_sel !== ks_ds || dut.k_din_hsel !== ks_hs) ks_chg = ks_cyc;
+        ks_la = dut.k_long_ack; ks_ds = dut.k_din_sel; ks_hs = dut.k_din_hsel;
         // The kernel's l1 <= long_ack (Base64 change, was long_ack AND cand)
         // relies on this: long_ack only ever answers an offered pair.
         if (dut.k_long_ack && !dut.k_long_cand) begin
@@ -68,6 +70,15 @@ module tb;
             $display("FAIL dec_r out of step with q (q=%0d dec_r=%b)", dut.q, dut.dec_r);
             ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
         end
+        // Kernel change 2: the registered clkena_lw must equal what the
+        // kernel computed itself, clkena AND (NOT longword OR long_ack), on
+        // every clock (kernel outputs read live).
+        if (dut.k_clkena_lw !== (dut.k_clkena && (!dut.k_longword || dut.k_long_ack))) begin
+            $display("FAIL k_clkena_lw %b, kernel formula %b", dut.k_clkena_lw,
+                     dut.k_clkena && (!dut.k_longword || dut.k_long_ack));
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
+        if (dut.k_clkena) n_clw = n_clw + dut.k_clkena_lw;
         if (dut.k_clkena && ks_cyc - ks_chg < 1) begin
             $display("FAIL long_ack/k_din_sel changed in the clock before the kernel sampled them");
             ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
@@ -95,10 +106,20 @@ module tb;
             if (!dut.uds_want) begin sh_s[17] = 1'b1; sh_s[15:8] = dut.oEdb[15:8]; end
             if (!dut.lds_want) begin sh_s[16] = 1'b1; sh_s[7:0]  = dut.oEdb[7:0];  end
             shadow[sh_k] = sh_s;
+            // a pair write (32-bit SDRAM, step 8: direct path only, so not
+            // made in this bench, which has no fast RAM) writes the next word
+            if (dut.k_long_ack) shadow[sh_k + 31'd1] = {2'b11, dut.dp_wdata_lo};
         end
         // A hit is recorded in CCMP and checked on the clock the kernel
         // samples it (k_clkena): data_in (k_dat), and for a pair hit also
         // data_in_hi (k_din_ce) and long_ack. Checked first, then recorded.
+        // A pair read from the SDRAM (step 9: k_long_ack on a read that is
+        // not a cache hit, k_din_sel low): both words against the shadow.
+        if (dut.k_clkena && dut.k_long_ack && dut.eRWn && !dut.k_din_sel) begin
+            rd_pairs = rd_pairs + 1;
+            chk_word(dut.a_r, dut.k_din_hmux);
+            chk_word(dut.a_r + 31'd1, dut.k_dat);
+        end
         if (hp_pend && dut.k_clkena) begin
             hp_pend = 0;
             if (dut.k_long_ack !== hp_long) begin
@@ -107,7 +128,7 @@ module tb;
             end
             if (hp_long) begin
                 long_hits = long_hits + 1;
-                chk_word(hp_a, dut.k_din_ce);
+                chk_word(hp_a, dut.k_din_hmux);
                 chk_word(hp_a + 31'd1, dut.k_dat);
             end else
                 chk_word(hp_a, dut.k_dat);
@@ -232,7 +253,7 @@ module tb;
         check(32'h8138, 32'h00000002, "self-modified code");
         check(32'h8FF0, 32'h600DC0DE, "done marker");
         if (iacks != 1) begin $display("FAIL expected 1 IACK, got %0d", iacks); errors = errors + 1; end
-        $display("cache hits checked against the CPU's writes %0d (stale: %0d); pair hits %0d", hit_chk, hit_bad, long_hits);
+        $display("cache hits checked against the CPU's writes %0d (stale: %0d); pair hits %0d; clkena_lw steps %0d", hit_chk, hit_bad, long_hits, n_clw);
         if (hit_bad) errors = errors + hit_bad;
         if (hit_chk == 0) begin $display("FAIL cache-hit oracle never used"); errors = errors + 1; end
         if (stalled) begin $display("FAIL stall flag set"); errors = errors + 1; end
