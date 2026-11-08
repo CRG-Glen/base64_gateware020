@@ -173,7 +173,7 @@ that gives the "_fast" files.
   after this (also 5 clocks) and were removed. tb_top.sv and
   tb_tg68_bus.sv check every cache hit's data against a shadow of the
   CPU's writes.
-- **32-bit data path (step 7, not yet tested on hardware):** core = m1nl's
+- **32-bit data path (step 7, known good on hardware):** core = m1nl's
   TG68K.C fork, `DP32=1` (data pairs only: immediate and absolute-address
   pairs made clkena -> kernel fail every seed by 2-5 ns); `k_long_cand`
   offers an aligned pair. Each cache is two banks
@@ -248,7 +248,11 @@ that gives the "_fast" files.
 | step 4 (D-cache) | 6076 / 4007 | 7.28 / 5.71 |
 | step 5 (pair buffers, `full`) | 6720 / 3717 | 7.46 / 5.71 |
 | step 6 (early lookup, `full`) | 8144 / 3813 | 7.65 / 5.71 |
+| step 7 (32-bit data path, `full`) | 8728 / 3940 | 7.65 / 5.71 |
 
+- AIBB MemTest did not move from step 6 to step 7 (pairs only come from
+  cache hits; MemTest's reads miss and its writes are 16-bit). Pairs on
+  writes and on misses, and the write queue, are what would move it.
 - SD card (sfsd.device 2.4): 2.18 MB/s in SysInfo on steps 4, 5 and 6
   (2184533 bytes/s each time); fx68k gets 1.76 MB/s.
 - Step 5 caches-off Dhrystones (3717) are below step 4's (4007), but the

@@ -10,8 +10,9 @@ and the SD card. An adapter, `tg68_bus.v`, makes TG68K look like fx68k's
 ports and adds the caches and the direct SDRAM path. Changes to the fx68k
 build's own files are few and marked `TG68:`.
 
-> **Status:** steps 1-6 run on an A500+ (step 6 `full`: 8144 Dhrystones,
-> 8.50 MIPS, AIBB MemTest 7.65 MB/s with the caches on, SD card 2.18 MB/s).
+> **Status:** steps 1-7 run on an A500+ (step 7 `full`: 8728 Dhrystones,
+> 9.11 MIPS, AIBB MemTest 7.65 MB/s with the caches on; SD card 2.18 MB/s on
+> step 6).
 >
 > **SD card: only the step 4 `full` bitstream reads the card.** Every
 > earlier yosys build drove the card's data-out line (MISO) low, so the
@@ -27,8 +28,8 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
-| `bitstreams/step7_datapath32/` | + 32-bit data path: aligned longword reads from the caches in one CPU step (m1nl's TG68K.C fork, banked caches) | **Newest, not yet run on hardware.** `full` only. Simulated and timing-checked |
-| `bitstreams/step6_earlylookup/` | + early cache lookup: every cache hit in 5 clocks, not 7 (replaces the pair buffers) | **Latest known good on hardware**, SD card included: 8144 Dhrystones (+21% on step 5), MemTest 7.65 MB/s. `full` only |
+| `bitstreams/step7_datapath32/` | + 32-bit data path: aligned longword reads from the caches in one CPU step (m1nl's TG68K.C fork, banked caches) | **Latest. Known good on hardware**: 8728 Dhrystones (+7% on step 6), MemTest 7.65 MB/s. `full` only |
+| `bitstreams/step6_earlylookup/` | + early cache lookup: every cache hit in 5 clocks, not 7 (replaces the pair buffers) | **Known good on hardware**, SD card included: 8144 Dhrystones (+21% on step 5), MemTest 7.65 MB/s. `full` only |
 | `bitstreams/step5_pairbuf/` | + pair buffers: the other half of a cached pair in 5 clocks, not 7 | **Known good. `full` on hardware**, SD card included: 6720 Dhrystones, MemTest 7.46 MB/s. `min` not run on hardware |
 | `bitstreams/step4_dcache/` | + 8 KB data cache, cache hits overlap SDRAM writes; SD card pin fix | **Known good on hardware**, SD card included |
 | `bitstreams/step3_direct/` | + direct CPU → SDRAM path for fast RAM, posted writes, word prefetch | **Known good on hardware**: MemTest 6.46 MB/s |
@@ -199,7 +200,14 @@ Boots from SD exactly like the fx68k build. Same `Mask` advice applies
   second pass from the caches: sequential reads 10.64 → 12.59 MB/s (+18%),
   scattered longword reads 15.66 → 20.41 MB/s (+30%), the 1 KB copy
   unchanged at 5.35 MB/s (its source and destination share cache slots, so
-  its reads miss). **Not yet run on hardware.** The cache-hit check now
+  its reads miss). On an A500+ (`full`), caches on: 8144 → 8728
+  Dhrystones (+7%), 8.50 → 9.11 MIPS. AIBB MemTest is unchanged at
+  7.65 MB/s: like the copy bench, it works through more memory than the
+  8 KB data cache, so its reads miss and go to the SDRAM as two 16-bit
+  reads, and writes are still two 16-bit writes. Pairs on writes and on
+  misses are the follow-ups for that. Caches off: 3940 Dhrystones (step 6:
+  3813; nothing step 7 changed is used with the caches off), MemTest 5.71
+  MB/s. The cache-hit check now
   covers both words of every pair and that `long_ack` is set exactly for
   pair hits, and asserts that `long_ack` never changes in the clock before
   the CPU samples it.
@@ -329,7 +337,7 @@ it gets `RESULT: PASS`, and writes `timing.txt`. Expect the 1T classes to
 pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
 
-Step 7 (32-bit data path) builds as supplied (not yet run on hardware):
+Step 7 (32-bit data path) builds as supplied (known good on hardware):
 
 | Build | Seed | Worst 1T slack | Worst multicycle slack |
 | --- | --- | --- | --- |
