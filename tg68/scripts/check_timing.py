@@ -98,7 +98,10 @@ for ctype, inst, body in cells(txt):
 
 # ---- classify --------------------------------------------------------------
 CLKENA = re.compile(r'(^|\.)(k_clkena|clkena_in)(\[|_|$)')
-KIN = re.compile(r'(^|\.)(k_din|data_in|k_ipl|ipl|IPL|k_berr|berr|k_nreset|nReset|nreset)(\[|_|$)')
+# k_long_ack (step 7, the 32-bit data path) is set at DECIDE and only ever
+# changes >= 2 clocks before the kernel samples it, like data_in; tb_top.sv
+# and tb_tg68_bus.sv assert that on every kernel step.
+KIN = re.compile(r'(^|\.)(k_din|data_in|k_ipl|ipl|IPL|k_berr|berr|k_nreset|nReset|nreset|k_long_ack)(\[|_|$)')
 # ...and the slaves' registered address decodes, which follow the address one
 # clock later and are only acted on once AS is low (AS falls 3 clocks after
 # the address changes, so they have 3T; 2T is used).
@@ -127,7 +130,12 @@ def start_class(inst):
     if STATIC.match(inst): return 'S'
     if BUSOUT.match(inst): return 'A'
     if inst.startswith('cpu.') and CLKENA.search(inst): return 'C'
-    if inst.startswith('cpu.') and (KIN.search(inst) or KDIN.match(inst)): return 'M'
+    # (not the kernel's own registers, cpu.core.cpu.*: yosys names some of
+    # them after nets such as nReset, and they are kernel starts whatever
+    # their name says; adapter registers named after a kernel PORT sit at
+    # cpu.core.<port>, one level up. Seen in the step 7 build.)
+    if inst.startswith('cpu.') and not inst.startswith('cpu.core.cpu.') \
+            and (KIN.search(inst) or KDIN.match(inst)): return 'M'
     if inst.startswith('cpu.core.'):                    return 'K'
     # The adapter's own control registers (sequencer state, timers, flags).
     # Ordinary 1T logic like 'O', but split out because 'O' -> read-data

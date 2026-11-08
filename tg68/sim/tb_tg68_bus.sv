@@ -49,25 +49,71 @@ module tb;
     // byte lane). Here that covers the self-modifying-code test under random
     // DTACK and the bus hand-over. Words never written are not checked.
     integer hit_chk = 0, hit_bad = 0;
+    integer long_hits = 0;               // pair hits (32-bit data path)
+    // k_long_ack and k_din_sel feed the kernel and are classed adapter ->
+    // kernel (2 clocks) by check_timing.py: neither may change in the clock
+    // just before the kernel samples (the clkena clock).
+    integer ks_cyc = 0, ks_chg = -10, ks_bad = 0; reg ks_la = 0, ks_ds = 0;
+    always @(posedge clk) begin
+        ks_cyc = ks_cyc + 1;
+        if (dut.k_long_ack !== ks_la || dut.k_din_sel !== ks_ds) ks_chg = ks_cyc;
+        ks_la = dut.k_long_ack; ks_ds = dut.k_din_sel;
+        // The kernel's l1 <= long_ack (Base64 change, was long_ack AND cand)
+        // relies on this: long_ack only ever answers an offered pair.
+        if (dut.k_long_ack && !dut.k_long_cand) begin
+            $display("FAIL long_ack high without long_cand");
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
+        if (dut.dec_r !== (dut.q == 4'd1)) begin
+            $display("FAIL dec_r out of step with q (q=%0d dec_r=%b)", dut.q, dut.dec_r);
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
+        if (dut.k_clkena && ks_cyc - ks_chg < 1) begin
+            $display("FAIL long_ack/k_din_sel changed in the clock before the kernel sampled them");
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
+    end
+    reg        hp_pend = 0, hp_long = 0; reg [31:1] hp_a = 0;
+    reg [17:0] cw_s;
+    task chk_word(input [31:1] wa, input [15:0] got);
+        if (shadow.exists(wa)) begin
+            hit_chk = hit_chk + 1;
+            cw_s = shadow[wa];
+            if ((cw_s[17] && got[15:8] !== cw_s[15:8]) || (cw_s[16] && got[7:0] !== cw_s[7:0])) begin
+                $display("FAIL cache hit: stale data at %h: CPU gets %h, last written %h", {wa, 1'b0}, got, cw_s[15:0]);
+                hit_bad = hit_bad + 1;
+            end
+        end
+    endtask
     reg [17:0] shadow [int unsigned];
     reg [17:0] sh_s; reg [31:1] sh_k; reg [3:0] sh_pq = 0;
     always @(posedge clk) begin
         sh_pq <= dut.q;
-        if (sh_pq == 4'd1 && dut.q != 4'd1 && !dut.eRWn) begin
+        if (dut.cyc_start && !dut.eRWn) begin
             sh_k = dut.a_r;
             sh_s = shadow.exists(sh_k) ? shadow[sh_k] : 18'd0;
             if (!dut.uds_want) begin sh_s[17] = 1'b1; sh_s[15:8] = dut.oEdb[15:8]; end
             if (!dut.lds_want) begin sh_s[16] = 1'b1; sh_s[7:0]  = dut.oEdb[7:0];  end
             shadow[sh_k] = sh_s;
         end
-        if (dut.q == 4'd8 && dut.cc_hit && shadow.exists(dut.a_r)) begin
-            hit_chk = hit_chk + 1;
-            sh_s = shadow[dut.a_r];
-            if ((sh_s[17] && dut.k_dat[15:8] !== sh_s[15:8]) || (sh_s[16] && dut.k_dat[7:0] !== sh_s[7:0])) begin
-                $display("FAIL cache hit: stale data at %h: CPU gets %h, last written %h",
-                         {dut.a_r, 1'b0}, dut.k_dat, sh_s[15:0]);
+        // A hit is recorded in CCMP and checked on the clock the kernel
+        // samples it (k_clkena): data_in (k_dat), and for a pair hit also
+        // data_in_hi (k_din_ce) and long_ack. Checked first, then recorded.
+        if (hp_pend && dut.k_clkena) begin
+            hp_pend = 0;
+            if (dut.k_long_ack !== hp_long) begin
+                $display("FAIL cache hit at %h: long_ack %b, expected %b", {hp_a, 1'b0}, dut.k_long_ack, hp_long);
                 hit_bad = hit_bad + 1;
             end
+            if (hp_long) begin
+                long_hits = long_hits + 1;
+                chk_word(hp_a, dut.k_din_ce);
+                chk_word(hp_a + 31'd1, dut.k_dat);
+            end else
+                chk_word(hp_a, dut.k_dat);
+        end
+        if (dut.q == 4'd8 && (dut.cc_long || dut.cc_hit)) begin
+            hp_pend = 1; hp_long = dut.cc_long; hp_a = dut.a_r;
         end
     end
     integer errors = 0, cycles = 0, iacks = 0, writes = 0;
@@ -186,7 +232,7 @@ module tb;
         check(32'h8138, 32'h00000002, "self-modified code");
         check(32'h8FF0, 32'h600DC0DE, "done marker");
         if (iacks != 1) begin $display("FAIL expected 1 IACK, got %0d", iacks); errors = errors + 1; end
-        $display("cache hits checked against the CPU's writes %0d (stale: %0d)", hit_chk, hit_bad);
+        $display("cache hits checked against the CPU's writes %0d (stale: %0d); pair hits %0d", hit_chk, hit_bad, long_hits);
         if (hit_bad) errors = errors + hit_bad;
         if (hit_chk == 0) begin $display("FAIL cache-hit oracle never used"); errors = errors + 1; end
         if (stalled) begin $display("FAIL stall flag set"); errors = errors + 1; end

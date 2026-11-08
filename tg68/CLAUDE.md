@@ -22,9 +22,12 @@ MapROM.
 
 ```
 rtl/base64_tg68/   top level (base64_tg68_top.sv) and the bus adapter tg68_bus.v
-rtl/tg68/          TG68K.C VHDL (unmodified except tg68_020.vhd wrapper) and
-                   tg68_020_b0.v, the GHDL-converted netlist actually built
-                   (regenerate with scripts/gen_tg68.sh; needs ghdl+yosys plugin)
+rtl/tg68/          TG68K.C VHDL: m1nl's fork (github.com/m1nl/TG68K.C, a8e6f38,
+                   32-bit data path) with ONE marked change (l1 <= long_ack,
+                   see README), + the tg68_020.vhd wrapper;
+                   tg68_020_b0.v is the GHDL-converted netlist actually built
+                   (regenerate: YOSYS=yowasp-yosys sh scripts/gen_tg68.sh, needs
+                   Ubuntu's ghdl 4.1.0; reproduces the netlist byte for byte)
 rtl/base64_fx68k/  copies of the fx68k build's slaves; every change is
                    marked "TG68:" (fastmem_zii: direct SDRAM port and BUS_RAM;
                    all slaves: *_int_win outputs)
@@ -43,7 +46,7 @@ Upstream (jbilander's files outside `tg68/`) is not modified by this work.
 ## Commands
 
 ```
-python3 scripts/build.py full --seeds 12      # or min / fastmem; Windows: build.bat full
+python3 scripts/build.py full --seeds 12      # Windows: build.bat full (only full is released/timed since step 6)
 sh sim/run.sh bus | top | fastmem              # the three regression benches
 sh sim/run.sh bench copy|read|scatter|sd       # throughput and SD loopback
 python3 scripts/check_timing.py build/full/base64_tg68.sdf --paths 4
@@ -170,6 +173,25 @@ that gives the "_fast" files.
   after this (also 5 clocks) and were removed. tb_top.sv and
   tb_tg68_bus.sv check every cache hit's data against a shadow of the
   CPU's writes.
+- **32-bit data path (step 7, known good on hardware):** core = m1nl's
+  TG68K.C fork, `DP32=1` (data pairs only: immediate and absolute-address
+  pairs made clkena -> kernel fail every seed by 2-5 ns); `k_long_cand`
+  offers an aligned pair. Each cache is two banks
+  (`*_e` even words, `*_o` odd words, row = addr[12:2]); DECIDE registers both
+  banks' words (`k_din_ce/k_din_co`) and tags (`ic_qt_e/o`). `k_long_ack` is
+  set at DECIDE (pair offered, aligned) and resolved in CCMP: both words hit
+  (`cc_long`) -> step with the pair (data_in_hi = k_din_ce, data_in =
+  k_din_co); only the asked word hits -> drop k_long_ack and step via FINISH
+  (so the drop is 2 clocks old); miss -> drop. It never changes in the clock
+  before the kernel samples (tb assertion), so check_timing.py classes it
+  adapter -> kernel. `DP32_ACK=0` turns pairs off. Pairs only from cache hits
+  so far; writes stay 16-bit. Kernel change: `l1 <= long_ack` (was AND cand;
+  clkena -> kernel failed 11/12 seeds with it); valid only while the adapter
+  acks offered pairs only (tb asserts long_ack implies long_cand). DECIDE's
+  data registers (oEdb, uds/lds_want, cyc_fetch, dp_we/wdata/be) load on every
+  DECIDE clock under `dec_r` (= q is DECIDE, tb-asserted); `cyc_start` marks a
+  real cycle start for the tb write shadow. Timing margins are thin (seed 4:
+  +0.06 ns 1T, +0.86 ns kernel -> logic).
 - **Cache enable:** both caches follow CACR EI. The data cache must NOT get
   the 68030 CACR bit 8: software tells an 020 from an 030 by setting that bit
   and reading it back, so storing it would make the CPU detect as a 68030 and
@@ -226,8 +248,12 @@ that gives the "_fast" files.
 | step 4 (D-cache) | 6076 / 4007 | 7.28 / 5.71 |
 | step 5 (pair buffers, `full`) | 6720 / 3717 | 7.46 / 5.71 |
 | step 6 (early lookup, `full`) | 8144 / 3813 | 7.65 / 5.71 |
+| step 7 (32-bit data path, `full`) | 8728 / 3940 | 7.65 / 5.71 |
 
-- SD card (sfsd.device 2.4): 2.18 MB/s in SysInfo on steps 4, 5 and 6
+- AIBB MemTest did not move from step 6 to step 7 (pairs only come from
+  cache hits; MemTest's reads miss and its writes are 16-bit). Pairs on
+  writes and on misses, and the write queue, are what would move it.
+- SD card (sfsd.device 2.4): 2.18 MB/s in SysInfo on steps 4 to 7
   (2184533 bytes/s each time); fx68k gets 1.76 MB/s.
 - Step 5 caches-off Dhrystones (3717) are below step 4's (4007), but the
   caches-off logic is unchanged: identical clock counts for both in the
@@ -242,4 +268,5 @@ that gives the "_fast" files.
 - A 2-4 entry write queue (copies are write-bound).
 - Bigger caches: 16 more block RAMs, which would crowd out RTG.
 - RTG framebuffer in SDRAM: discussed as a future add-on, no design yet.
-- A 32-bit TG68 bus: large change inside the kernel; parked.
+- Step 7 follow-ups: longword WRITES as pairs (two posted SDRAM writes per
+  pair), and pairs from the direct SDRAM path on a miss.

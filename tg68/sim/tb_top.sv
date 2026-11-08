@@ -105,6 +105,42 @@ module tb;
     // The shadow is dropped when MapROM switches, which changes what the ROM
     // addresses return.
     integer hit_chk = 0, hit_bad = 0;
+    integer long_hits = 0;               // pair hits (32-bit data path)
+    // k_long_ack and k_din_sel feed the kernel and are classed adapter ->
+    // kernel (2 clocks) by check_timing.py: neither may change in the clock
+    // just before the kernel samples (the clkena clock).
+    integer ks_cyc = 0, ks_chg = -10, ks_bad = 0; reg ks_la = 0, ks_ds = 0;
+    always @(posedge dut.clk) begin
+        ks_cyc = ks_cyc + 1;
+        if (dut.cpu.k_long_ack !== ks_la || dut.cpu.k_din_sel !== ks_ds) ks_chg = ks_cyc;
+        ks_la = dut.cpu.k_long_ack; ks_ds = dut.cpu.k_din_sel;
+        // The kernel's l1 <= long_ack (Base64 change, was long_ack AND cand)
+        // relies on this: long_ack only ever answers an offered pair.
+        if (dut.cpu.k_long_ack && !dut.cpu.k_long_cand) begin
+            $display("FAIL long_ack high without long_cand");
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
+        if (dut.cpu.dec_r !== (dut.cpu.q == 4'd1)) begin
+            $display("FAIL dec_r out of step with q (q=%0d dec_r=%b)", dut.cpu.q, dut.cpu.dec_r);
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
+        if (dut.cpu.k_clkena && ks_cyc - ks_chg < 1) begin
+            $display("FAIL long_ack/k_din_sel changed in the clock before the kernel sampled them");
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
+    end
+    reg        hp_pend = 0, hp_long = 0; reg [31:1] hp_a = 0;
+    reg [17:0] cw_s;
+    task chk_word(input [31:1] wa, input [15:0] got);
+        if (shadow.exists(wa)) begin
+            hit_chk = hit_chk + 1;
+            cw_s = shadow[wa];
+            if ((cw_s[17] && got[15:8] !== cw_s[15:8]) || (cw_s[16] && got[7:0] !== cw_s[7:0])) begin
+                $display("FAIL cache hit: stale data at %h: CPU gets %h, last written %h", {wa, 1'b0}, got, cw_s[15:0]);
+                hit_bad = hit_bad + 1;
+            end
+        end
+    endtask
     reg [17:0] pb_s; reg [31:1] pb_k;      // {known hi, known lo, data}
     reg [17:0] shadow [int unsigned];
     reg [3:0]  pb_pq = 0; reg pb_mr = 0;
@@ -112,29 +148,34 @@ module tb;
         pb_pq <= dut.cpu.q;
         pb_mr <= dut.cpu.mr_active;
         if (dut.cpu.mr_active !== pb_mr) shadow.delete();
-        // a write cycle has just been accepted: a_r, oEdb and the strobes
-        // were latched on the edge that left DECIDE. (An internal step or a
-        // prefetch hit leaves DECIDE too, and re-applies the last write:
-        // harmless.)
-        if (pb_pq == 4'd1 && dut.cpu.q != 4'd1 && !dut.cpu.eRWn) begin
+        // a write cycle has just been set up (cyc_start): a_r, oEdb and the
+        // strobes belong to it. (oEdb and the strobes now load on every
+        // DECIDE clock, so only a real cycle start may be recorded.)
+        if (dut.cpu.cyc_start && !dut.cpu.eRWn) begin
             pb_k = dut.cpu.a_r;
             pb_s = shadow.exists(pb_k) ? shadow[pb_k] : 18'd0;
             if (!dut.cpu.uds_want) begin pb_s[17] = 1'b1; pb_s[15:8] = dut.cpu.oEdb[15:8]; end
             if (!dut.cpu.lds_want) begin pb_s[16] = 1'b1; pb_s[7:0]  = dut.cpu.oEdb[7:0];  end
             shadow[pb_k] = pb_s;
         end
-        if (dut.cpu.q == 4'd8 && dut.cpu.cc_hit) begin
-            pb_k = dut.cpu.a_r;
-            if (shadow.exists(pb_k)) begin
-                hit_chk = hit_chk + 1;
-                pb_s = shadow[pb_k];
-                if ((pb_s[17] && dut.cpu.k_dat[15:8] !== pb_s[15:8]) ||
-                    (pb_s[16] && dut.cpu.k_dat[7:0]  !== pb_s[7:0])) begin
-                    $display("FAIL cache hit: stale data at %h: CPU gets %h, last written %h",
-                             {dut.cpu.a_r, 1'b0}, dut.cpu.k_dat, pb_s[15:0]);
-                    hit_bad = hit_bad + 1;
-                end
+        // A hit is recorded in CCMP and checked on the clock the kernel
+        // samples it (k_clkena): data_in (k_dat), and for a pair hit also
+        // data_in_hi (k_din_ce) and long_ack. Checked first, then recorded.
+        if (hp_pend && dut.cpu.k_clkena) begin
+            hp_pend = 0;
+            if (dut.cpu.k_long_ack !== hp_long) begin
+                $display("FAIL cache hit at %h: long_ack %b, expected %b", {hp_a, 1'b0}, dut.cpu.k_long_ack, hp_long);
+                hit_bad = hit_bad + 1;
             end
+            if (hp_long) begin
+                long_hits = long_hits + 1;
+                chk_word(hp_a, dut.cpu.k_din_ce);
+                chk_word(hp_a + 31'd1, dut.cpu.k_dat);
+            end else
+                chk_word(hp_a, dut.cpu.k_dat);
+        end
+        if (dut.cpu.q == 4'd8 && (dut.cpu.cc_long || dut.cpu.cc_hit)) begin
+            hp_pend = 1; hp_long = dut.cpu.cc_long; hp_a = dut.cpu.a_r;
         end
     end
     always @(negedge as_n) if (ba[23:19] == 5'b11111) romf = romf + 1;
@@ -244,7 +285,7 @@ module tb;
 `ifdef MEMBENCH
         $display("kernel steps %0d: internal %0d, cache hits %0d, direct %0d, bus %0d; clocks %0d",
                  n_step, n_int, n_hit, n_dir, n_bus, n_clk);
-        $display("cache hits checked against the CPU's writes (whole run) %0d, stale %0d", hit_chk, hit_bad);
+        $display("cache hits checked against the CPU's writes (whole run) %0d, stale %0d; pair hits %0d", hit_chk, hit_bad, long_hits);
         if (hit_bad) errors = errors + 1;
         $display("1 KB: %0.1f us -> %0.2f MB/s; %0d CPU bus cycles", (t1-t0)/1000.0, 1024.0/((t1-t0)/1000.0), n_fm);
         $display("per cycle, in 11.75 ns clocks: AS->DTACK %0.1f, DTACK->AS up %0.1f, AS up->next AS %0.1f",
@@ -301,8 +342,11 @@ module tb;
         check(24'h8188, 32'h0000BBCC, "cache: byte write");
         check(24'h818C, 32'h00001515, "cache: write, caches off");
         check(24'h8190, 32'h00000000, "cache: MapROM flush");
-        $display("data cache hits: %0d; hits checked against the CPU's writes %0d (stale: %0d); shortest direct request->ack %0d clocks",
-                 dc_hits, hit_chk, hit_bad, dp_min);
+        check(24'h8194, 32'h8AACCEF0, "pair: imm32 + abs.L");
+        check(24'h8198, 32'h31323399, "pair: partner not cached");
+        $display("data cache hits: %0d; hits checked against the CPU's writes %0d (stale: %0d); pair hits %0d; shortest direct request->ack %0d clocks",
+                 dc_hits, hit_chk, hit_bad, long_hits, dp_min);
+        if (long_hits < 4) begin $display("FAIL: pair hits (32-bit data path) barely used"); errors = errors + 1; end
         if (hit_bad) errors = errors + 1;
         if (hit_chk < 64) begin $display("FAIL: cache-hit oracle barely used"); errors = errors + 1; end
         // tg68_bus's speculative read relies on no answer before CCMP
@@ -311,7 +355,7 @@ module tb;
         check(24'h8130, 32'h33333333, "IRQ3 via VPA autovec");
 `else
         check(24'h8120, 32'h33333333, "IRQ3 via VPA autovec");
-        $display("cache hits checked against the CPU's writes %0d (stale: %0d)", hit_chk, hit_bad);
+        $display("cache hits checked against the CPU's writes %0d (stale: %0d); pair hits %0d", hit_chk, hit_bad, long_hits);
         if (hit_bad) errors = errors + 1;
 `endif
         check(24'h8140, 32'h00000055, "ROM code via cache");
