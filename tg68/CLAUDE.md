@@ -308,6 +308,32 @@ that gives the "_fast" files.
     via the tb mailbox at $8F10 then CACR CI (0x81B4/B8/BC), posted write
     order at 0x81C0, `n_posted` >= 10, `bench chip`. Sim: bench chip 1133
     -> 442 us, readoff +40%, copy +17%, read/scatter unchanged.
+- **Chip RAM write buffer (step 12, not yet on hardware):** `CHIP_WB` (top
+  level, default 8) entries {a, d, fc, uds/lds} in `wb_*` (storage always
+  8 deep, 3-bit pointers; CHIP_WB only limits the fill). `postable` =
+  POST_CHIP && core AS low && write && `core_chip_r` (registered
+  core_a[23:21]==0) && !int_win_r: the normal AS-low branch is skipped for
+  it (`else if (!postable)`), so a chip write never reaches the bus except
+  through the buffer (the step 11 race cannot happen). `wb_acc` (DS down,
+  !rt_dtack_lo, !wb_full) enqueues and acks, after the branch chain, in
+  every state. `wb_busy` (rp_act || cnt) is the chain's first branch:
+  the engine loads rt_a/rt_fc/rt_rw/rt_d from the head (one clock), then
+  the step 11 sequence (AS tick_r, DS next tick_r, DTACK later tick_r,
+  end tick_f, release tick_r: pop, rt_rw/rt_a/rt_fc reloaded from core).
+  Any other motherboard cycle waits in that branch until the buffer is
+  empty. BRn to the adapter is s_br_n | wb_busy. Sim (12x): wrmix 679
+  (depth 1) / 625 (2) / 517 (4) / 445 us (8, the bus floor). Fast RAM
+  write queue: measured, not built (copy never waits for the port;
+  write bursts wait 3%). Tests: 0x81CC, 0x81D0, CIA order check
+  (`ord_chk`), `wb_max`; mutations (no drain wait, rp stuck, accept when
+  full, strobes swapped) all caught.
+  Timing: 12x seed 6 is the only PASS of seeds 1-8 (+0.25 / +0.06 ns);
+  most misses were clkena -> kernel from k_clkena_lw. Kernel change 4
+  (branch `kernel-change4-clkena-split`, commit c882be7): port
+  clkena_lw2_in, wrapper CLKLW=2, a (* keep *) k_clkena_lw2 copy for the
+  ALU and the data-in/address processes; it cut that class's misses from
+  -1.2..-3.8 to 0..-1.5 ns on seeds 1-4 but none passed, so it was
+  reverted here. Bring it back when a step's seed search stalls on clkena.
 - **Cache enable:** both caches follow CACR EI. The data cache must NOT get
   the 68030 CACR bit 8: software tells an 020 from an 030 by setting that bit
   and reading it back, so storing it would make the CPU detect as a 68030 and
@@ -423,13 +449,10 @@ that gives the "_fast" files.
 
 ## Ideas not yet done (Glen decides the order)
 
-- Chip RAM write buffer (Glen's next pick, after the 12x build works; as on
-  Cyberstorm/Tsunami boards): a 2-4 entry FIFO behind POST_CHIP, so a
-  longword (two bus words) or a burst posts without stalling. Every other
-  motherboard access (chip reads, custom/CIA registers, IACK, bus grant)
-  waits for the FIFO to drain, keeping program order (a blitter start must
-  see the data written before it). Then the 14x PLL step.
-- A 2-4 entry write queue (copies are write-bound).
+- Chip RAM write buffer: step 12 (above). Next: the 14x PLL step.
+- Fast RAM write queue: measured in step 12 and left out pending Glen's
+  decision (the copy bench never waits for the SDRAM port; write bursts
+  wait 3%, so it can gain a few percent at most).
 - 16x (or 14x) without the board mod: the ECP5's two PLLs are unused.
   EHXPLLL from the 12x input (85.13 MHz): CLKI_DIV 3, CLKFB_DIV 4, CLKOP
   113.5 MHz (PFD 28.4 MHz, VCO 567 MHz with CLKOP_DIV 5), an exact 4/3, so
