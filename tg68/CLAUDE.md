@@ -392,7 +392,15 @@ that gives the "_fast" files.
 
 - A 2-4 entry write queue (copies are write-bound).
 - Bigger caches: 16 more block RAMs, which would crowd out RTG.
-- RTG framebuffer in SDRAM: discussed as a future add-on, no design yet.
+- RTG framebuffer in SDRAM: Glen no longer sees it as a runner.
+- USB (Glen's idea, future add-on): the module's USB-C goes to the iCELink
+  MCU, not the FPGA; the FPGA only has its UART (TX B9, RX A9) to the
+  iCELink's USB serial port. So that socket can give the Amiga a fast
+  serial link to a PC (needs an FPGA UART slave and an Amiga driver), not
+  USB peripherals. A USB host needs extra hardware: a host chip that
+  existing Amiga USB stacks (Poseidon) drive, on spare carrier pins, or a
+  soft USB 1.1 host in the FPGA plus a new driver. Mind the module's
+  unprotected USB 5 V (README).
 - References for speed-ups and tweaks (reviewed during step 11):
   - Emu68 (68k JIT for PiStorm), https://github.com/michalsc/Emu68: the
     one usable tip is software, the VBR (vector table) in fast RAM.
