@@ -391,6 +391,14 @@ that gives the "_fast" files.
 ## Ideas not yet done (Glen decides the order)
 
 - A 2-4 entry write queue (copies are write-bound).
+- 16x (or 14x) without the board mod: the ECP5's two PLLs are unused.
+  EHXPLLL from the 12x input (85.13 MHz): CLKI_DIV 3, CLKFB_DIV 4, CLKOP
+  113.5 MHz (PFD 28.4 MHz, VCO 567 MHz with CLKOP_DIV 5), an exact 4/3, so
+  16 clocks per 7M cycle and the phase aligner works as with the mod.
+  14x (7/6, 99.3 MHz) would keep SDRAM CL2 in spec on a -6 part and need
+  less overclock margin than 16x. Not designed yet.
+- SDRAM: 24 of 32 MB mapped (8 MB Z2, 16 MB at $08000000, 1 MB MapROM);
+  7 MB spare. Little software would use more.
 - Bigger caches: 16 more block RAMs, which would crowd out RTG.
 - RTG framebuffer in SDRAM: Glen no longer sees it as a runner.
 - USB (Glen's idea, future add-on): the module's USB-C goes to the iCELink
