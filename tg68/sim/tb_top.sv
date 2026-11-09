@@ -120,8 +120,24 @@ module tb;
     integer hit_4f00 = 0;                // pair hits at 0x08004F00 (step 9)
     integer ipair_hit = 0, ipair_rd = 0; // instruction-stream pairs (step 10)
     integer chip_ihit = 0;               // instruction-cache hits on chip RAM (step 11)
-    integer n_posted = 0; reg rp_d = 0;  // posted chip writes (step 11)
-    always @(posedge dut.clk) begin rp_d <= dut.rp_pend; if (dut.rp_pend && !rp_d) n_posted = n_posted + 1; end
+    integer n_posted = 0;                // buffered chip writes (steps 11, 12)
+    integer wb_max = 0;                  // most entries ever in the buffer
+    always @(posedge dut.clk) begin
+        if (dut.wb_acc) n_posted = n_posted + 1;
+        if (dut.wb_cnt > wb_max) wb_max = dut.wb_cnt;
+    end
+    // step 12 ordering: the program writes four words to $8E90-$8E96 and
+    // then reads a CIA register; by the time that read reaches the
+    // motherboard, all four writes must be in chip RAM
+    integer ord_chk = 0, ord_bad = 0;
+    always @(negedge as_n) if (ba[23:16] == 8'hBF && ram[12'h748] == 16'h1111) begin
+        ord_chk = ord_chk + 1;
+        if (ram[12'h749] !== 16'h2222 || ram[12'h74A] !== 16'h3333 || ram[12'h74B] !== 16'h4444) begin
+            ord_bad = ord_bad + 1;
+            $display("FAIL: CIA cycle ran before the buffered chip writes: %h %h %h %h",
+                     ram[12'h748], ram[12'h749], ram[12'h74A], ram[12'h74B]);
+        end
+    end
     reg     hp_f = 0;
     // k_long_ack and k_din_sel feed the kernel and are classed adapter ->
     // kernel (2 clocks) by check_timing.py: neither may change in the clock
@@ -280,6 +296,7 @@ module tb;
     // writes land on the DS rising edge, like Agnus
     // ...and the CPU side must be driving the data bus when they do
     integer undriven = 0;
+    localparam integer POST_WB = 8;   // the bridge's CHIP_WB
     always @(posedge uds_n or posedge lds_n)
         if (!rw && dut.bus_owned && !dut.rt_d_oe) begin   // (AS may rise on the same edge)
             undriven = undriven + 1;
@@ -313,6 +330,17 @@ module tb;
     end
     integer n_rd = 0, n_wr = 0; real s_rd = 0, s_wr = 0;
     integer n_step = 0, n_int = 0, n_hit = 0, n_dir = 0, n_bus = 0, n_clk = 0;
+    // stalls (step 12): a fast RAM write waiting in DECIDE for the SDRAM
+    // port, a read waiting in CFREE, a Chip RAM write waiting behind a
+    // posted one
+    integer st_fw = 0, st_fr = 0, st_cw = 0;
+    always @(posedge clk12) if (t0 > 0 && t1 == 0) begin
+        if (dut.cpu.q == 1 && !dut.cpu.internal_step && !dut.cpu.k_pf_ok && dut.cpu.dp_busy
+            && dut.cpu.k_fast && !dut.cpu.k_nwr) st_fw = st_fw + 1;
+        if (dut.cpu.q == 11) st_fr = st_fr + 1;
+        if (!dut.core_as_n && !dut.core_rw && dut.core_a[23:21] == 3'd0 && !dut.cpu.k_fast
+            && !dut.int_win_r && dut.wb_full) st_cw = st_cw + 1;
+    end
     always @(posedge clk12) if (t0 > 0 && t1 == 0) begin
         n_clk = n_clk + 1;
         if (dut.cpu.k_clkena) n_step = n_step + 1;
@@ -367,6 +395,7 @@ module tb;
         if (u_sdram.n_err) errors = errors + 1;
         if (hit_bad) errors = errors + 1;
         $display("1 KB: %0.1f us -> %0.2f MB/s; %0d CPU bus cycles", (t1-t0)/1000.0, 1024.0/((t1-t0)/1000.0), n_fm);
+        $display("stall clocks: fast write waits for the port %0d, read waits (CFREE) %0d, chip write waits %0d", st_fw, st_fr, st_cw);
         $display("per cycle, in 11.75 ns clocks: AS->DTACK %0.1f, DTACK->AS up %0.1f, AS up->next AS %0.1f",
                  sum_as2dt/n_fm/11.746, sum_dt2up/n_fm/11.746, sum_up2as/n_fm/11.746);
         $display("AS->DTACK reads %0d avg %0.1f clk, writes %0d avg %0.1f clk", n_rd, s_rd/n_rd/11.746, n_wr, s_wr/n_wr/11.746);
@@ -385,6 +414,10 @@ module tb;
         check(24'h8108, 32'h00000000, "copy mismatches");
 `elsif BENCH_CHIP
         check(24'h8100, 32'h000002FD, "last chip long written");
+`elsif BENCH_WRCHIP
+        check(24'h8100, 32'h000000FF, "last chip long written");
+`elsif BENCH_WRFAST
+        check(24'h8100, 32'h000000FF, "last fast long written");
 `else
         check(24'h8100, 32'h00007F80, "sum");
 `endif
@@ -408,8 +441,14 @@ module tb;
         if (chip_ihit < 2) begin $display("FAIL: chip RAM code never came from the cache"); errors = errors + 1; end
         check(24'h81C0, 32'h12341256, "posted writes, order");
         check(24'h81C4, 32'h00000468, "posted writes, all phases");
+        check(24'h81CC, 32'h33334444, "write buffer: read after buffered writes");
+        check(24'h81D0, 32'h00000024, "write buffer: a burst longer than the buffer");
         $display("posted chip writes: %0d", n_posted);
         if (n_posted < 10) begin $display("FAIL: chip RAM writes were not posted"); errors = errors + 1; end
+        $display("write buffer: at most %0d entries; CIA order checks %0d", wb_max, ord_chk);
+        if (POST_WB > 1 && wb_max < 2) begin $display("FAIL: the write buffer never held two writes"); errors = errors + 1; end
+        if (ord_chk < 1) begin $display("FAIL: the write-order test did not run"); errors = errors + 1; end
+        errors = errors + ord_bad;
         if (undriven > 0) begin $display("FAIL: %0d writes latched with the data bus not driven", undriven); errors = errors + 1; end
 `ifdef FASTMEM
         check(24'h81C8, 32'h0000005F, "posted writes after fast RAM reads");

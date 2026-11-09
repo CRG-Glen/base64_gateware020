@@ -21,22 +21,23 @@ how to build it, the timing method and the test benches.
 | CPU | TG68K.C, 68020 mode, 32-bit longword reads and writes (caches and fast RAM) |
 | Caches | 8 KB instruction (fast RAM, Kickstart and Chip RAM code) + 8 KB data (fast RAM and Kickstart), write-through |
 | Fast RAM | up to 8 MB Zorro II + 16 MB at `$08000000`, direct SDRAM path |
-| Also | posted Chip RAM writes, SD card boot (sfsd.device), MapROM (Kickstart in SDRAM), autoconfig |
+| Also | 8-entry Chip RAM write buffer, SD card boot (sfsd.device), MapROM (Kickstart in SDRAM), autoconfig |
 | Clock | 12x (stock board, 85 MHz) or 16x (ICS570B rewired, 113.5 MHz): a bitstream for each |
 | Not included | MMU, FPU |
 
-Measured on an A500+ (Kickstart 3.x), step 11 (caches on / off):
+Measured on an A500+ (Kickstart 3.x), step 12 (caches on / off):
 
 | | 12x (stock) | 16x (board mod) |
 | --- | --- | --- |
-| SysInfo Dhrystones | 9690 / 5161 (10.11 / 5.38 MIPS) | 12784 / 5992 (13.34 / 6.25 MIPS) |
-| AIBB MemTest | 15.73 / 8.49 MB/s | 19.97 / 10.39 MB/s |
-| xSysInfo Dhrystones | 16245 / 8290 | 22042 / 12023 |
-| xSysInfo fast RAM | 23.31 / 21.15 MB/s | 29.19 / 26.21 MB/s |
-| SD card | 2.2 MB/s | 2.2 MB/s |
+| SysInfo Dhrystones | 9690 / 5177 (10.11 / 5.40 MIPS) | 12907 / 5992 (13.47 / 6.25 MIPS) |
+| AIBB MemTest | 15.74 / 8.14 MB/s | 19.97 / 10.39 MB/s |
+| xSysInfo Dhrystones | 16330 / 9309 | 22042 / 11994 |
+| xSysInfo fast RAM | 23.33 / 21.15 MB/s | 29.18 / 26.20 MB/s |
+| SD card | 2.0 MB/s | 2.2 MB/s |
 
-Games that keep their code in Chip RAM (Frontier, Gloom) now run from the
-instruction cache: at 16x they feel close to a 50 MHz 68030. Kickstart
+Games that keep their code in Chip RAM (Frontier, Gloom) run from the
+instruction cache, and their screen writes go through an 8-entry write
+buffer while the CPU carries on: at 16x they feel close to a 50 MHz 68030. Kickstart
 runs from fast RAM via MapROM. Chip RAM itself is the Amiga's own 7 MHz
 bus (2.39 MB/s reads).
 
@@ -45,8 +46,8 @@ bus (2.39 MB/s reads).
 
 1. Download the bitstreams from the
    [Releases](https://github.com/CRG-Glen/base64_gateware020/releases) page.
-   Take the newest release's `base64_tg68_full_plain.bit` (step 11:
-   `bitstreams/step11_games/`). If your board's ICS570B clock multiplier
+   Take the newest release's `base64_tg68_full_plain.bit` (step 12:
+   `bitstreams/step12_wbuf/`). If your board's ICS570B clock multiplier
    is rewired to x16, take `base64_tg68_full_x16_plain.bit` instead; it
    is overclocked, see [16x clock](tg68/README.md#16x-clock-board-mod-optional).
    From step 6 on only the `full` build is released; the older releases
@@ -74,7 +75,7 @@ MapROM (the board's boot ROM already turns it on at every boot).
 
 ## Status
 
-Steps 1-11 of the speed-up work run on real hardware. See the
+Steps 1-12 of the speed-up work run on real hardware. See the
 [bitstream table](tg68/README.md#the-bitstreams) for what each step added.
 Earlier steps stay in the releases as fallbacks. Work happens on branches,
 one reviewed change at a time. [`tg68/CLAUDE.md`](tg68/CLAUDE.md) holds the

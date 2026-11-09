@@ -269,6 +269,33 @@ ph2:    dbra    %d1,ph2
 ph3:    add.w   (%a0)+,%d3
         dbra    %d2,ph3
         move.l  %d3,0x81C4          | 81C4 0+1+...+47 = 0x468
+        | -- step 12: the write buffer drains before any other motherboard
+        | cycle: four buffered writes, then a CIA read (the tb checks that
+        | all four are in chip RAM when the CIA cycle starts) --
+        move.w  #0x1111,0x8E90
+        move.w  #0x2222,0x8E92
+        move.w  #0x3333,0x8E94
+        move.w  #0x4444,0x8E96
+        tst.b   0xBFE001
+        move.l  0x8E94,%d0
+        move.l  %d0,0x81CC          | 81CC 33334444 (a read of buffered data)
+        | -- a burst longer than the buffer: MOVEM.L of 8 registers is 16
+        | bus words, so the CPU must wait for room; the sum checks every one
+        moveq   #1,%d0
+        moveq   #2,%d1
+        moveq   #3,%d2
+        moveq   #4,%d3
+        moveq   #5,%d4
+        moveq   #6,%d5
+        moveq   #7,%d6
+        moveq   #8,%d7
+        lea     0x8EA0,%a0
+        movem.l %d0-%d7,(%a0)
+        moveq   #0,%d3
+        moveq   #7,%d2
+2:      add.l   (%a0)+,%d3
+        dbra    %d2,2b
+        move.l  %d3,0x81D0          | 81D0 1+...+8 = 0x24
         .ifdef FASTMEM
         | ...and with a fast RAM read before each write: the SDRAM's latency
         | is not a whole number of CPU steps, so the writes start at every
