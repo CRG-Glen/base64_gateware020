@@ -609,6 +609,9 @@ without the SDRAM ack in its enable, the posted-write sequencer uses
 bench), and the adapter has its own copy of `k_clkena` (`k_step`), so
 `k_clkena` drives only the kernel. With those, seed 1 passes; seeds 2-4
 miss by 0.5-1.9 ns, the usual spread (README "how close to the edge").
+The 16x file (`--x16`, seed 1, best of seeds 1-8) needs the chip 1.34×
+faster than the worst-case model: between step 10's 1.31× and the 1.36×
+of the first 16x build that works on Glen's board.
 The checker classes the new direct-read registers `k_din_dw`/`k_din_dsel`
 as logic (1T): as read-data latches they would have had a 2T budget they
 don't have.
