@@ -366,6 +366,7 @@ that gives the "_fast" files.
 | step 9 (32-bit SDRAM reads, `full`) | 9221 / 4202 | 12.20 / 6.97 |
 | step 10 (instruction prefetch + pairs, `full`) | 9691 / 4918 | 12.28 / 6.60 |
 | step 10 at 16x (board mod) | 12936 / 5982 | 15.91 / 8.28 |
+| step 11 (race fix, 12x seed 14) | 9690 / 5161 | 15.73 / 8.49 |
 | step 11 at 16x (race fix, seed 1) | 12784 / 5992 | 19.97 / 10.39 |
 
 - AIBB MemTest did not move from step 6 to step 7 (pairs only come from
@@ -391,7 +392,9 @@ that gives the "_fast" files.
   white screen, 3.2.3 red); 12x seed 14 (the only timing PASS of seeds
   1-15, +0.06 / +1.78 ns) boots both. Lesson: a 0.5 ns miss can fail on
   hardware; ship only timing-PASS 12x builds. step11_games now holds 12x
-  seed 14 and 16x seed 1 of the fixed design. 12x benchmarks not yet run.
+  seed 14 and 16x seed 1 of the fixed design. 12x: SysInfo 9690 / 5161,
+  AIBB 15.73 / 8.49 (+28% / +29%), xSysInfo 16245 / 8290, fast RAM 23.31 /
+  21.15 MB/s.
   Games on 16x D (Glen): run a lot better, close to a 50 MHz 68030 but
   still a little behind.
 - SD card (sfsd.device 2.4): 2.18 MB/s in SysInfo on steps 4 to 9

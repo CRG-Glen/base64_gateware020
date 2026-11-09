@@ -20,7 +20,7 @@ build's own files are few and marked `TG68:`.
 > **Step 11** (Chip RAM code in the instruction cache, posted Chip RAM
 > writes, faster uncached fast RAM) is for games such as Frontier that
 > ran no faster with the caches on. It runs on the A500+ at 12x and 16x;
-> at 16x AIBB MemTest is up 25% (19.97 MB/s) and games run much better,
+> AIBB MemTest is up 25-29% (15.73 MB/s at 12x, 19.97 at 16x) and games run much better,
 > close to a 50 MHz 68030. Use the current `step11_games` files: the first
 > ones had a posted-write bug (see step 11).
 >
@@ -37,7 +37,7 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
-| `bitstreams/step11_games/` | + Chip RAM code in the instruction cache (CACR CI/CEI now flush), posted Chip RAM writes, SDRAM bank permutation, pair prefetch, shorter uncached read. 12x and 16x files | **Runs on hardware**, 12x (seed 14) and 16x (seed 1), Kickstart 1.3 and 3.2.3, SD card included. 16x: MemTest 19.97 / 10.39 MB/s (+26% / +25%), games much faster. 12x benchmarks not yet run. Code that DMAs itself into Chip RAM without clearing the cache needs the caches off (see step 11) |
+| `bitstreams/step11_games/` | + Chip RAM code in the instruction cache (CACR CI/CEI now flush), posted Chip RAM writes, SDRAM bank permutation, pair prefetch, shorter uncached read. 12x and 16x files | **Runs on hardware**, 12x (seed 14) and 16x (seed 1), Kickstart 1.3 and 3.2.3, SD card included. MemTest 15.73 / 8.49 MB/s at 12x (+28% / +29%), 19.97 / 10.39 at 16x (+26% / +25%), games much faster. Code that DMAs itself into Chip RAM without clearing the cache needs the caches off (see step 11) |
 | `bitstreams/step10_ifetch32/` | + instruction prefetch (the next word after an instruction read from SDRAM) and 32-bit instruction-stream pairs (32-bit immediates and absolute-long addresses in one CPU step). 12x and 16x files | **Known good on hardware**, 12x and 16x, SD card included: 9691 / 12936 Dhrystones (12x / 16x, +5% on step 9), caches off 4918 / 5982 (+17% / +15%). Caches-off MemTest 5-7% lower |
 | `bitstreams/exp16x_seed9/` (branch `exp-16x-clock` only) | **Experimental, overclocked**: for a board whose ICS570B is rewired to x16 (113.5 MHz). Correct Amiga-side timing (bus cycles, E/CIA), SDRAM CL3, SD clock in spec. See *16x clock* | **Works on Glen's x16 board** (`_fast` file), Ripple IDE ROM included: 12311 Dhrystones, MemTest 15.81 MB/s. Not timing-signed (needs the chip ~36% faster than the worst-case model) |
 | `bitstreams/step9_sdram32r/` | + 32-bit SDRAM reads: an aligned longword read that misses the caches is one SDRAM request (two READ commands back to back) and one CPU step | **Latest. Known good on hardware**, SD card included: MemTest 12.20 MB/s (+12% on step 8), xSysInfo fast RAM 23.31 MB/s (+42%); SysInfo Dhrystones unchanged (9221). `full` only |
@@ -402,14 +402,14 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   in the source: `POST_CHIP` (top level), `CHIP_IC`, `CACR_CLR`, `RD11`
   (`tg68_bus.v`) and `BANK_XOR` (`fastmem_zii.v`), all on by default.
 
-  On the A500+ at 16x (step 10 at 16x → step 11):
+  On the A500+ (step 10 → step 11, caches on / off):
 
-  | | Caches on | Caches off |
+  | | 12x | 16x |
   | --- | --- | --- |
-  | SysInfo Dhrystones | 12936 → 12784 | 5982 → 5992 |
-  | AIBB MemTest | 15.91 → 19.97 MB/s (+26%) | 8.28 → 10.39 MB/s (+25%) |
-  | xSysInfo Dhrystones | 21233 → 22042 (+4%) | 10318 → 12023 (+17%) |
-  | xSysInfo fast RAM | 29.19 → 29.19 MB/s | 25.98 → 26.21 MB/s |
+  | SysInfo Dhrystones | 9691 / 4918 → 9690 / 5161 | 12936 / 5982 → 12784 / 5992 |
+  | AIBB MemTest | 12.28 / 6.60 → 15.73 / 8.49 MB/s (+28% / +29%) | 15.91 / 8.28 → 19.97 / 10.39 MB/s (+26% / +25%) |
+  | xSysInfo Dhrystones | 15363 / 7536 → 16245 / 8290 (+6% / +10%) | 21233 / 10318 → 22042 / 12023 (+4% / +17%) |
+  | xSysInfo fast RAM | 23.35 / 21.01 → 23.31 / 21.15 MB/s | 29.19 / 25.98 → 29.19 / 26.21 MB/s |
 
   The benchmarks run from fast RAM and the caches, so they show the SDRAM
   changes (MemTest +25%) but not the Chip RAM ones; the games do: Glen
