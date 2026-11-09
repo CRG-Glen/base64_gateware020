@@ -281,7 +281,7 @@ module tb;
     // ...and the CPU side must be driving the data bus when they do
     integer undriven = 0;
     always @(posedge uds_n or posedge lds_n)
-        if (!rw && !as_n && dut.bus_owned && !dut.rt_d_oe) begin
+        if (!rw && dut.bus_owned && !dut.rt_d_oe) begin   // (AS may rise on the same edge)
             undriven = undriven + 1;
             if (undriven <= 5) $display("FAIL: write to %h latched with the data bus not driven", ba);
         end
@@ -412,6 +412,7 @@ module tb;
         if (n_posted < 10) begin $display("FAIL: chip RAM writes were not posted"); errors = errors + 1; end
         if (undriven > 0) begin $display("FAIL: %0d writes latched with the data bus not driven", undriven); errors = errors + 1; end
 `ifdef FASTMEM
+        check(24'h81C8, 32'h0000005F, "posted writes after fast RAM reads");
         check(24'h8120, 32'h13579BDF, "fast RAM $08000000");
         check(24'h8124, 32'h2468ACE0, "fast RAM $08FFFFFC");
         check(24'h8128, 32'h0000FA57, "code run from fast RAM");

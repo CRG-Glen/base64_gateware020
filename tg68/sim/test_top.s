@@ -269,6 +269,24 @@ ph2:    dbra    %d1,ph2
 ph3:    add.w   (%a0)+,%d3
         dbra    %d2,ph3
         move.l  %d3,0x81C4          | 81C4 0+1+...+47 = 0x468
+        .ifdef FASTMEM
+        | ...and with a fast RAM read before each write: the SDRAM's latency
+        | is not a whole number of CPU steps, so the writes start at every
+        | phase of the 7M grid, the DS-on-the-AS-tick one included
+        lea     0x8E40,%a0
+        movea.l #0x08006000,%a1
+        moveq   #0,%d0
+        moveq   #95,%d2
+pf1:    move.w  (%a1)+,%d5
+        move.w  %d0,(%a0)
+        move.w  %d0,%d1
+        and.w   #3,%d1
+pf2:    dbra    %d1,pf2
+        addq.w  #1,%d0
+        dbra    %d2,pf1
+        move.w  (%a0),%d3
+        move.l  %d3,0x81C8          | 81C8 last value written: 95 = 0x5F
+        .endif
         moveq   #0,%d7
         jsr     romfn+0xF80000      | Kickstart-ROM range: over the 7M bus,
         jsr     romfn+0xF80000      | then from the cache
