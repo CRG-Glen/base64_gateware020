@@ -43,6 +43,10 @@ bench)
     readoff) SRC=test_rd.s; D=; ASD="--defsym NOCACHE=1" ;;
     # a loop in chip RAM writing chip RAM (step 11: chip code cache, posted writes)
     chip) SRC=test_chip.s; D=-DBENCH_CHIP ;;
+    # write bursts (step 12: Chip RAM write buffer, fast RAM write queue)
+    wrchip) SRC=test_wr.s; D=-DBENCH_WRCHIP ;;
+    wrfast) SRC=test_wr.s; D=-DBENCH_WRFAST; ASD="--defsym FAST=1" ;;
+    wrmix) SRC=test_wr.s; D=-DBENCH_WRCHIP; ASD="--defsym MIX=1" ;;
   esac
   $AS $ASD -o tm.o $SRC && $LD -o tm.elf tm.o 2>/dev/null && $OC tm.elf tm.bin && mem tm.bin rom_mem.mem
   $VL -DFASTMEM -DMEMBENCH $D tb_top.sv sdram_model_checked.v $R/base64_tg68/base64_tg68_top.sv $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v $SLAVES -o tb_bench > build_bench.log 2>&1

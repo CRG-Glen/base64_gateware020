@@ -180,6 +180,8 @@ module base64_tg68_top #(
     // CPU's next motherboard cycle until it is done (so order is kept).
     // Custom chip and CIA registers are never posted. RETIME=1 only.
     parameter         POST_CHIP  = 1'b1,
+    // chip RAM write buffer depth, 1-8 (step 12; 1 = step 11's one posted write)
+    parameter integer CHIP_WB    = 8,
     parameter         EARLY_ACK  = 1'b0,
     parameter         DBG_BUNDLE = 1'b0,   // debug done -- keep 0 now
 
@@ -822,7 +824,7 @@ module base64_tg68_top #(
         .DTACKn   (core_dtack_n),
         .BERRn    (core_berr_n),
         // TG68: no bus grant while a posted chip write is still on the bus
-        .BRn      (s_br_n[1] | rp_pend),
+        .BRn      (s_br_n[1] | wb_busy),
         .BGn      (core_bg_n),
         .BGACKn   (s_bgack_n[1]),
         .IPL2n    (ipl_out[2]),
@@ -1317,22 +1319,40 @@ module base64_tg68_top #(
     reg [1:0]  rt_vst   = 2'd0;
     reg        core_as_d2 = 1'b1;
     always @(posedge clk) core_as_d2 <= core_as_n;
-    // TG68: posted chip writes (POST_CHIP). As soon as the CPU presents a
-    // write to chip RAM (address in rt_a, data in rt_d, a data strobe down)
-    // it is acknowledged, and the bridge runs the motherboard cycle itself:
-    // AS at the next tick_r, the data strobes at the one after (a 68000's
-    // S4), the end at the tick_f after a DTACK seen at a later tick_r than
-    // the strobes (so they stay down >= 1.5 half-periods, as a 68000's),
-    // then address, R/W and data held to the next tick_r.
-    //   rp_pend: the bridge owns a write the CPU has been acked for
-    //   rp_ds:   its data strobes are on the bus
+    // TG68: CHIP RAM WRITE BUFFER (POST_CHIP; step 11 posted one write,
+    // step 12 buffers WB_N). A CPU write to chip RAM ($000000-$1FFFFF, never
+    // an on-chip slave) is recognised from its address and R/W before AS
+    // ("postable"), so the path below never starts it on the motherboard
+    // itself. Once its data strobes are down it is acknowledged and goes
+    // into a FIFO (wb_acc). The drain engine runs the head entry on the
+    // motherboard with 68000 timing: AS at a tick_r with the data driven,
+    // the data strobes at the next tick_r (S4), the end at the tick_f after
+    // a DTACK seen at a later tick_r (S7), address, R/W and data held to the
+    // next tick_r, then the entry is popped. Every other motherboard cycle
+    // (chip reads, custom/CIA registers, IACK) waits until the buffer is
+    // empty and the engine idle (wb_busy), so the Amiga sees every access
+    // in program order: a blit started after a screen write sees the write.
+    //   rp_act:  the head entry is on the bus
+    //   rp_ds:   its data strobes are down
     //   rp_term: its DTACK was seen;  rp_hold: AS/DS up, holding
-    reg        rp_pend = 1'b0, rp_term = 1'b0, rp_hold = 1'b0, rp_ds = 1'b0;
+    localparam integer WB_N = CHIP_WB;
+    // (storage always 8 deep, the pointers wrap at 8; WB_N limits the fill)
+    reg [23:1] wb_a  [0:7];
+    reg [15:0] wb_d  [0:7];
+    reg [2:0]  wb_fc [0:7];
+    reg [1:0]  wb_ds [0:7];        // {UDS, LDS}, active low
+    reg [2:0]  wb_wp = 3'd0, wb_rp = 3'd0;
+    reg [3:0]  wb_cnt = 4'd0;
+    reg        rp_act = 1'b0, rp_term = 1'b0, rp_hold = 1'b0, rp_ds = 1'b0;
     reg        rp_uds = 1'b1, rp_lds = 1'b1;
-    // rt_chip: rt_a is in chip RAM $000000-$1FFFFF. Its own register, loaded
-    // with rt_a: rt_a has syn_useioff, and an I/O register cannot also be
-    // read inside the FPGA (packing fails).
-    reg        rt_chip = 1'b1;
+    wire       wb_full = (wb_cnt == WB_N[3:0]);
+    wire       wb_busy = rp_act || (wb_cnt != 4'd0);
+    // the core's address is in chip RAM: a registered decode like int_win_r
+    // (the address is stable >= 2 clocks before AS, so it is current by AS)
+    reg        core_chip_r = 1'b0;
+    always @(posedge clk) core_chip_r <= (core_a[23:21] == 3'b000);
+    wire       postable = POST_CHIP && !core_as_n && !core_rw && core_chip_r && !int_win_r;
+    wire       wb_acc   = postable && (!core_uds_n || !core_lds_n) && !rt_dtack_lo && !wb_full;
 `ifdef TG68_X16
     // TG68: at 16x one master clock is 8.81 ns, so the address/data hold
     // past AS negation below takes two (17.6 ns; 11.75 ns at 12x with one)
@@ -1343,46 +1363,59 @@ module base64_tg68_top #(
     wire       rt_hold_done = core_as_d2;
 `endif
 
+    wire       wb_pop = !ext_reset && wb_busy && rp_act && rp_hold && tick_rq;
     always @(posedge clk) begin
         if (ext_reset) begin
             rt_as_n <= 1'b1; rt_uds_n <= 1'b1; rt_lds_n <= 1'b1;
             rt_vma_n <= 1'b1; rt_dtack_lo <= 1'b0; rt_d_oe <= 1'b0;
             rt_vst <= 2'd0; rt_av <= 1'b0;
-            rp_pend <= 1'b0; rp_term <= 1'b0; rp_hold <= 1'b0; rp_ds <= 1'b0;
-        end else if (rp_pend) begin
-            // TG68: posted chip write. The CPU has its ack; drop it once the
-            // CPU ends its cycle, so its next cycle never sees a stale one,
-            // and ignore that next cycle until this one is done.
+            rp_act <= 1'b0; rp_term <= 1'b0; rp_hold <= 1'b0; rp_ds <= 1'b0;
+        end else if (wb_busy) begin
+            // TG68: draining the chip RAM write buffer. The CPU has its acks;
+            // each is dropped once the CPU ends that cycle, and a cycle that
+            // cannot be buffered waits here until the buffer is empty.
             if (core_as_n) rt_dtack_lo <= 1'b0;
-            // the data bus is driven whenever this write's AS is down
-            if (!rt_as_n) rt_d_oe <= 1'b1;
-            if (tick_rq && !rp_term && !rp_hold) begin
-                if (rt_as_n) begin                  // S2: AS down, data out
-                    rt_as_n <= 1'b0;
-                    rt_d_oe <= 1'b1;
-                end else if (!rp_ds) begin          // S4: data strobes down
-                    rt_uds_n <= rp_uds;
-                    rt_lds_n <= rp_lds;
-                    rp_ds    <= 1'b1;
-                end else if (s_berr_n[1] && !s_dtack_n[1])
-                    rp_term  <= 1'b1;               // the slave has it
-            end
-            if (rp_term && tick_f) begin            // end it, as a 68000's S7
-                rt_as_n  <= 1'b1;
-                rt_uds_n <= 1'b1;
-                rt_lds_n <= 1'b1;
-                rp_term  <= 1'b0;
-                rp_hold  <= 1'b1;
-            end
-            if (rp_hold && tick_rq) begin            // address/data held to here
-                rp_hold  <= 1'b0;
-                rp_pend  <= 1'b0;
-                rp_ds    <= 1'b0;
-                rt_rw    <= 1'b1;
-                rt_d_oe  <= 1'b0;
-                rt_a     <= core_a[23:1];           // the CPU's next cycle
-                rt_chip  <= (core_a[23:21] == 3'b000);
-                rt_fc    <= core_fc;
+            if (!rp_act) begin
+                // the head entry: address, FC, R/W and data out now, AS at
+                // the next tick_r (>= 1.5 7M clocks after the last AS rose)
+                rp_act  <= 1'b1;
+                rp_ds   <= 1'b0;
+                rt_a    <= wb_a[wb_rp];
+                rt_fc   <= wb_fc[wb_rp];
+                rt_rw   <= 1'b0;
+                rt_d    <= wb_d[wb_rp];
+                rp_uds  <= wb_ds[wb_rp][1];
+                rp_lds  <= wb_ds[wb_rp][0];
+            end else begin
+                // the data bus is driven whenever this write's AS is down
+                if (!rt_as_n) rt_d_oe <= 1'b1;
+                if (tick_rq && !rp_term && !rp_hold) begin
+                    if (rt_as_n) begin              // S2: AS down, data out
+                        rt_as_n <= 1'b0;
+                        rt_d_oe <= 1'b1;
+                    end else if (!rp_ds) begin      // S4: data strobes down
+                        rt_uds_n <= rp_uds;
+                        rt_lds_n <= rp_lds;
+                        rp_ds    <= 1'b1;
+                    end else if (s_berr_n[1] && !s_dtack_n[1])
+                        rp_term  <= 1'b1;           // the slave has it
+                end
+                if (rp_term && tick_f) begin        // end it, as a 68000's S7
+                    rt_as_n  <= 1'b1;
+                    rt_uds_n <= 1'b1;
+                    rt_lds_n <= 1'b1;
+                    rp_term  <= 1'b0;
+                    rp_hold  <= 1'b1;
+                end
+                if (rp_hold && tick_rq) begin        // held to here; pop it
+                    rp_hold  <= 1'b0;
+                    rp_act   <= 1'b0;
+                    rp_ds    <= 1'b0;
+                    rt_rw    <= 1'b1;
+                    rt_d_oe  <= 1'b0;
+                    rt_a     <= core_a[23:1];       // the CPU's next cycle
+                    rt_fc    <= core_fc;
+                end
             end
         end else if (core_as_n) begin
             rt_as_n     <= 1'b1;
@@ -1400,12 +1433,12 @@ module base64_tg68_top #(
             // edge -- drop them on the same edge and the write is lost.
             if (rt_hold_done) begin
                 rt_a    <= core_a[23:1];
-                rt_chip <= (core_a[23:21] == 3'b000);
                 rt_fc   <= core_fc;
                 rt_rw   <= 1'b1;
                 rt_d_oe <= 1'b0;
             end
-        end else begin
+        end else if (!postable) begin
+            // (a chip RAM write is never started here: it is buffered)
             if (!core_rw) begin
                 rt_d    <= core_dout;
                 rt_d_oe <= ~rt_as_n;
@@ -1431,26 +1464,6 @@ module base64_tg68_top #(
             if (core_rw && !rt_as_n &&
                 (s_vpa_n[1] ? 1'b1 : (!rt_vma_n && e_pin)))
                 rt_rd <= cpu_d;
-            // TG68: a write to chip RAM, fully presented by the CPU (a data
-            // strobe down; rt_a and rt_d hold address and data), is acked
-            // now and run by the bridge (POST_CHIP, above). Not a 6800
-            // cycle or one already acked; never an on-chip slave.
-            if (POST_CHIP && !core_rw && rt_chip && !int_win_r && rt_vst == 2'd0
-                && (!core_uds_n || !core_lds_n) && !rt_dtack_lo) begin
-                rt_dtack_lo <= 1'b1;
-                rp_pend     <= 1'b1;
-                rp_uds      <= core_uds_n;
-                rp_lds      <= core_lds_n;
-                rt_rw       <= 1'b0;
-                rt_d        <= core_dout;
-                // drive the data bus now if AS is (or is going) down: when
-                // this clock is also the AS tick above, rt_d_oe was just
-                // loaded from the old rt_as_n (1), and the sequencer below
-                // only enables the data with its own AS step, which it then
-                // skips: the write went out with the data bus undriven.
-                rt_d_oe     <= ~rt_as_n | tick_r;
-                rp_ds       <= 1'b0;
-            end
             if (tick_r && !rt_as_n && s_berr_n[1]) begin
                 if (!s_dtack_n[1])
                     rt_dtack_lo <= 1'b1;
@@ -1492,7 +1505,29 @@ module base64_tg68_top #(
                 end
             end
         end
+        // TG68: the buffer's input side, in every state: a chip RAM write
+        // whose strobes are down is taken (address, FC, data and strobes
+        // straight from the CPU) and acknowledged, unless the buffer is full;
+        // then the CPU waits for the engine to pop an entry.
+        if (ext_reset) begin
+            wb_cnt <= 4'd0; wb_wp <= 3'd0; wb_rp <= 3'd0;
+        end else begin
+            wb_cnt <= wb_cnt + {3'd0, wb_acc} - {3'd0, wb_pop};
+            if (wb_pop) wb_rp <= wb_rp + 3'd1;
+            if (wb_acc) begin
+                wb_wp       <= wb_wp + 3'd1;
+                rt_dtack_lo <= 1'b1;
+            end
+        end
     end
+    // the FIFO's storage: written regardless of reset, only the pointers count
+    always @(posedge clk)
+        if (wb_acc) begin
+            wb_a[wb_wp]  <= core_a[23:1];
+            wb_fc[wb_wp] <= core_fc;
+            wb_d[wb_wp]  <= core_dout;
+            wb_ds[wb_wp] <= {core_uds_n, core_lds_n};
+        end
 
     // ========================================================================
     // 10c. Internal slaves: SDRAM fast RAM + its autoconfig
