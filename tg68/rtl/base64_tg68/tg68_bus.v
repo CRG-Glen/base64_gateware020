@@ -145,10 +145,6 @@ module tg68_bus #(
     // takes a LUT and a high-fanout hop off every clkena -> kernel path
     // (kernel change 2, see TG68KdotC_Kernel.vhd).
     reg         k_clkena_lw = 1'b0;
-    // kernel change 4 (step 12): an identical copy for the ALU and the
-    // kernel's data-in and address registers, so each drives about half of
-    // the ~330 loads (keep: yosys would merge the two)
-    (* keep *) reg k_clkena_lw2 = 1'b0;
     wire        k_longword;
     reg         k_nreset = 1'b0;
     reg  [15:0] k_din    = 16'hFFFF;
@@ -209,7 +205,6 @@ module tg68_bus #(
         .nreset     (k_nreset),
         .clkena_in  (k_clkena),
         .clkena_lw_in (k_clkena_lw),
-        .clkena_lw2_in (k_clkena_lw2),
         .data_in    (k_dat),
         .data_in_hi (k_din_hmux),
         .long_ack   (k_long_ack),
@@ -671,7 +666,7 @@ module tg68_bus #(
     always @(posedge clk) begin
         k_clkena <= 1'b0;
         k_step   <= 1'b0;
-        k_clkena_lw <= 1'b0; k_clkena_lw2 <= 1'b0;
+        k_clkena_lw <= 1'b0;
         ic_we    <= 1'b0;
         dc_we    <= 1'b0;
         cyc_start <= 1'b0;
@@ -727,7 +722,7 @@ module tg68_bus #(
             if (cnt >= STEP - 1) begin
                 k_clkena <= 1'b1;
                 k_step   <= 1'b1;
-                k_clkena_lw <= !k_longword || k_long_ack; k_clkena_lw2 <= !k_longword || k_long_ack;
+                k_clkena_lw <= !k_longword || k_long_ack;
                 cnt      <= 6'd0;
                 k_ipl    <= {IPL2n, IPL1n, IPL0n};
             end
@@ -1149,7 +1144,7 @@ module tg68_bus #(
         begin
             k_clkena <= 1'b1;
             k_step   <= 1'b1;
-            k_clkena_lw <= !k_longword || k_long_ack; k_clkena_lw2 <= !k_longword || k_long_ack;
+            k_clkena_lw <= !k_longword || k_long_ack;
             cnt      <= 6'd0;
             k_ipl    <= {IPL2n, IPL1n, IPL0n};
             k_berr   <= 1'b0;     // the kernel samples the old value here

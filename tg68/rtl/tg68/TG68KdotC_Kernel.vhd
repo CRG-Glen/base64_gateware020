@@ -118,16 +118,13 @@ entity TG68KdotC_Kernel is
 		-- Optional pair transfers: bit 0=data, bit 1=immediate, bit 2=absolute address.
 		DataPath32 : std_logic_vector(2 downto 0) := "111";
 		-- Base64: 1 = clkena_lw comes in on clkena_lw_in, registered by the
-		-- bus side (see the clkena_lw assignment below); 2 = as 1, and the
-		-- ALU, data-in and address processes take theirs from a second,
-		-- identical register on clkena_lw2_in (change 4: half the fanout each)
+		-- bus side (see the clkena_lw assignment below)
 		ClkenaLW_Ext : integer := 0
 		);
 	port(clk						: in std_logic;
 		nReset					: in std_logic;			--low active
 		clkena_in				: in std_logic:='1';
 		clkena_lw_in			: in std_logic:='0';	-- Base64, with ClkenaLW_Ext=1
-		clkena_lw2_in			: in std_logic:='0';	-- Base64, with ClkenaLW_Ext=2
 		data_in					: in std_logic_vector(15 downto 0);
 		IPL						: in std_logic_vector(2 downto 0):="111";
 		IPL_autovector			: in std_logic:='0';
@@ -168,7 +165,6 @@ architecture logic of TG68KdotC_Kernel is
 	signal syncReset			: std_logic_vector(3 downto 0);
 	signal Reset				: std_logic;
 	signal clkena_lw			: std_logic;
-	signal clkena_lw2			: std_logic;	-- Base64 change 4
 	signal TG68_PC				: std_logic_vector(31 downto 0);
 	signal tmp_TG68_PC		: std_logic_vector(31 downto 0);
 	signal TG68_PC_add		: std_logic_vector(31 downto 0);
@@ -408,7 +404,7 @@ ALU: TG68K_ALU
 		clk => clk,								--: in std_logic;
 		Reset => Reset,						--: in std_logic;
 		CPU => CPU,								--: in std_logic_vector(1 downto 0):="00";  -- 00->68000  01->68010  11->68020(only some parts - yet)
-		clkena_lw => clkena_lw2,			--: in std_logic:='1';  Base64 change 4
+		clkena_lw => clkena_lw,				--: in std_logic:='1';
 		execOPC => execOPC_ALU,				--: in bit;
 		decodeOPC => decodeOPC,				--: in bit;
 		exe_condition => exe_condition,	--: in std_logic;
@@ -571,13 +567,8 @@ ALU: TG68K_ALU
 	-- clkena_lw gates most of the kernel's registers (~320 loads); computed
 	-- here it put a LUT and a second high-fanout hop on every clkena path,
 	-- which then failed on 11 of 12 seeds once step 8 moved the placement.
-	clkena_lw <= clkena_lw_in WHEN ClkenaLW_Ext>=1 ELSE
+	clkena_lw <= clkena_lw_in WHEN ClkenaLW_Ext=1 ELSE
 	             '1' WHEN clkena_in='1' AND (memmaskmux(3)='1' OR l1='1') ELSE '0';
-	-- Base64 change 4: the same enable from a second register (ClkenaLW_Ext=2)
-	-- for the ALU and the data-in and address processes, so each register
-	-- drives about half of clkena_lw's ~330 loads (step 12: the single one
-	-- missed 1T by 1.2-3.8 ns on every seed)
-	clkena_lw2 <= clkena_lw2_in WHEN ClkenaLW_Ext=2 ELSE clkena_lw;
 	clr_berr <= '1' WHEN setopcode='1' AND trap_berr='1' ELSE '0';
 	
 	PROCESS (clk, nReset)
@@ -617,7 +608,7 @@ PROCESS (clk, long_done, last_data_in, data_in, addr, long_start, memmaskmux, me
 		END IF;
 
 		IF rising_edge(clk) THEN	
-			IF clkena_lw2='1' AND state="10" THEN	-- Base64 change 4
+			IF clkena_lw='1' AND state="10" THEN
 				IF memmaskmux(4)='0' THEN
 					bf_ext_in <= last_data_in(23 downto 16);
 				ELSE
@@ -1019,7 +1010,7 @@ PROCESS (clk, setdisp, memaddr_a, briefdata, memaddr_delta, setdispbyte, datatyp
 	BEGIN
 		
 		IF rising_edge(clk) THEN
-			IF clkena_lw2='1' THEN	-- Base64 change 4
+			IF clkena_lw='1' THEN
 				trap_vector(31 downto 10) <= (others => '0');
 				IF trap_berr='1' THEN
 					trap_vector(9 downto 0) <= "00" & X"08";

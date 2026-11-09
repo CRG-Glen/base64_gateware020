@@ -67,14 +67,6 @@
   (`n_posted`). (Checked against broken versions: no chip fill, no
   invalidate on a CPU write, no flush on CI, a posted write's byte lanes
   swapped: all caught.)
-* **bench wrchip | wrmix | wrfast** (step 12): 1 KB written as bursts of
-  four longwords (MOVEM.L), to Chip RAM, to Chip RAM with 32 ALU
-  instructions per burst (`wrmix`, the chunky-to-planar case), and to fast
-  RAM. Every bench prints the clocks the CPU spent waiting: a fast RAM
-  write for the SDRAM port, a read in CFREE, a Chip RAM write for room in
-  the write buffer. `top` also checks the buffer's ordering (a CIA read
-  after four buffered writes finds them all in chip RAM, 0x81CC) and a
-  MOVEM.L longer than the buffer (0x81D0).
 * **bench chip**: a loop in Chip RAM writes 1 KB to Chip RAM, timed on the
   second pass (Chip RAM code from the instruction cache).
 * **bench copy | read | scatter | sd**: fast RAM throughput, timed on a second
