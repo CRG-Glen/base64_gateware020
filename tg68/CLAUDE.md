@@ -308,7 +308,7 @@ that gives the "_fast" files.
     via the tb mailbox at $8F10 then CACR CI (0x81B4/B8/BC), posted write
     order at 0x81C0, `n_posted` >= 10, `bench chip`. Sim: bench chip 1133
     -> 442 us, readoff +40%, copy +17%, read/scatter unchanged.
-- **Chip RAM write buffer (step 12, not yet on hardware):** `CHIP_WB` (top
+- **Chip RAM write buffer (step 12, known good on hardware, 12x seed 6 and 16x seed 4):** `CHIP_WB` (top
   level, default 8) entries {a, d, fc, uds/lds} in `wb_*` (storage always
   8 deep, 3-bit pointers; CHIP_WB only limits the fill). `postable` =
   POST_CHIP && core AS low && write && `core_chip_r` (registered
@@ -397,6 +397,8 @@ that gives the "_fast" files.
 | step 10 at 16x (board mod) | 12936 / 5982 | 15.91 / 8.28 |
 | step 11 (race fix, 12x seed 14) | 9690 / 5161 | 15.73 / 8.49 |
 | step 11 at 16x (race fix, seed 1) | 12784 / 5992 | 19.97 / 10.39 |
+| step 12 (write buffer, 12x seed 6) | 9690 / 5177 | 15.74 / 8.14 |
+| step 12 at 16x (seed 4) | 12907 / 5992 | 19.97 / 10.39 |
 
 - AIBB MemTest did not move from step 6 to step 7 (pairs only come from
   cache hits; MemTest's reads miss and its writes are 16-bit). Step 8's
@@ -426,6 +428,11 @@ that gives the "_fast" files.
   21.15 MB/s.
   Games on 16x D (Glen): run a lot better, close to a 50 MHz 68030 but
   still a little behind.
+- Step 12: benchmarks as step 11 (they run from fast RAM and the caches).
+  12x xSysInfo 16330 / 9309 Dhrystones, fast RAM 23.33 / 21.15, SD 2.0
+  MB/s; 16x xSysInfo 22042 / 11994, 29.18 / 26.20, SD 2.2. Games look
+  faster, unmeasured; Glen may start a Frontier timedemo tool as a
+  separate project (WHDLoad slave hook on the buffer swap + VBL count).
 - SD card (sfsd.device 2.4): 2.18 MB/s in SysInfo on steps 4 to 9
   (2184533 bytes/s each time); fx68k gets 1.76 MB/s.
 - xSysInfo (Glen's test suite from step 8): 15711 Dhrystones, 8.94 MIPS,

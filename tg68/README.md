@@ -32,7 +32,7 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
-| `bitstreams/step12_wbuf/` | + 8-entry Chip RAM write buffer: up to 8 Chip RAM writes (4 longwords) are taken at once and written out in order while the CPU carries on. 12x and 16x files | Simulated and timing-checked; **not yet run on hardware** |
+| `bitstreams/step12_wbuf/` | + 8-entry Chip RAM write buffer: up to 8 Chip RAM writes (4 longwords) are taken at once and written out in order while the CPU carries on. 12x and 16x files | **Known good on hardware**, 12x (seed 6) and 16x (seed 4), SD card included. Benchmarks as step 11 (they run from fast RAM and the caches); games look smoother, not yet measured |
 | `bitstreams/step11_games/` | + Chip RAM code in the instruction cache (CACR CI/CEI now flush), posted Chip RAM writes, SDRAM bank permutation, pair prefetch, shorter uncached read. 12x and 16x files | **Known good on hardware**, 12x (seed 14) and 16x (seed 1), Kickstart 1.3 and 3.2.3, SD card included. MemTest 15.73 / 8.49 MB/s at 12x (+28% / +29%), 19.97 / 10.39 at 16x (+26% / +25%), games much faster. Code that DMAs itself into Chip RAM without clearing the cache needs the caches off (see step 11) |
 | `bitstreams/step10_ifetch32/` | + instruction prefetch (the next word after an instruction read from SDRAM) and 32-bit instruction-stream pairs (32-bit immediates and absolute-long addresses in one CPU step). 12x and 16x files | **Known good on hardware**, 12x and 16x, SD card included: 9691 / 12936 Dhrystones (12x / 16x, +5% on step 9), caches off 4918 / 5982 (+17% / +15%). Caches-off MemTest 5-7% lower |
 | `bitstreams/exp16x_seed9/` (never released) | The first 16x build (step 9 design): for a board whose ICS570B is rewired to x16 (113.5 MHz). Correct Amiga-side timing (bus cycles, E/CIA), SDRAM CL3, SD clock in spec. See *16x clock*. Superseded by the `_x16` files of steps 10 and 11 | **Worked on Glen's x16 board**, Ripple IDE ROM included: 12311 Dhrystones, MemTest 15.81 MB/s |
@@ -444,6 +444,19 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   the clocks the CPU spends waiting. (Checked against broken versions:
   other cycles not waiting for the buffer, the read pointer stuck, writes
   taken while full, the strobes swapped: all caught.)
+  On the A500+ (step 11 → step 12, caches on / off): the benchmarks are
+  unchanged within run-to-run variation, as expected, since they run from
+  fast RAM and the caches:
+
+  | | 12x | 16x |
+  | --- | --- | --- |
+  | SysInfo Dhrystones | 9690 / 5161 → 9690 / 5177 | 12784 / 5992 → 12907 / 5992 |
+  | AIBB MemTest | 15.73 / 8.49 → 15.74 / 8.14 MB/s | 19.97 / 10.39 → 19.97 / 10.39 MB/s |
+  | xSysInfo Dhrystones | 16245 / 8290 → 16330 / 9309 | 22042 / 12023 → 22042 / 11994 |
+  | xSysInfo fast RAM | 23.31 / 21.15 → 23.33 / 21.15 MB/s | 29.19 / 26.21 → 29.18 / 26.20 MB/s |
+
+  Frontier and Gloom look faster, but there is no number for that yet (a
+  timedemo-style tool is being considered as a separate project).
   A fast RAM write queue was measured first and is not in this step: the
   fast RAM copy bench never waits for the SDRAM port, and a pure write
   burst waits 3% of the time, so a queue there could gain at most a few
