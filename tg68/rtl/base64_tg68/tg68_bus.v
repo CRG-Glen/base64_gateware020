@@ -158,6 +158,13 @@ module tg68_bus #(
     // cleared after.
     reg  [15:0] k_din_lo = 16'hFFFF;
     reg         k_din_hsel = 1'b0;
+    // DIRECT READ, ONE CLOCK SHORTER (step 11): a direct read's word goes to
+    // the kernel from k_din_dw, loaded with dp_q at the controller's ack
+    // (DWAIT), so the kernel steps at the end of DDATA instead of FINISH.
+    // An adapter -> kernel register like k_din: set two clocks before the
+    // kernel samples; k_din_dsel picks it and is cleared after the step.
+    reg  [15:0] k_din_dw = 16'hFFFF;
+    reg         k_din_dsel = 1'b0;
     wire [15:0] k_dat;                 // assigned below a_r
     wire [15:0] k_din_hmux;            // data_in_hi: k_din_ce, or k_din (step 9)
     reg  [2:0]  k_ipl    = 3'b111;
@@ -216,7 +223,7 @@ module tg68_bus #(
     reg [2:0]  fc_r = 3'b110;
     reg        uds_want = 1'b1, lds_want = 1'b1;
     assign eab = a_r;
-    assign k_dat = !k_din_sel ? (k_din_hsel ? k_din_lo : k_din)
+    assign k_dat = !k_din_sel ? (k_din_hsel ? k_din_lo : (k_din_dsel ? k_din_dw : k_din))
                               : ((a_r[1] | k_long_ack) ? k_din_co : k_din_ce);
     assign k_din_hmux = k_din_hsel ? k_din : k_din_ce;
     assign {FC2, FC1, FC0} = fc_r;
@@ -333,6 +340,15 @@ module tg68_bus #(
     // Cacheability and tag of the cycle in a_r (stable from DECIDE on).
     wire ic_rom  = (a_r[31:19] == 13'h001F);              // $F80000-$FFFFFF
     wire ic_ok   = (ICACHE != 0) && (ic_rom || icache_win);
+    // CHIP RAM CODE (step 11): the instruction cache also holds code fetched
+    // from chip RAM ($000000-$1FFFFF), as a real 68020's does; the data
+    // cache never holds chip RAM (DMA and the blitter rewrite it). ic_okf
+    // is the instruction cache's window: fills on a fetch, and drops the
+    // entry on any CPU write. DMA writes are invisible here, so software
+    // must clear the cache after loading code, as on a 68020 (CACR CI/CEI,
+    // which flush both caches: flush_trig below; Exec's CacheClearU).
+    wire ic_chip = (ICACHE != 0) && (a_r[31:21] == 11'd0);
+    wire ic_okf  = ic_ok || ic_chip;
     wire [TAGW-1:0] ic_want = {1'b1, (a_r[31:24] == 8'h08), (a_r[31:24] == 8'h00),
                                a_r[23:IC_AW+1]};
     // ic_on/dc_on are registered (they sit at the head of DECIDE's whole
@@ -340,7 +356,9 @@ module tg68_bus #(
     // exactly "EI and not flushing" in every clock; only CACR is a clock
     // late, and the next DECIDE is >= SETTLE clocks after the MOVEC step.
     reg  mr_act_d = 1'b0;  // MapROM state last clock (flush on change)
-    wire flush_trig = extReset || !oRESETn || (mr_active != mr_act_d);
+    // (step 11: also CACR CEI/CI, bits 2-3, which the kernel holds for one
+    // step after the MOVEC that sets them, kernel change 3)
+    wire flush_trig = extReset || !oRESETn || (mr_active != mr_act_d) || k_cacr[3] || k_cacr[2];
     wire flush_nxt  = flush_trig || (ic_flush && !(&ic_fcnt));
     reg  ic_on_r = 1'b0, dc_on_r = 1'b0;
     wire ic_on   = ic_on_r;
@@ -575,12 +593,19 @@ module tg68_bus #(
     // 32-BIT SDRAM READS (step 9): the same for a read. dp_pair carries
     // either to the controller (it latches pair with the request).
     wire k_rpair  = (DP32_RD != 0) && k_long_cand && !k_addr[1] && !k_nuds && !k_nlds;
-    wire k_dpair  = k_nwr ? k_rpair : k_wpair;
+    // PAIR PREFETCH (step 11): every read of an even word from fast RAM is
+    // a pair read, whether or not the kernel takes the pair: the second word
+    // goes to the prefetch buffer with no request of its own (it used to be
+    // a separate SDRAM request, which the next read then queued behind)
+    wire k_ralg   = (DP32_RD != 0) && !k_addr[1];
+    wire k_dpair  = k_nwr ? k_ralg : k_wpair;
     // rp_go: this cycle is an aligned pair read from fast RAM (registered at
     // DECIDE). A cache miss keeps k_long_ack = rp_go whichever way it goes
     // on (the read is a pair read exactly then), and CCMP/CFREE issue their
     // request with dp_pair = rp_go.
     reg  rp_go = 1'b0;
+    reg  rp_al = 1'b0;     // step 11: an even-word read from fast RAM (pair request)
+    reg  pf_fill_d = 1'b0; // step 11: fill the pair's second word a clock later
 
     // ------------------------------------------------------------------
     // STROBE PIPELINE
@@ -648,8 +673,10 @@ module tg68_bus #(
         end
         // The kernel samples data_in at the end of the clkena clock; the
         // select goes back to k_din on that same edge.
-        if (k_clkena) begin k_din_sel <= 1'b0; k_long_ack <= 1'b0; k_din_hsel <= 1'b0; end
-        ic_ok_d  <= (ICACHE != 0) && (k_rom || k_z2 || k_cpuw || icache_win_k);
+        if (k_clkena) begin k_din_sel <= 1'b0; k_long_ack <= 1'b0; k_din_hsel <= 1'b0; k_din_dsel <= 1'b0; end
+        // (step 11: chip RAM too; only fetches look it up, k_look)
+        ic_ok_d  <= (ICACHE != 0) && (k_rom || k_z2 || k_cpuw || icache_win_k
+                                      || (k_addr[31:21] == 11'd0));
         mr_act_d <= mr_active;
         ic_on_r  <= (ICACHE != 0) && k_cacr[0] && !flush_nxt;
         dc_on_r  <= (DCACHE != 0) && k_cacr[0] && !flush_nxt;
@@ -665,7 +692,7 @@ module tg68_bus #(
             // Hold the kernel in reset, but keep stepping it: its internal
             // synchronous Reset only advances on clkena.
             k_nreset <= 1'b0;
-            k_din_sel <= 1'b0; k_long_ack <= 1'b0; k_din_hsel <= 1'b0;
+            k_din_sel <= 1'b0; k_long_ack <= 1'b0; k_din_hsel <= 1'b0; k_din_dsel <= 1'b0;
             dec_r    <= 1'b0;
             as_i  <= 1'b1; uds_i <= 1'b1; lds_i <= 1'b1; eRWn <= 1'b1;
             oRESETn  <= 1'b1;
@@ -674,7 +701,7 @@ module tg68_bus #(
             dp_busy  <= 1'b0; dp_kind <= 2'd0;
             dp_inc   <= 1'b0;
             pf_valid <= 1'b0;
-            pf_fill  <= 1'b0; pf_dc <= 1'b0; pf_ic <= 1'b0;
+            pf_fill  <= 1'b0; pf_dc <= 1'b0; pf_ic <= 1'b0; pf_fill_d <= 1'b0;
             pw_upd   <= 1'b0; pw_upd2 <= 1'b0;
             dp_pair  <= 1'b0;
             dp_spec  <= 1'b0;
@@ -696,6 +723,10 @@ module tg68_bus #(
             // takes its data from dp_q or iEdb.) pf_fill and pw_upd never
             // fall on the same clock: a posted write needs the port idle at
             // DECIDE, which is at the earliest the clock pf_fill is set.
+            if (pf_fill_d) begin
+                pf_fill_d <= 1'b0;
+                pf_fill   <= pf_dc;             // step 11: the pair's second word
+            end
             if (pf_fill) begin
                 pf_fill <= 1'b0;
                 dc_wa <= pf_a[IC_AW:1]; dc_wt <= tag_of(pf_a); dc_wd <= dp_q;
@@ -745,6 +776,7 @@ module tg68_bus #(
                 lds_want  <= k_nlds;
                 cyc_fetch <= (k_bs == 2'b00);
                 rp_go     <= k_nwr && k_rpair && k_fast;
+                rp_al     <= k_nwr && k_ralg && k_fast;
                 if (!dp_busy) begin
                     dp_we    <= ~k_nwr;
                     dp_wdata <= k_dout;
@@ -873,7 +905,7 @@ module tg68_bus #(
                 // the next request's pair flag, whenever the port is free
                 // (the request issued here, or none: every request site
                 // sets it); while busy it belongs to the request in flight
-                if (!dp_busy) dp_pair <= rp_go;
+                if (!dp_busy) dp_pair <= rp_al;
             end
             // A miss that found the port busy. fastmem_zii's SDRAM address
             // follows the kernel's address again from the clock after the
@@ -884,7 +916,7 @@ module tg68_bus #(
                     dp_req_i <= 1'b1;
                     dp_busy  <= 1'b1; dp_kind <= 2'd1;
                     dp_we    <= 1'b0;
-                    dp_pair  <= rp_go;
+                    dp_pair  <= rp_al;
                     q        <= Q_DWAIT;
                 end else
                     q        <= Q_SETUP;
@@ -892,12 +924,14 @@ module tg68_bus #(
             // ----------------------------------------------------------
             Q_DWAIT: if (dp_ack) begin
                 dp_q     <= dp_rdata;
+                k_din_dw   <= dp_rdata;            // step 11 (not for a kernel pair)
+                k_din_dsel <= !k_long_ack;
                 dp_req_i <= 1'b0;
                 dp_busy  <= 1'b0; dp_kind <= 2'd0;
                 // a data read will be followed by a prefetch: point the
                 // SDRAM address at the next word now (not after a pair
                 // read, step 9: it already brings the next word)
-                if ((a_r[9:1] != 9'h1FF) && !k_long_ack) dp_inc <= 1'b1;   // (step 10: fetches too)
+                if ((a_r[9:1] != 9'h1FF) && !k_long_ack && !dp_pair) dp_inc <= 1'b1;   // (step 10: fetches too; step 11: not after a pair)
                 q        <= Q_DDATA;
             end
             Q_DDATA: begin
@@ -918,7 +952,10 @@ module tg68_bus #(
                 // 32-BIT SDRAM READS (step 9): a pair read's second word is
                 // on dp_rdata now (the controller's second ack clock)
                 dp_q     <= dp_rdata;
-                q        <= k_long_ack ? Q_DDATA2 : Q_FINISH;
+                // step 11: a plain direct read steps the kernel now (its
+                // word is in k_din_dw since DWAIT), FINISH if cnt says wait
+                if (!k_long_ack && cnt >= STEP - 1 && DIN_SETUP <= 1) step();
+                else q   <= k_long_ack ? Q_DDATA2 : Q_FINISH;
                 // Data read: fetch the next word while the kernel settles,
                 // unless that would leave this 1 KB (row/slot boundaries).
                 // A pair read (step 9) already has it: no request, but the
@@ -928,13 +965,19 @@ module tg68_bus #(
                 // Step 10: after an instruction read as well, filling the
                 // instruction cache (pf_ic); the pair-read second word of an
                 // instruction-stream pair takes the same route.
+                // Step 11: a pair read the kernel did not take (an even word,
+                // dp_pair) brings the next word now: it goes straight to the
+                // prefetch buffer, and to its cache two clocks later (pf_a
+                // two clocks old, its 2T class), with no request of its own.
                 if (a_r[9:1] != 9'h1FF) begin
                     pf_a     <= a_r + 31'd1;
-                    pf_valid <= 1'b0;
+                    pf_valid <= dp_pair && !k_long_ack;
+                    pf_d     <= dp_rdata;
+                    pf_fill_d <= dp_pair && !k_long_ack;
                     pf_ic    <= cyc_fetch;
                     pf_dc    <= cyc_fetch ? ((ICACHE != 0) && ic_ok && ic_on && !k_cacr[1])
                                           : ((DCACHE != 0) && ic_ok && dc_on);
-                    if (!k_long_ack) begin
+                    if (!k_long_ack && !dp_pair) begin
                         dp_req_i <= 1'b1;
                         dp_busy  <= 1'b1; dp_kind  <= 2'd3;
                         dp_we    <= 1'b0;
@@ -995,7 +1038,9 @@ module tg68_bus #(
                 k_din <= bus_berr ? 16'hFFFF : iEdb;
                 if (tmr >= DATA_DELAY - 1) begin
                     // Cache fill on a fetch miss; invalidate on any write.
-                    if (ic_ok && !ic_flush
+                    // (step 11: ic_okf, so chip RAM code fills it and a CPU
+                    // write to chip RAM drops the entry)
+                    if (ic_okf && !ic_flush
                         && (!eRWn || (cyc_fetch && ic_on && !k_cacr[1] && !bus_berr)))
                         ic_we <= 1'b1;
                     // Data cache: invalidate on a write; fill on a whole-

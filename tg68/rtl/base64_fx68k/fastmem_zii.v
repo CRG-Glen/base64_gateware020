@@ -457,9 +457,19 @@ wire        s_mre   = (sa[23:19] == 5'b11100);
 wire        s_mrwin = (sa[31:24] == 8'h00) && (s_mrb || s_mre);
 wire        s_cpuw  = CPUSPACE_EN && (sa[31:24] == 8'h08);
 wire [3:0]  s_dense = popcount_below(addr_match, s_slot);
-wire [23:0] s_word  = s_mrwin ? {5'b01000, s_mre, sa[18:1]}
+wire [23:0] s_word0 = s_mrwin ? {5'b01000, s_mre, sa[18:1]}
                     : s_cpuw  ? {1'b1, sa[23:1]}
                               : {1'b0, s_dense, sa[19:1]};
+// TG68: BANK PERMUTATION (step 11). The controller takes the SDRAM bank from
+// word-address bits [10:9], so blocks a multiple of 4 KB apart (code and its
+// data, two buffers) share a bank, and alternating between them closed and
+// reopened a row every time (~5 clocks per access). The bank is now those
+// bits XOR two groups of row bits (word bits [12:11] and [14:13], the same
+// address bits in all three mappings above), so blocks 4-32 KB apart land
+// in different banks. Row and column are unchanged and the map is one to
+// one; a prefetch or pair only changes column bits, so it stays put.
+wire [1:0]  s_bank  = s_word0[10:9] ^ s_word0[12:11] ^ s_word0[14:13];
+wire [23:0] s_word  = {s_word0[23:11], s_bank, s_word0[8:0]};
 always @(posedge clk)
     if (!dp_hold)
         saddr_r <= dp_inc ? {s_word[23:9], s_word[8:0] + 9'd1} : s_word;

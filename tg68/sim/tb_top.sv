@@ -119,17 +119,20 @@ module tb;
     integer wr_pairs = 0;                // pair writes (32-bit SDRAM)
     integer hit_4f00 = 0;                // pair hits at 0x08004F00 (step 9)
     integer ipair_hit = 0, ipair_rd = 0; // instruction-stream pairs (step 10)
+    integer chip_ihit = 0;               // instruction-cache hits on chip RAM (step 11)
+    integer n_posted = 0; reg rp_d = 0;  // posted chip writes (step 11)
+    always @(posedge dut.clk) begin rp_d <= dut.rp_pend; if (dut.rp_pend && !rp_d) n_posted = n_posted + 1; end
     reg     hp_f = 0;
     // k_long_ack and k_din_sel feed the kernel and are classed adapter ->
     // kernel (2 clocks) by check_timing.py: neither may change in the clock
     // just before the kernel samples (the clkena clock).
-    integer ks_cyc = 0, ks_chg = -10, ks_bad = 0; reg ks_la = 0, ks_ds = 0, ks_hs = 0;
+    integer ks_cyc = 0, ks_chg = -10, ks_bad = 0; reg ks_la = 0, ks_ds = 0, ks_hs = 0, ks_dd = 0;
     integer rd_pairs = 0;                // pair reads from the SDRAM (step 9)
     integer n_clw = 0;                   // steps with clkena_lw (kernel change 2)
     always @(posedge dut.clk) begin
         ks_cyc = ks_cyc + 1;
-        if (dut.cpu.k_long_ack !== ks_la || dut.cpu.k_din_sel !== ks_ds || dut.cpu.k_din_hsel !== ks_hs) ks_chg = ks_cyc;
-        ks_la = dut.cpu.k_long_ack; ks_ds = dut.cpu.k_din_sel; ks_hs = dut.cpu.k_din_hsel;
+        if (dut.cpu.k_long_ack !== ks_la || dut.cpu.k_din_sel !== ks_ds || dut.cpu.k_din_hsel !== ks_hs || dut.cpu.k_din_dsel !== ks_dd) ks_chg = ks_cyc;
+        ks_la = dut.cpu.k_long_ack; ks_ds = dut.cpu.k_din_sel; ks_hs = dut.cpu.k_din_hsel; ks_dd = dut.cpu.k_din_dsel;
         // The kernel's l1 <= long_ack (Base64 change, was long_ack AND cand)
         // relies on this: long_ack only ever answers an offered pair.
         if (dut.cpu.k_long_ack && !dut.cpu.k_long_cand) begin
@@ -168,6 +171,12 @@ module tb;
     endtask
     reg [17:0] pb_s; reg [31:1] pb_k;      // {known hi, known lo, data}
     reg [17:0] shadow [int unsigned];
+    // step 11: the program asks the tb to rewrite its chip RAM routine
+    // behind the CPU, as disk or blitter DMA would (the shadow follows)
+    always @(posedge uds_n) if (!rw && ba == 24'h8F10) begin
+        ram[12'hC00] = 16'h7803;                  // $9800: moveq #3,%d4
+        shadow[31'h4C00] = {2'b11, 16'h7803};
+    end
     reg [3:0]  pb_pq = 0; reg pb_mr = 0;
     always @(posedge dut.clk) begin
         pb_pq <= dut.cpu.q;
@@ -201,6 +210,7 @@ module tb;
         end
         if (hp_pend && dut.cpu.k_clkena) begin
             hp_pend = 0;
+            if (hp_f && hp_a >= 31'h4000 && hp_a < 31'h5000) chip_ihit = chip_ihit + 1;   // tb RAM $8000-$9FFF
             if (dut.cpu.k_long_ack !== hp_long) begin
                 $display("FAIL cache hit at %h: long_ack %b, expected %b", {hp_a, 1'b0}, dut.cpu.k_long_ack, hp_long);
                 hit_bad = hit_bad + 1;
@@ -347,6 +357,8 @@ module tb;
         check(24'h8100, 32'h000000FF, "first copied long");
         check(24'h8104, 32'h00000000, "last copied long");
         check(24'h8108, 32'h00000000, "copy mismatches");
+`elsif BENCH_CHIP
+        check(24'h8100, 32'h000002FD, "last chip long written");
 `else
         check(24'h8100, 32'h00007F80, "sum");
 `endif
@@ -363,6 +375,14 @@ module tb;
         check(24'h8114, 32'h00007777, "TRAP/RTE");
         check(24'h8118, 32'h000000A5, "CIA (VPA/E) read");
         check(24'h811C, 32'hFFFFFFFF, "32-bit null space");
+        check(24'h81B4, 32'h00000001, "chip code: from cache");
+        check(24'h81B8, 32'h00000002, "chip code: CPU write");
+        check(24'h81BC, 32'h00000003, "chip code: CACR CI");
+        $display("instruction-cache hits on chip RAM code: %0d", chip_ihit);
+        if (chip_ihit < 2) begin $display("FAIL: chip RAM code never came from the cache"); errors = errors + 1; end
+        check(24'h81C0, 32'h12341256, "posted writes, order");
+        $display("posted chip writes: %0d", n_posted);
+        if (n_posted < 10) begin $display("FAIL: chip RAM writes were not posted"); errors = errors + 1; end
 `ifdef FASTMEM
         check(24'h8120, 32'h13579BDF, "fast RAM $08000000");
         check(24'h8124, 32'h2468ACE0, "fast RAM $08FFFFFC");

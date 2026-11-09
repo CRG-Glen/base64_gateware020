@@ -174,6 +174,12 @@ module base64_tg68_top #(
     // RETIME: 0 = bridge (re-synthesised S0..S7), 1 = SF2000-style
     // pass-through with the core's strobes gated onto the 7M grid.
     parameter         RETIME     = 1'b1,
+    // TG68: POSTED CHIP WRITES (step 11). 1 = a CPU write to chip RAM
+    // ($000000-$1FFFFF) is acknowledged as soon as it is on the motherboard
+    // bus; the bridge finishes it while the CPU carries on, and holds the
+    // CPU's next motherboard cycle until it is done (so order is kept).
+    // Custom chip and CIA registers are never posted. RETIME=1 only.
+    parameter         POST_CHIP  = 1'b1,
     parameter         EARLY_ACK  = 1'b0,
     parameter         DBG_BUNDLE = 1'b0,   // debug done -- keep 0 now
 
@@ -807,7 +813,8 @@ module base64_tg68_top #(
         .FC0      (core_fc0),
         .DTACKn   (core_dtack_n),
         .BERRn    (core_berr_n),
-        .BRn      (s_br_n[1]),
+        // TG68: no bus grant while a posted chip write is still on the bus
+        .BRn      (s_br_n[1] | rp_pend),
         .BGn      (core_bg_n),
         .BGACKn   (s_bgack_n[1]),
         .IPL2n    (ipl_out[2]),
@@ -1302,6 +1309,19 @@ module base64_tg68_top #(
     reg [1:0]  rt_vst   = 2'd0;
     reg        core_as_d2 = 1'b1;
     always @(posedge clk) core_as_d2 <= core_as_n;
+    // TG68: posted chip writes (POST_CHIP). As soon as the CPU presents a
+    // write to chip RAM (address in rt_a, data in rt_d, a data strobe down)
+    // it is acknowledged, and the bridge runs the motherboard cycle itself:
+    // AS at the next tick_r, the data strobes at the one after (a 68000's
+    // S4), the end at the tick_f after a DTACK seen at a later tick_r than
+    // the strobes (so they stay down >= 1.5 half-periods, as a 68000's),
+    // then address, R/W and data held to the next tick_r.
+    //   rp_pend: the bridge owns a write the CPU has been acked for
+    //   rp_ds:   its data strobes are on the bus
+    //   rp_term: its DTACK was seen;  rp_hold: AS/DS up, holding
+    reg        rp_pend = 1'b0, rp_term = 1'b0, rp_hold = 1'b0, rp_ds = 1'b0;
+    reg        rp_uds = 1'b1, rp_lds = 1'b1;
+    wire       rt_chip = (rt_a[23:21] == 3'b000);   // chip RAM $000000-$1FFFFF
 `ifdef TG68_X16
     // TG68: at 16x one master clock is 8.81 ns, so the address/data hold
     // past AS negation below takes two (17.6 ns; 11.75 ns at 12x with one)
@@ -1317,6 +1337,39 @@ module base64_tg68_top #(
             rt_as_n <= 1'b1; rt_uds_n <= 1'b1; rt_lds_n <= 1'b1;
             rt_vma_n <= 1'b1; rt_dtack_lo <= 1'b0; rt_d_oe <= 1'b0;
             rt_vst <= 2'd0; rt_av <= 1'b0;
+            rp_pend <= 1'b0; rp_term <= 1'b0; rp_hold <= 1'b0; rp_ds <= 1'b0;
+        end else if (rp_pend) begin
+            // TG68: posted chip write. The CPU has its ack; drop it once the
+            // CPU ends its cycle, so its next cycle never sees a stale one,
+            // and ignore that next cycle until this one is done.
+            if (core_as_n) rt_dtack_lo <= 1'b0;
+            if (tick_r && !rp_term && !rp_hold) begin
+                if (rt_as_n) begin                  // S2: AS down, data out
+                    rt_as_n <= 1'b0;
+                    rt_d_oe <= 1'b1;
+                end else if (!rp_ds) begin          // S4: data strobes down
+                    rt_uds_n <= rp_uds;
+                    rt_lds_n <= rp_lds;
+                    rp_ds    <= 1'b1;
+                end else if (s_berr_n[1] && !s_dtack_n[1])
+                    rp_term  <= 1'b1;               // the slave has it
+            end
+            if (rp_term && tick_f) begin            // end it, as a 68000's S7
+                rt_as_n  <= 1'b1;
+                rt_uds_n <= 1'b1;
+                rt_lds_n <= 1'b1;
+                rp_term  <= 1'b0;
+                rp_hold  <= 1'b1;
+            end
+            if (rp_hold && tick_r) begin            // address/data held to here
+                rp_hold  <= 1'b0;
+                rp_pend  <= 1'b0;
+                rp_ds    <= 1'b0;
+                rt_rw    <= 1'b1;
+                rt_d_oe  <= 1'b0;
+                rt_a     <= core_a[23:1];           // the CPU's next cycle
+                rt_fc    <= core_fc;
+            end
         end else if (core_as_n) begin
             rt_as_n     <= 1'b1;
             rt_uds_n    <= 1'b1;
@@ -1363,6 +1416,20 @@ module base64_tg68_top #(
             if (core_rw && !rt_as_n &&
                 (s_vpa_n[1] ? 1'b1 : (!rt_vma_n && e_pin)))
                 rt_rd <= cpu_d;
+            // TG68: a write to chip RAM, fully presented by the CPU (a data
+            // strobe down; rt_a and rt_d hold address and data), is acked
+            // now and run by the bridge (POST_CHIP, above). Not a 6800
+            // cycle or one already acked; never an on-chip slave.
+            if (POST_CHIP && !core_rw && rt_chip && !int_win_r && rt_vst == 2'd0
+                && (!core_uds_n || !core_lds_n) && !rt_dtack_lo) begin
+                rt_dtack_lo <= 1'b1;
+                rp_pend     <= 1'b1;
+                rp_uds      <= core_uds_n;
+                rp_lds      <= core_lds_n;
+                rt_rw       <= 1'b0;
+                rt_d        <= core_dout;
+                rp_ds       <= 1'b0;
+            end
             if (tick_r && !rt_as_n && s_berr_n[1]) begin
                 if (!s_dtack_n[1])
                     rt_dtack_lo <= 1'b1;
