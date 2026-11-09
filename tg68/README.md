@@ -463,6 +463,57 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   fast RAM copy bench never waits for the SDRAM port, and a pure write
   burst waits 3% of the time, so a queue there could gain at most a few
   percent.
+* **Clock speed at run time (step 13).** The normal (12x) bitstream can
+  now run the whole design at 12x, 14x or 16x the Amiga's 7.09 MHz,
+  switched while the machine runs, with no board mod and no reflash. Type
+  `speed 14` or `speed 16` in a Shell (`sw/speed/`, attached to each
+  release); `speed` alone shows the clock in force and which speeds are
+  available.
+
+  | `speed` | System clock | Source |
+  | --- | --- | --- |
+  | 12 | 85.13 MHz | the ICS570B, straight from its pin (power-on default) |
+  | 14 | 99.32 MHz | FPGA PLL, ×7/6 |
+  | 16 | 113.51 MHz | FPGA PLL, ×4/3 |
+
+  The ratios are exact, so each speed has a whole number of fast clocks
+  per 7 MHz cycle and everything on the Amiga side (bus cycles, E, the
+  CIA timers) stays correct at every speed, as in the `_x16` build. What
+  changes with the speed, at run time: the 7M grid's count (12/14/16), the
+  address hold after AS (2 clocks above 12x), the SDRAM's CAS latency (3
+  at 16x, 2 below: the IS42S16160 needs a 10 ns clock for CL2), the SD
+  card clock's low-half stretch (16x), and the 1 ms counter.
+  How a switch runs, all in the gateware (`base64_tg68_top.sv` section
+  13, `clkgen.v`): the `speed` command writes the new speed to the ROM
+  board's register at +$F00A (key $5B, like MapROM's); the adapter stops
+  starting bus cycles; once nothing is in flight (the adapter, the SDRAM
+  port, the Chip RAM write buffer, AS at the CPU and on the motherboard)
+  the SDRAM gets its new CAS latency if needed (a PRECHARGE ALL and a
+  LOAD MODE), the clock switches through a glitch-free multiplexer (the
+  old clock stops low, the new one starts from low, so no pulse is cut
+  short), the 7M aligner re-locks to the new count, and the CPU carries
+  on. It takes a few microseconds. Chip DMA, interrupts and the CIAs run
+  on through it; the CPU just sees one long bus cycle. A speed whose PLL
+  has not locked is refused.
+  The speed **stays over a reset**; only a power cycle (the FPGA
+  reloading) returns to 12x. So a speed that is too fast for a board is
+  undone by switching off and on.
+  The 14x and 16x speeds are made from the board's 12x clock, so **the
+  ICS570B must be strapped for x12** (stock). On a board modded for x16,
+  use the `_x16` files as before: they have a fixed clock and `speed`
+  says so.
+  16x is overclocked exactly as the `_x16` build is (see *16x clock*); 14x
+  less so. Test: the `fastmem` sim switches to 16x, to 14x and back to
+  12x, with memory traffic (pair writes and reads of fast RAM, a Chip RAM
+  write and read, a CIA read) after each switch, and checks the register,
+  that unkeyed or invalid writes are ignored, three clock switches and
+  three SDRAM mode loads. Its SDRAM model returns read data at the CAS
+  latency of the last LOAD MODE, so a controller expecting another one
+  reads wrong data, and it flags a LOAD MODE with any bank open.
+  Found on the way: the ROM board decoded its control registers from
+  address bits 15-12 only, so a `$5Axx` write to any address ending in
+  `$F008` (in Chip RAM, say) could switch MapROM. Both registers are now
+  qualified by the board's own window.
 * **MapROM.** The board's boot ROM (`turbomem.mem`, built with
   `DIAG_MAPROM=1`) copies Kickstart into the SDRAM shadow at every boot,
   verifies it and switches over, so it is normally already on. Both caches

@@ -58,6 +58,13 @@ module sdram_ctrl #(
     // and, on the next clock, the second (S_RD_DONE is held one clock).
     input  wire        pair,
     input  wire [15:0] wdata_lo,
+    // TG68 step 13: run-time CAS latency. cfg_req with cfg_cl3 (1 = CL3,
+    // 0 = CL2) reloads the mode register: taken in IDLE when no request is
+    // pending (the speed switch holds the CPU), all banks precharged first.
+    // cl3_now is the latency in force. Power-on: CAS_LAT.
+    input  wire        cfg_req,
+    input  wire        cfg_cl3,
+    output reg         cl3_now = (CAS_LAT == 3),
     output reg         ack,
     // Combinational ack, asserted in the SAME cycle the CAS data lands on dq
     // rather than the cycle after. Worth one master clock, which is exactly
@@ -121,6 +128,9 @@ module sdram_ctrl #(
 
     localparam [2:0]  CL3 = CAS_LAT[2:0];
     localparam [12:0] MODE_REG = {3'b000, 1'b0, 2'b00, CL3, 1'b0, 3'b000};
+    // TG68 step 13: the latency in force, as the read timer's load value (a
+    // register that changes only at a mode-register reload, while idle)
+    reg [3:0] cas_lat_r = CAS_LAT[3:0];
 
     localparam integer INIT_CYCLES = (CLK_HZ/1_000_000)*T_INIT_US;
     localparam integer INITW = 14;
@@ -139,24 +149,25 @@ module sdram_ctrl #(
     reg [3:0]  ras_timer [0:3];   // per-bank tRAS since activate (saturating)
 
     // ---- FSM ----
-    localparam S_INIT_WAIT = 4'd0,
-               S_INIT_PRE  = 4'd1,
-               S_INIT_REF1 = 4'd2,
-               S_INIT_REF2 = 4'd3,
-               S_INIT_MODE = 4'd4,
-               S_IDLE      = 4'd5,
-               S_PRECHG    = 4'd6,   // close wrong row before activating
-               S_ACTIVE    = 4'd7,   // activate target row
-               S_RW        = 4'd8,   // issue read/write to open row
-               S_RD_WAIT   = 4'd9,
-               S_RD_DONE   = 4'd10,
-               S_WR_DONE   = 4'd11,
-               S_REF_PRE   = 4'd12,  // precharge-all before refresh
-               S_REFRESH   = 4'd13,
-               S_ACK_WAIT  = 4'd14,  // hold after ack until req deasserts
-               S_WR2       = 4'd15;  // TG68: second WRITE of a pair
+    localparam S_INIT_WAIT = 5'd0,
+               S_INIT_PRE  = 5'd1,
+               S_INIT_REF1 = 5'd2,
+               S_INIT_REF2 = 5'd3,
+               S_INIT_MODE = 5'd4,
+               S_IDLE      = 5'd5,
+               S_PRECHG    = 5'd6,   // close wrong row before activating
+               S_ACTIVE    = 5'd7,   // activate target row
+               S_RW        = 5'd8,   // issue read/write to open row
+               S_RD_WAIT   = 5'd9,
+               S_RD_DONE   = 5'd10,
+               S_WR_DONE   = 5'd11,
+               S_REF_PRE   = 5'd12,  // precharge-all before refresh
+               S_REFRESH   = 5'd13,
+               S_ACK_WAIT  = 5'd14,  // hold after ack until req deasserts
+               S_WR2       = 5'd15,  // TG68: second WRITE of a pair
+               S_CFG_PRE   = 5'd16;  // TG68 step 13: precharge-all, then LOAD MODE
 
-    reg [3:0]  state;
+    reg [4:0]  state;
     reg [3:0]  timer;
     reg        init_done;
     reg [1:0]  cur_bank;
@@ -259,7 +270,10 @@ module sdram_ctrl #(
                 else begin
                     set_cmd(CMD_LOADMODE);
                     sdram_ba <= 2'b00;
-                    sdram_a  <= MODE_REG;
+                    // TG68 step 13: the latency in force (cl3_now is not
+                    // reset: the system clock keeps its speed over an Amiga
+                    // reset, and a re-init must match it); MODE_REG at power-on
+                    sdram_a  <= {MODE_REG[12:7], cl3_now ? 3'd3 : 3'd2, MODE_REG[3:0]};
                     timer    <= T_MRD[3:0];
                     state    <= S_IDLE;
                     init_done <= 1'b1;
@@ -298,6 +312,14 @@ module sdram_ctrl #(
                         timer <= T_RFC[3:0];
                         state <= S_REFRESH;
                     end
+                end else if (cfg_req && (cfg_cl3 != cl3_now) && !req) begin
+                    // TG68 step 13: new CAS latency. Close every row, then
+                    // reload the mode register (S_CFG_PRE)
+                    set_cmd(CMD_PRECHG);
+                    sdram_a[10] <= 1'b1;             // precharge all
+                    row_open <= 4'b0000;
+                    timer <= T_RP[3:0];
+                    state <= S_CFG_PRE;
                 end else if (req) begin
                     // latch the request. Only the ADDRESS and direction are
                     // captured here. Write DATA is NOT latched - it is sampled
@@ -328,7 +350,7 @@ module sdram_ctrl #(
                             sdram_a   <= {4'b0000, a_col};  // A10=0, no auto-pre
                             set_cmd(CMD_READ);
                             sdram_dqm <= 2'b00;
-                            timer     <= CAS_LAT[3:0];
+                            timer     <= cas_lat_r;
                             state     <= S_RD_WAIT;
                         end else begin
                             state <= S_RW;
@@ -386,7 +408,7 @@ module sdram_ctrl #(
                     sdram_a  <= {4'b0000, cur_col};   // A10=0: NO auto-precharge
                     set_cmd(CMD_READ);
                     sdram_dqm <= 2'b00;
-                    timer <= CAS_LAT[3:0];
+                    timer <= cas_lat_r;
                     state <= S_RD_WAIT;
                 end else if (wr_valid) begin
                     // WRITE: the row is already active (possibly started early
@@ -451,6 +473,19 @@ module sdram_ctrl #(
             S_WR_DONE: begin
                 ack   <= 1'b1;
                 state <= S_ACK_WAIT;          // row stays OPEN; wait req low
+            end
+            // TG68 step 13: all banks precharged; load the new CAS latency
+            S_CFG_PRE: begin
+                if (timer != 0) timer <= timer - 1'b1;
+                else begin
+                    set_cmd(CMD_LOADMODE);
+                    sdram_ba  <= 2'b00;
+                    sdram_a   <= {3'b000, 1'b0, 2'b00, cfg_cl3 ? 3'd3 : 3'd2, 1'b0, 3'b000};
+                    cl3_now   <= cfg_cl3;
+                    cas_lat_r <= cfg_cl3 ? 4'd3 : 4'd2;
+                    timer     <= T_MRD[3:0];          // IDLE counts tMRD down
+                    state     <= S_IDLE;
+                end
             end
             // ---------------- REFRESH ----------------
             S_REF_PRE: begin

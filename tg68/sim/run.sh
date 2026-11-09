@@ -27,11 +27,11 @@ bus)
   ./obj_dir/tb_bus ;;
 top)
   $AS -o tt.o test_top.s && $LD -o tt.elf tt.o 2>/dev/null && $OC tt.elf tt.bin && mem tt.bin rom_top.mem
-  $VL tb_top.sv $R/base64_tg68/base64_tg68_top.sv $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v $SLAVES -o tb_top > build_top.log 2>&1
+  $VL tb_top.sv $R/base64_tg68/base64_tg68_top.sv $R/base64_tg68/clkgen.v $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v $SLAVES -o tb_top > build_top.log 2>&1
   ./obj_dir/tb_top ;;
 fastmem)
   $AS --defsym FASTMEM=1 -o tf.o test_top.s && $LD -o tf.elf tf.o 2>/dev/null && $OC tf.elf tf.bin && mem tf.bin rom_top_fm.mem
-  $VL -DFASTMEM tb_top.sv sdram_model_checked.v $R/base64_tg68/base64_tg68_top.sv $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v $SLAVES -o tb_fm > build_fm.log 2>&1
+  $VL -DFASTMEM tb_top.sv sdram_model_checked.v $R/base64_tg68/base64_tg68_top.sv $R/base64_tg68/clkgen.v $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v $SLAVES -o tb_fm > build_fm.log 2>&1
   ./obj_dir/tb_fm ;;
 bench)
   # run.sh bench [copy|read|scatter]: fast RAM throughput, timed 2nd pass
@@ -49,6 +49,6 @@ bench)
     wrmix) SRC=test_wr.s; D=-DBENCH_WRCHIP; ASD="--defsym MIX=1" ;;
   esac
   $AS $ASD -o tm.o $SRC && $LD -o tm.elf tm.o 2>/dev/null && $OC tm.elf tm.bin && mem tm.bin rom_mem.mem
-  $VL -DFASTMEM -DMEMBENCH $D tb_top.sv sdram_model_checked.v $R/base64_tg68/base64_tg68_top.sv $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v $SLAVES -o tb_bench > build_bench.log 2>&1
+  $VL -DFASTMEM -DMEMBENCH $D tb_top.sv sdram_model_checked.v $R/base64_tg68/base64_tg68_top.sv $R/base64_tg68/clkgen.v $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v $SLAVES -o tb_bench > build_bench.log 2>&1
   ./obj_dir/tb_bench | grep -v "^per cycle\|^AS->DTACK" ;;
 esac

@@ -313,6 +313,34 @@ pf2:    dbra    %d1,pf2
         dbra    %d2,pf1
         move.w  (%a0),%d3
         move.l  %d3,0x81C8          | 81C8 last value written: 95 = 0x5F
+        | -- step 13: the speed switch, through the real register (the tb
+        | forces the turbomem board configured at $EA0000) --
+        moveq   #0,%d0
+        move.w  0xEAF00A,%d0
+        move.l  %d0,0x81D4          | 81D4 0000070C: 12x, switching ok, both PLLs locked
+        move.w  #0x5B10,0xEAF00A    | -> 16x
+        bsr     spdchk
+        move.l  %d3,0x81DC          | 81DC ACF1E135
+        moveq   #0,%d0
+        move.w  0xEAF00A,%d0
+        move.l  %d0,0x81D8          | 81D8 00000710
+        move.w  #0x5B0E,0xEAF00A    | -> 14x
+        bsr     spdchk
+        move.l  %d3,0x81E4          | 81E4 ACF1E135
+        moveq   #0,%d0
+        move.w  0xEAF00A,%d0
+        move.l  %d0,0x81E0          | 81E0 0000070E
+        move.w  #0x5B0C,0xEAF00A    | -> 12x
+        bsr     spdchk
+        move.l  %d3,0x81EC          | 81EC ACF1E135
+        moveq   #0,%d0
+        move.w  0xEAF00A,%d0
+        move.l  %d0,0x81E8          | 81E8 0000070C
+        move.w  #0x5B11,0xEAF00A    | not a speed: ignored
+        move.w  #0x1210,0xEAF00A    | no key: ignored
+        moveq   #0,%d0
+        move.w  0xEAF00A,%d0
+        move.l  %d0,0x81F0          | 81F0 0000070C
         .endif
         moveq   #0,%d7
         jsr     romfn+0xF80000      | Kickstart-ROM range: over the 7M bus,
@@ -325,6 +353,23 @@ wait:   tst.l   %d3
         move.l  %d3,(%a5)+          | 8120 33333333
         move.l  #0x600DC0DE,0x8FF0
 done:   bra.s   done
+        .ifdef FASTMEM
+| step 13: SDRAM pair writes and uncached reads (the new CAS latency), a
+| buffered chip RAM write and its read, a CIA access: at each speed
+spdchk: moveq   #0,%d4
+        movec   %d4,%cacr           | caches off: every read goes to the SDRAM
+        lea     0x08006200,%a0
+        move.l  #0x12345678,(%a0)
+        move.l  #0x9ABCDEF0,4(%a0)
+        move.l  (%a0),%d3
+        add.l   4(%a0),%d3          | ACF13568
+        move.w  #0xABCD,0x8EC0
+        add.w   0x8EC0,%d3          | ACF1E135
+        tst.b   0xBFE001
+        moveq   #1,%d4
+        movec   %d4,%cacr
+        rts
+        .endif
 chipfn: moveq   #1,%d4              | step 11 test routine, copied to $9800
         rts
 romfn:  moveq   #0x55,%d7

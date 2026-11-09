@@ -70,7 +70,7 @@ def run(cmd):
 R = lambda *p: os.path.join(ROOT, 'rtl', *p).replace('\\', '/')
 srcs_sv = [R('base64_tg68', 'base64_tg68_top.sv')]
 core = 'tg68_020_b0.v'
-srcs_v = [R('base64_tg68', 'tg68_bus.v'), R('tg68', core)] + \
+srcs_v = [R('base64_tg68', 'tg68_bus.v'), R('base64_tg68', 'clkgen.v'), R('tg68', core)] + \
          [R('base64_fx68k', f + '.v') for f in
           ('autoconfig_zii', 'fastmem_zii', 'turbomem_zii', 'sd_subsystem', 'sdcard',
            'sdram_ctrl', 'fifo', 'shifter', 'rx_cpu_buf', 'tx_cpu_buf')]

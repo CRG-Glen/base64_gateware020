@@ -173,7 +173,11 @@ module turbomem_zii #(
 
     // ---- mapROM control, to fastmem_zii ----
     output wire        maprom_load,
-    output wire        maprom_active
+    output wire        maprom_active,
+    // TG68 step 13: the speed register at +$F00A (see below)
+    output reg         spd_wr = 1'b0,   // one-clock pulse: a keyed write
+    output reg  [1:0]  spd_val = 2'd0,  // 0 12x, 1 14x, 2 16x
+    input  wire [15:0] spd_stat         // what +$F00A reads
 );
 
 localparam integer ROM_WORDS = (1 << ROM_AWID);
@@ -341,7 +345,12 @@ always @(posedge clk) rom_q <= rom[a[ROM_AWID:1]];
 //   +$F004  resets needed      read-only
 //   +$F006  ms to boot         read-only
 //   +$F008  mapROM control     READ/WRITE
-//   +$F00A..            reserved, read as zero
+//   +$F00A  speed (step 13)    READ/WRITE, key $5B:
+//           write $5B0C / $5B0E / $5B10 asks for 12x / 14x / 16x (the top
+//           level switches when the CPU and both buses are idle); reads
+//           {4'b0, busy, sw_ok, lock16, lock14, multiplier} (multiplier 12,
+//           14 or 16, the one in force)
+//   +$F00C..            reserved, read as zero
 //
 // The mapROM control register needs a key. A stray write of 0 is harmless,
 // but a stray write with bit 1 set would switch Kickstart fetches over to an
@@ -368,13 +377,17 @@ assign maprom_active = mr_ctrl[1];
 always @(posedge clk) begin
     status_sel <= status_hit;
     if (a[3])
-        status_q <= (a[2:1] == 2'd0) ? {14'd0, mr_ctrl} : 16'h0000;
+        status_q <= (a[2:1] == 2'd0) ? {14'd0, mr_ctrl}
+                  : (a[2:1] == 2'd1) ? spd_stat : 16'h0000;   // TG68: speed
     else
         status_q <= status_i[{a[2:1], 4'b0000} +: 16];
 end
 
 // Write strobe on the leading edge of DS, same shape as the autoconfig one.
-wire ctrl_wr = status_hit && !ds_n && !rw && (a[3:1] == 3'd4);
+// TG68: qualified by tm_space (this board's window). status_hit decodes only
+// A15:12, so without it a write of $5Axx to ANY address ending in $F008
+// (chip RAM, fast RAM...) switched mapROM; the same for the speed register.
+wire ctrl_wr = tm_space && status_hit && !ds_n && !rw && (a[3:1] == 3'd4);
 reg  ctrl_wr_q;
 always @(posedge clk) ctrl_wr_q <= ctrl_wr;
 wire ctrl_stb = ctrl_wr & ~ctrl_wr_q;
@@ -384,6 +397,22 @@ always @(posedge clk) begin
         mr_ctrl <= 2'b00;
     else if (ctrl_stb && (d_in[15:8] == MAPROM_KEY))
         mr_ctrl <= d_in[1:0];
+end
+
+// TG68 step 13: the speed register, keyed like mapROM's ($5B), same strobe
+// shape. Only 12, 14 and 16 are taken; anything else is ignored. Not reset:
+// the speed persists over an Amiga reset (only a power cycle returns to 12x).
+localparam [7:0] SPEED_KEY = 8'h5B;
+wire spd_wr_hit = tm_space && status_hit && !ds_n && !rw && (a[3:1] == 3'd5);
+reg  spd_wr_q;
+always @(posedge clk) spd_wr_q <= spd_wr_hit;
+always @(posedge clk) begin
+    spd_wr <= 1'b0;
+    if (spd_wr_hit && !spd_wr_q && d_in[15:8] == SPEED_KEY) begin
+        if      (d_in[7:0] == 8'd12) begin spd_wr <= 1'b1; spd_val <= 2'd0; end
+        else if (d_in[7:0] == 8'd14) begin spd_wr <= 1'b1; spd_val <= 2'd1; end
+        else if (d_in[7:0] == 8'd16) begin spd_wr <= 1'b1; spd_val <= 2'd2; end
+    end
 end
 
 // ---------------------------------------------------------------------------

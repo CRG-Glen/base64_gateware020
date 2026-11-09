@@ -334,6 +334,29 @@ that gives the "_fast" files.
   ALU and the data-in/address processes; it cut that class's misses from
   -1.2..-3.8 to 0..-1.5 ns on seeds 1-4 but none passed, so it was
   reverted here. Bring it back when a step's seed search stalls on clkena.
+- **Run-time clock speed (step 13, branch step13-pll-speed, not yet on
+  hardware):** `clkgen.v`: 12x straight from pin L1, 14x (EHXPLLL 6/7/7)
+  and 16x (9/12/6) from it, a fabric glitch-free mux (one enable per
+  source, two flops on that source's negedge, on only when the others are
+  off) into a DCCA. TG68_X16 builds `clkgen #(.ENABLE(0))` (clk = pin).
+  `spd` (0/1/2) drives registers that replaced the X16 ifdefs at run time:
+  ph_top/ph_half (11/13/15, 6/7/8), ms_top, spd_hold2 (rt_ hold 2 clocks
+  above 12x), spd_lox (SD SCLK low +1 at 16x, shifter `lo_extra`).
+  sdram_ctrl (`TG68:`): cfg_req/cfg_cl3 -> PRECHARGE ALL, S_CFG_PRE, LOAD
+  MODE, `cl3_now`, `cas_lat_r`; init LOAD MODE uses cl3_now (not reset, so
+  the speed survives an Amiga reset; only a power cycle gives 12x).
+  turbomem +$F00A (`TG68:`): write $5B0C/$5B0E/$5B10, read {busy, sw_ok,
+  lock16, lock14, mult}; the X16 build reads $0010. Sequencer (top section
+  13): IDLE -> HOLD (`spd_hold` stops tg68_bus starting anything at
+  DECIDE; wait 16 clocks of `sp_quiet` = cyc_idle, wb empty, both AS high)
+  -> CL (to CL3 for 16x) -> SW (clk_sel, spd; 64 clocks) -> LOCK (8 7M
+  edges) -> CL2 (leaving 16x) -> IDLE. LOCK does not wait for ph_locked:
+  the aligner's reload lands a clock after the edge, so ph_locked is 0 in
+  steady state (pre-existing; the reload every edge is a no-op). Also
+  fixed: turbomem's ctrl_wr (MapROM) lacked tm_space (status_hit decodes
+  A15:12 only). `sw/speed/`: SPEED command (68000 asm, vamos-tested with
+  a fake board: `build.sh test`). Sim: pll_model (Verilator), fastmem
+  checks 81D4-81F0, n_switch 3, n_mrs 3 (X16: $0010, 0, 1).
 - **Cache enable:** both caches follow CACR EI. The data cache must NOT get
   the 68030 CACR bit 8: software tells an 020 from an 030 by setting that bit
   and reading it back, so storing it would make the CPU detect as a 68030 and
@@ -456,26 +479,13 @@ that gives the "_fast" files.
 
 ## Ideas not yet done (Glen decides the order)
 
-- Chip RAM write buffer: step 12 (above). Next: the 14x PLL step.
+- Chip RAM write buffer: step 12 (above). Run-time 12x/14x/16x: step 13.
 - Fast RAM write queue: measured in step 12 and left out pending Glen's
   decision (the copy bench never waits for the SDRAM port; write bursts
   wait 3%, so it can gain a few percent at most).
-- 16x (or 14x) without the board mod: the ECP5's two PLLs are unused.
-  EHXPLLL from the 12x input (85.13 MHz): CLKI_DIV 3, CLKFB_DIV 4, CLKOP
-  113.5 MHz (PFD 28.4 MHz, VCO 567 MHz with CLKOP_DIV 5), an exact 4/3, so
-  16 clocks per 7M cycle and the phase aligner works as with the mod.
-  14x (7/6, 99.3 MHz) would keep SDRAM CL2 in spec on a -6 part and need
-  less overclock margin than 16x. Not designed yet.
-  Runtime speed select (Glen's idea): ECP5 PLL dividers are fixed in the
-  bitstream (only phase is dynamic, as far as known), so: PLL1 VCO 681 MHz
-  (12x x8) gives /8 = 12x and /6 = 16x, PLL2 (CLKI_DIV 6, CLKFB_DIV 7)
-  gives 14x; glitch-free DCSC muxes pick one. A CLI tool writes a speed
-  register; the adapter holds the kernel, waits for the bus and SDRAM to
-  go idle, switches, lets the 7M aligner re-lock, then resumes. The
-  TG68_X16 ifdefs (CLK_MULT/CPU_MULT counts, rt_ hold, SDRAM CL and
-  refresh count, SD SCLK stretch) become runtime settings. Power-on
-  default 12x, so a bad choice is undone by a power cycle. Even
-  multiples only (tick_f at CLK_MULT/2).
+- 16x/14x without the board mod, switchable at run time: done in step 13
+  (above). As built: 12x is the pin (no PLL), each of 14x and 16x has its
+  own PLL, and the switch is a fabric mux, not DCSC.
 - SDRAM: 24 of 32 MB mapped (8 MB Z2, 16 MB at $08000000, 1 MB MapROM);
   7 MB spare. Little software would use more.
 - Bigger caches: 16 more block RAMs, which would crowd out RTG.

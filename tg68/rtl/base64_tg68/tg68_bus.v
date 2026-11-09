@@ -75,6 +75,11 @@ module tg68_bus #(
     input  wire        enPhi2,     // unused
     input  wire        HALTn,      // external HALT: holds off new cycles
     input  wire        extReset,   // core reset (RESET+HALT, power-up)
+    // TG68 step 13: hold off every bus cycle, SDRAM request and cache
+    // lookup (internal steps and prefetch-buffer hits carry on); cyc_idle =
+    // no cycle in progress and the SDRAM port free. The speed switch.
+    input  wire        spd_hold,
+    output wire        cyc_idle,
     input  wire        pwrUp,      // unused, extReset already covers it
     output reg         oRESETn,    // RESET instruction
     output wire        oHALTEDn,   // TG68 has no double-fault halt: always 1
@@ -656,6 +661,7 @@ module tg68_bus #(
     always @(posedge clk) ack_idle <= DTACKn & BERRn;
 
     wire internal_step = (k_bs == 2'b01) || (k_bs == 2'b00 && k_skip);
+    assign cyc_idle = (q == Q_DECIDE || q == Q_SETTLE) && !dp_busy;
     wire bus_free      = BGn && BGACKn && BRn && HALTn;
     // CLOOK/CCMP count: a miss goes straight on to a bus cycle.
     wire in_cycle      = (q == Q_SETUP) || (q == Q_WDS) || (q == Q_WAIT)
@@ -817,7 +823,7 @@ module tg68_bus #(
                     bus_berr <= 1'b0;
                     tmr      <= 6'd0;
                     q        <= Q_FINISH;
-                end else if (bus_free && ack_idle && (!dp_busy || (k_look && !pf_wait))) begin
+                end else if (bus_free && ack_idle && !spd_hold && (!dp_busy || (k_look && !pf_wait))) begin
                     a_r      <= k_addr[31:1];
                     fc_r     <= k_fc;
                     eRWn     <= k_nwr;          // RW valid before AS, like S1

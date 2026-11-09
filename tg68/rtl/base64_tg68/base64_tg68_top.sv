@@ -287,7 +287,22 @@ module base64_tg68_top #(
     output wire        led_b
 );
 
-    wire clk = clk_12x;
+    // TG68 step 13: the system clock is 12x, 14x or 16x the 7M, switched at
+    // run time by the speed sequencer (section 13, below) through a
+    // glitch-free switch (clkgen.v). Power-on: 12x, the pin's own clock. The
+    // 16x board-mod build (TG68_X16) has no PLLs: clk is the pin.
+    reg  [1:0] clk_sel = 2'd0;
+    wire       pll_lock14, pll_lock16;
+    wire [1:0] clk_cur;
+    wire       clk;
+    clkgen #(
+`ifdef TG68_X16
+        .ENABLE(0)
+`else
+        .ENABLE(1)
+`endif
+    ) u_clkgen (.clk_in(clk_12x), .sel(clk_sel), .clk(clk),
+                .lock14(pll_lock14), .lock16(pll_lock16), .cur(clk_cur));
 
     // Master clocks per emulated CPU clock period, and the phi2 offset.
     // Sized localparams throughout: part-selecting an `integer` parameter is
@@ -316,6 +331,43 @@ module base64_tg68_top #(
 `endif
     localparam [4:0] PH_TOP = CLK_MULT[4:0] - 5'd1;      // counter wrap
     localparam [4:0] PH_HALF= CLK_MULT[4:0] / 5'd2;      // "falling edge"
+    // TG68 step 13: what depends on the clock multiplier, as registers set
+    // from the speed in force (spd: 0 12x, 1 14x, 2 16x). They change only
+    // in the speed switch, with the CPU held and both buses idle, so their
+    // paths are quasi-static (check_timing.py class STATIC). The 16x
+    // board-mod build has fixed 16x values.
+    reg  [1:0]  spd = 2'd0;
+    reg         spd_relock = 1'b0;   // re-acquire the 7M phase (after a switch)
+    reg         spd_hold   = 1'b0;   // hold the CPU's bus cycles (switching)
+    wire        cpu_cyc_idle;        // the adapter: no cycle, SDRAM port free
+    wire        spd_wr;              // turbomem +$F00A: a keyed speed write
+    wire [1:0]  spd_val;
+    wire [15:0] spd_stat;
+    reg         sdram_cfg_req = 1'b0, sdram_cfg_cl3 = 1'b0;
+    wire        sdram_cl3;           // the SDRAM's CAS latency in force is 3
+`ifdef TG68_X16
+    wire [4:0]  ph_top    = PH_TOP;
+    wire [4:0]  ph_half   = PH_HALF;
+    wire [16:0] ms_top    = 17'd113500;
+    wire        spd_hold2 = 1'b1;      // 2-clock rt_ hold after AS
+    wire        spd_lox   = 1'b0;      // (the SD stretch is SD_LO_EXTRA there)
+`else
+    reg  [4:0]  ph_top    = 5'd11;
+    reg  [4:0]  ph_half   = 5'd6;
+    reg  [16:0] ms_top    = 17'd85129;
+    reg         spd_hold2 = 1'b0;
+    reg         spd_lox   = 1'b0;
+    always @(posedge clk) begin
+        ph_top    <= (spd == 2'd2) ? 5'd15 : (spd == 2'd1) ? 5'd13 : 5'd11;
+        ph_half   <= (spd == 2'd2) ? 5'd8  : (spd == 2'd1) ? 5'd7  : 5'd6;
+        // 1 ms: 85.13 / 99.32 / 113.51 MHz
+        ms_top    <= (spd == 2'd2) ? 17'd113507 : (spd == 2'd1) ? 17'd99318 : 17'd85129;
+        // address/data hold past AS: 1 clock (11.75 ns) at 12x, 2 above
+        spd_hold2 <= (spd != 2'd0);
+        // SD clock: stretch the low half at 16x (see shifter.v)
+        spd_lox   <= (spd == 2'd2);
+    end
+`endif
     localparam [4:0] MC4    = CLK_MULT[4:0] / CPU_MULT;      // 2,3,4,6,12
     localparam [4:0] MCH4   = (CLK_MULT[4:0] / CPU_MULT) / 5'd2;
     localparam [4:0] PH_ACK = PH_HALF - ACK_LEAD;
@@ -458,7 +510,7 @@ module base64_tg68_top #(
     reg       ph_slip   = 1'b0;     // sticky, for LED/Reveal
 
     always @(posedge clk) begin
-        ph <= (ph == PH_TOP) ? 5'd0 : ph + 5'd1;
+        ph <= (ph == ph_top) ? 5'd0 : ph + 5'd1;
         if (edge_7m) begin
             if (ph == PHASE_OFS) begin
                 slip_cnt  <= 2'd0;
@@ -496,6 +548,9 @@ module base64_tg68_top #(
         // been stable for PWRUP_BIT worth of time. Clearing ph_slip here too
         // makes it mean what the LED claims: a slip AFTER the clock was
         // trusted. Placed last so its assignments win over the block above.
+        // TG68 step 13: after a clock switch the period count changed, so the
+        // phase is acquired again (ph_slip is not touched: not a slip)
+        if (spd_relock) ph_locked <= 1'b0;
         if (!pwrup_done) begin
             ph_locked <= 1'b0;
             ph_slip   <= 1'b0;
@@ -512,8 +567,8 @@ module base64_tg68_top #(
     // failed 1T by 0.5 ns. The top tb asserts tick_rq == tick_r every clock.
     reg  tick_rq  = 1'b1;               // ph starts at 0
     always @(posedge clk)
-        tick_rq <= (ph == PH_TOP) && !(edge_7m && (!ph_locked || slip_cnt == SLIP_TOL[1:0]));
-    wire tick_f   = (ph == PH_HALF);      // "falling edge of 7M" -> S1,S3,S5,S7
+        tick_rq <= (ph == ph_top) && !(edge_7m && (!ph_locked || slip_cnt == SLIP_TOL[1:0]));
+    wire tick_f   = (ph == ph_half);      // "falling edge of 7M" -> S1,S3,S5,S7
     wire tick_ack = (ph == PH_ACK);    // tick_f minus ACK_LEAD master clocks
 
     // ========================================================================
@@ -708,11 +763,7 @@ module base64_tg68_top #(
     //
     // `make cfgdump` prints them. Log a few dozen cold starts and the delay
     // question answers itself with numbers instead of blink-counting.
-`ifdef TG68_X16
-    localparam [16:0] MS_TOP = 17'd113500;   // TG68: 1 ms at 113.50 MHz
-`else
-    localparam [16:0] MS_TOP = 17'd85129;    // 1 ms at 85.13 MHz
-`endif
+    // (1 ms: ms_top, set by the speed in force, step 13)
 
     reg [16:0] ms_div  = 17'd0;
     reg [15:0] ms_cnt  = 16'd0;
@@ -725,7 +776,7 @@ module base64_tg68_top #(
         if (!pwrup_done) begin
             ms_div <= 17'd0;
             ms_cnt <= 16'd0;
-        end else if (ms_div == MS_TOP) begin
+        end else if (ms_div == ms_top) begin
             ms_div <= 17'd0;
             ms_cnt <= ms_cnt + 16'd1;
         end else begin
@@ -808,6 +859,8 @@ module base64_tg68_top #(
         .enPhi2   (en_phi2),
         .HALTn    (s_halt_n[1] | ~core_ohalted_n),
         .extReset (ext_reset),
+        .spd_hold (spd_hold),
+        .cyc_idle (cpu_cyc_idle),
         .pwrUp    (~pwrup_done),
         .oRESETn  (core_oreset_n),
         .oHALTEDn (core_ohalted_n),
@@ -1353,15 +1406,11 @@ module base64_tg68_top #(
     always @(posedge clk) core_chip_r <= (core_a[23:21] == 3'b000);
     wire       postable = POST_CHIP && !core_as_n && !core_rw && core_chip_r && !int_win_r;
     wire       wb_acc   = postable && (!core_uds_n || !core_lds_n) && !rt_dtack_lo && !wb_full;
-`ifdef TG68_X16
-    // TG68: at 16x one master clock is 8.81 ns, so the address/data hold
-    // past AS negation below takes two (17.6 ns; 11.75 ns at 12x with one)
+    // TG68: above 12x one master clock is under 11 ns (8.81 ns at 16x), so
+    // the address/data hold past AS negation below takes two (spd_hold2)
     reg        core_as_d3 = 1'b1;
     always @(posedge clk) core_as_d3 <= core_as_d2;
-    wire       rt_hold_done = core_as_d3;
-`else
-    wire       rt_hold_done = core_as_d2;
-`endif
+    wire       rt_hold_done = spd_hold2 ? core_as_d3 : core_as_d2;
 
     wire       wb_pop = !ext_reset && wb_busy && rp_act && rp_hold && tick_rq;
     always @(posedge clk) begin
@@ -1528,6 +1577,101 @@ module base64_tg68_top #(
             wb_d[wb_wp]  <= core_dout;
             wb_ds[wb_wp] <= {core_uds_n, core_lds_n};
         end
+
+    // ========================================================================
+    // 13. TG68 step 13: speed switch (12x / 14x / 16x at run time)
+    // ========================================================================
+    // A keyed write to turbomem +$F00A (spd_wr/spd_val, the SPEED command)
+    // asks for a speed. If that clock's PLL is locked and it is not the speed
+    // in force:
+    //   HOLD  hold the CPU's bus cycles (spd_hold: the adapter starts no bus
+    //         cycle, SDRAM request or cache lookup) and wait until nothing is
+    //         in flight for 16 clocks: the adapter idle with the SDRAM port
+    //         free, the chip write buffer empty, AS high at the CPU and on
+    //         the motherboard
+    //   CL    going to 16x: the SDRAM to CAS latency 3 first (CL3 is in spec
+    //         at every speed, CL2 only up to 14x)
+    //   SW    switch the clock and the settings (spd), then 64 clocks for the
+    //         glitch-free switch to finish (the old clock stops low, the new
+    //         one starts; the sequencer itself pauses with them)
+    //   LOCK  re-acquire the 7M phase (the period count changed): wait 8
+    //         7M edges on the new grid
+    //   CL2   leaving 16x: the SDRAM back to CAS latency 2
+    // then release the CPU. The speed persists over an Amiga reset; a power
+    // cycle (FPGA reload) returns to 12x.
+    localparam [2:0] SP_IDLE = 3'd0, SP_HOLD = 3'd1, SP_CL = 3'd2, SP_SW = 3'd3,
+                     SP_LOCK = 3'd4, SP_CL2 = 3'd5;
+    reg  [2:0] sp     = SP_IDLE;
+    reg  [1:0] sp_tgt = 2'd0;
+    reg  [7:0] sp_cnt = 8'd0;
+`ifdef TG68_X16
+    assign spd_stat = {4'd0, 1'b0, 1'b0, 1'b0, 1'b0, 8'd16};   // fixed 16x
+`else
+    wire       sp_ok  = (spd_val == 2'd0) || (spd_val == 2'd1 && pll_lock14)
+                     || (spd_val == 2'd2 && pll_lock16);
+    wire       sp_quiet = cpu_cyc_idle && !wb_busy && core_as_n && rt_as_n;
+    assign spd_stat = {4'd0, sp != SP_IDLE, 1'b1, pll_lock16, pll_lock14,
+                       (spd == 2'd2) ? 8'd16 : (spd == 2'd1) ? 8'd14 : 8'd12};
+    always @(posedge clk) begin
+        spd_relock <= 1'b0;
+        case (sp)
+        SP_IDLE: begin
+            spd_hold <= 1'b0;
+            sp_cnt   <= 8'd0;
+            if (spd_wr && sp_ok && spd_val != spd) begin
+                sp_tgt   <= spd_val;
+                spd_hold <= 1'b1;
+                sp       <= SP_HOLD;
+            end
+        end
+        SP_HOLD: begin
+            if (!sp_quiet) sp_cnt <= 8'd0;
+            else if (sp_cnt != 8'd15) sp_cnt <= sp_cnt + 8'd1;
+            else begin
+                sp_cnt <= 8'd0;
+                sp     <= (sp_tgt == 2'd2 && !sdram_cl3) ? SP_CL : SP_SW;
+            end
+        end
+        SP_CL: begin
+            sdram_cfg_cl3 <= 1'b1;
+            sdram_cfg_req <= 1'b1;
+            if (sdram_cl3) begin
+                sdram_cfg_req <= 1'b0;
+                sp <= SP_SW;
+            end
+        end
+        SP_SW: begin
+            clk_sel <= sp_tgt;
+            spd     <= sp_tgt;
+            if (sp_cnt != 8'd63) sp_cnt <= sp_cnt + 8'd1;
+            else begin
+                sp_cnt     <= 8'd0;
+                spd_relock <= 1'b1;
+                sp         <= SP_LOCK;
+            end
+        end
+        SP_LOCK: begin
+            // the aligner re-syncs ph on every 7M edge (its reload lands a
+            // clock after the edge, so ph_locked itself stays 0 in steady
+            // state): eight edges on the new clock are plenty
+            if (edge_7m) sp_cnt <= sp_cnt + 8'd1;
+            if (sp_cnt >= 8'd8) begin
+                sp_cnt <= 8'd0;
+                sp     <= (sp_tgt != 2'd2 && sdram_cl3) ? SP_CL2 : SP_IDLE;
+            end
+        end
+        SP_CL2: begin
+            sdram_cfg_cl3 <= 1'b0;
+            sdram_cfg_req <= 1'b1;
+            if (!sdram_cl3) begin
+                sdram_cfg_req <= 1'b0;
+                sp <= SP_IDLE;
+            end
+        end
+        default: sp <= SP_IDLE;
+        endcase
+    end
+`endif
 
     // ========================================================================
     // 10c. Internal slaves: SDRAM fast RAM + its autoconfig
@@ -1730,6 +1874,9 @@ module base64_tg68_top #(
         .ROM_FILE ("turbomem.mem")
     ) u_turbomem (
         .status_i   (tm_status),
+        .spd_wr     (spd_wr),
+        .spd_val    (spd_val),
+        .spd_stat   (spd_stat),
         .clk        (clk),
         .reset      (slave_reset),
         .cfgin_n    (ac_chain_n),
@@ -1834,6 +1981,7 @@ module base64_tg68_top #(
 `endif
         .ROM_INIT_FILE("sfsd.mem")
     ) u_sd (
+        .sd_lo_x      (spd_lox),         // TG68 step 13: 16x clock in force
         .clk          (clk),
         .reset        (slave_reset),
         .a            (core_a),
@@ -1888,6 +2036,8 @@ module base64_tg68_top #(
         // TG68: pair writes come straight from the adapter (fastmem_zii only
         // passes dp_wdata through when BUS_RAM=0, as built here)
         .pair (dp_pair), .wdata_lo (dp_wdata_lo),
+        // TG68 step 13: the speed switch's CAS latency change
+        .cfg_req (sdram_cfg_req), .cfg_cl3 (sdram_cfg_cl3), .cl3_now (sdram_cl3),
         .ack (sd_ack), .ack_early (sd_ack_early),
         .rdata_live (sd_rdata_live), .rdata (sd_rdata), .ready (sd_ready),
         .sdram_a (sdram_a), .sdram_ba (sdram_ba), .sdram_dq (sdram_dq),
@@ -1899,6 +2049,7 @@ module base64_tg68_top #(
 
     end else begin : g_no_sdram
     assign sd_ack = 1'b0; assign sd_ack_early = 1'b0; assign sd_ready = 1'b0;
+    assign sdram_cl3 = sdram_cfg_cl3;     // TG68 step 13: nothing to reload
     assign sd_rdata_live = 16'd0; assign sd_rdata = 16'd0;
     assign sdram_a = 13'd0; assign sdram_ba = 2'd0;
 `ifdef YOSYS

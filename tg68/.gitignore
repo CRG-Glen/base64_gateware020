@@ -17,4 +17,11 @@ sw/maprom/*.adf
 sw/maprom/*.o
 sw/maprom/*.elf
 sw/maprom/*.bin
+# speed outputs (sw/speed/build.sh)
+sw/speed/speed
+sw/speed/speed_test
+sw/speed/speed_testfix
+sw/speed/*.o
+sw/speed/*.elf
+sw/speed/*.bin
 __pycache__/
