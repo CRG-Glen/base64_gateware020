@@ -393,10 +393,22 @@ that gives the "_fast" files.
 - A 2-4 entry write queue (copies are write-bound).
 - Bigger caches: 16 more block RAMs, which would crowd out RTG.
 - RTG framebuffer in SDRAM: discussed as a future add-on, no design yet.
-- References for speed-ups and tweaks (Glen's backlog, not yet reviewed):
-  the Amiga Bootcamp guide, https://arisamiga.github.io/amiga-bootcamp/,
-  and Emu68 (68k JIT emulator for the Raspberry Pi, used in PiStorm
-  accelerators), https://github.com/michalsc/Emu68.
+- References for speed-ups and tweaks (reviewed during step 11):
+  - Emu68 (68k JIT for PiStorm), https://github.com/michalsc/Emu68: the
+    one usable tip is software, the VBR (vector table) in fast RAM.
+  - The Amiga Bootcamp guide, https://arisamiga.github.io/amiga-bootcamp/
+    (fetched in full, 254 pages): a general AmigaOS developer reference,
+    unreliable in detail. Its 68030 CACR table is wrong, and it says
+    CacheClearU is a no-op on a 68020; Exec's 020/030 version sets CACR
+    CI|CD ($0808), which step 11's chip code flush relies on (as far as
+    known without a ROM to disassemble: hardware will tell). Nothing in it
+    for the gateware. It prompted a check of posted chip writes against
+    68000 timing (AS S2, DS S4, end S7, next AS S2): the bridge matches;
+    the 6-clock period in `bench chip` is the tb Gary's late DTACK.
+- Possible small idea: cache code fetches from A500 trapdoor slow RAM
+  ($C00000-$D7FFFF; no DMA reaches it). Instruction cache only: with no
+  RAM fitted that range mirrors the custom chips, and the data cache's
+  write allocate would fool Kickstart's memory probe.
 - 16x clock: branch `exp-16x-clock` (not merged; README "16x clock").
   Glen's board is rewired x16 (113.5 MHz); a 12x bitstream there runs the
   bridge's 7M grid at 9.46 MHz (CLK_MULT fixed at 12: bus cycles short,
