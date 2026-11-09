@@ -19,8 +19,10 @@ build's own files are few and marked `TG68:`.
 >
 > **Step 11** (Chip RAM code in the instruction cache, posted Chip RAM
 > writes, faster uncached fast RAM) is for games such as Frontier that
-> ran no faster with the caches on. Simulated and timing-checked; not yet
-> run on hardware.
+> ran no faster with the caches on. It runs on the A500+ at 12x and 16x;
+> at 16x AIBB MemTest is up 25% (19.97 MB/s) and games run much better,
+> close to a 50 MHz 68030. Use the current `step11_games` files: the first
+> ones had a posted-write bug (see step 11).
 >
 > **SD card: every `full` bitstream from step 4 on reads the card.** The
 > step 1-3 `full` files drove the card's data-out line (MISO) low, so the
@@ -35,7 +37,7 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
-| `bitstreams/step11_games/` | + Chip RAM code in the instruction cache (CACR CI/CEI now flush), posted Chip RAM writes, SDRAM bank permutation, pair prefetch, shorter uncached read. 12x and 16x files | Simulated and timing-checked; **not yet run on hardware**. Code that DMAs itself into Chip RAM without clearing the cache needs the caches off (see step 11) |
+| `bitstreams/step11_games/` | + Chip RAM code in the instruction cache (CACR CI/CEI now flush), posted Chip RAM writes, SDRAM bank permutation, pair prefetch, shorter uncached read. 12x and 16x files | **Runs on hardware**, 12x (seed 14) and 16x (seed 1), Kickstart 1.3 and 3.2.3, SD card included. 16x: MemTest 19.97 / 10.39 MB/s (+26% / +25%), games much faster. 12x benchmarks not yet run. Code that DMAs itself into Chip RAM without clearing the cache needs the caches off (see step 11) |
 | `bitstreams/step10_ifetch32/` | + instruction prefetch (the next word after an instruction read from SDRAM) and 32-bit instruction-stream pairs (32-bit immediates and absolute-long addresses in one CPU step). 12x and 16x files | **Known good on hardware**, 12x and 16x, SD card included: 9691 / 12936 Dhrystones (12x / 16x, +5% on step 9), caches off 4918 / 5982 (+17% / +15%). Caches-off MemTest 5-7% lower |
 | `bitstreams/exp16x_seed9/` (branch `exp-16x-clock` only) | **Experimental, overclocked**: for a board whose ICS570B is rewired to x16 (113.5 MHz). Correct Amiga-side timing (bus cycles, E/CIA), SDRAM CL3, SD clock in spec. See *16x clock* | **Works on Glen's x16 board** (`_fast` file), Ripple IDE ROM included: 12311 Dhrystones, MemTest 15.81 MB/s. Not timing-signed (needs the chip ~36% faster than the worst-case model) |
 | `bitstreams/step9_sdram32r/` | + 32-bit SDRAM reads: an aligned longword read that misses the caches is one SDRAM request (two READ commands back to back) and one CPU step | **Latest. Known good on hardware**, SD card included: MemTest 12.20 MB/s (+12% on step 8), xSysInfo fast RAM 23.31 MB/s (+42%); SysInfo Dhrystones unchanged (9221). `full` only |
@@ -381,7 +383,38 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   "by DMA" (the test bench rewrites the word behind the CPU: the old code
   must still run, and the new one after CACR CI), and check that posted
   writes land in program order (at least 10 must be posted).
-  Hardware results: not yet run.
+
+  **The first step 11 files did not boot** (a yellow screen with
+  Kickstart 3.2.3, a reset loop or a green Chip RAM error with 1.3;
+  DiagROM ran). Test builds with each change switched off found posted
+  writes to blame (`POST_CHIP=0` booted both ROMs). When the CPU's data
+  strobe for a write arrived on the very clock the bridge asserted AS on
+  the motherboard, the bridge's data-enable register was loaded from the
+  old AS value and the posted-write sequencer then skipped its own "AS
+  down, data out" step, so the write went to Chip RAM with the data bus
+  undriven. In the simulation the CPU's cycles never started at that
+  phase of the 7M clock; on the Amiga, cached code and DMA shift it all
+  the time. The data bus is now driven whenever a posted write's AS is
+  down. The test bench gained random wait states, a check that the data
+  bus is driven whenever Chip RAM latches a write, and a loop of fast RAM
+  reads and Chip RAM writes that starts writes at every phase; it
+  reproduces the bug on the old bridge. The switches used to find it stay
+  in the source: `POST_CHIP` (top level), `CHIP_IC`, `CACR_CLR`, `RD11`
+  (`tg68_bus.v`) and `BANK_XOR` (`fastmem_zii.v`), all on by default.
+
+  On the A500+ at 16x (step 10 at 16x → step 11):
+
+  | | Caches on | Caches off |
+  | --- | --- | --- |
+  | SysInfo Dhrystones | 12936 → 12784 | 5982 → 5992 |
+  | AIBB MemTest | 15.91 → 19.97 MB/s (+26%) | 8.28 → 10.39 MB/s (+25%) |
+  | xSysInfo Dhrystones | 21233 → 22042 (+4%) | 10318 → 12023 (+17%) |
+  | xSysInfo fast RAM | 29.19 → 29.19 MB/s | 25.98 → 26.21 MB/s |
+
+  The benchmarks run from fast RAM and the caches, so they show the SDRAM
+  changes (MemTest +25%) but not the Chip RAM ones; the games do: Glen
+  reports Frontier and Gloom running much better, close to a 50 MHz
+  68030. SD card 2.2 MB/s. Kickstart 1.3 and 3.2.3 boot at 12x and 16x.
 * **MapROM.** The board's boot ROM (`turbomem.mem`, built with
   `DIAG_MAPROM=1`) copies Kickstart into the SDRAM shadow at every boot,
   verifies it and switches over, so it is normally already on. Both caches
@@ -591,11 +624,20 @@ pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
 
 Step 11 (games: Chip RAM code cached, posted Chip RAM writes, faster
-uncached reads) builds as supplied (not yet run on hardware):
+uncached reads) builds as supplied (runs on hardware, 12x and 16x):
 
 | Build | Seed | Worst 1T slack | Worst multicycle slack |
 | --- | --- | --- | --- |
-| full | 1 | +0.20 ns | +1.40 ns |
+| full | 14 | +0.06 ns | +1.78 ns |
+
+That is the build with the posted-write fix; seed 14 was the only one of
+seeds 1-15 to pass, the others missing by 0.5-2 ns on a different class
+each time. **A near miss is not good enough on hardware:** seed 1 of the
+same design missed by 0.51 ns and failed on the A500+ at 12x (Kickstart
+1.3 reached the boot screen, then a green screen; 3.2.3 a red one),
+while seed 14 boots both. The 16x file is seed 1 of the fixed design
+(1.36× the worst-case model; it runs on Glen's board). What follows is the
+history of the first (broken) step 11 build:
 
 It took four rounds of seeds 1-4. The first two failed in nextpnr's
 packer: the posted-write logic read `rt_a`, a pin register with
@@ -608,10 +650,9 @@ without the SDRAM ack in its enable, the posted-write sequencer uses
 `tick_rq` (the 7M rising tick as a register, asserted equal in the test
 bench), and the adapter has its own copy of `k_clkena` (`k_step`), so
 `k_clkena` drives only the kernel. With those, seed 1 passes; seeds 2-4
-miss by 0.5-1.9 ns, the usual spread (README "how close to the edge").
-The 16x file (`--x16`, seed 1, best of seeds 1-8) needs the chip 1.34×
-faster than the worst-case model: between step 10's 1.31× and the 1.36×
-of the first 16x build that works on Glen's board.
+miss by 0.5-1.9 ns, the usual spread (see "how close to the edge" below).
+The first build's 16x file (`--x16`, seed 1, best of seeds 1-8) needed
+the chip 1.34× faster than the worst-case model.
 The checker classes the new direct-read registers `k_din_dw`/`k_din_dsel`
 as logic (1T): as read-data latches they would have had a 2T budget they
 don't have.

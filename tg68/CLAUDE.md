@@ -258,7 +258,7 @@ that gives the "_fast" files.
   with DP32=7 (long_cand now waits for addr[1:0]). Possible follow-up: a
   separate instruction prefetch buffer that chains (each hit issues the
   next prefetch), since a data read in between replaces the shared buffer.
-- **Games (step 11, not yet on hardware):** Glen saw Frontier and Gloom
+- **Games (step 11, runs on hardware at 12x seed 14 and 16x seed 1):** Glen saw Frontier and Gloom
   run the same with caches on and off. Frontier's executable has a 157 KB
   CODE hunk with the CHIP flag: its code runs from Chip RAM, ~60 clocks
   per instruction word, never cached. Changes:
@@ -284,6 +284,16 @@ that gives the "_fast" files.
     clear of the stale ack is backed up by the adapter's `ack_idle` (a
     mutant without it passes). `k_step` (keep) is the adapter's copy of
     k_clkena, so k_clkena drives only the kernel (tb-asserted equal).
+    The bug found on hardware: a write whose core DS appears on the AS
+    tick (normal branch asserts AS that clock, rt_d_oe <= ~old rt_as_n =
+    0) went out undriven, because the sequencer's AS step (which sets
+    rt_d_oe) is skipped once AS is down. Fix: the post sets `rt_d_oe <=
+    ~rt_as_n | tick_r`, and the rp_pend branch drives it whenever AS is
+    down. tb_top: Gary wait-state jitter (not MEMBENCH), a data-drive
+    check at every Chip RAM write latch, and phase sweeps at 0x81C4/0x81C8
+    (the 81C8 one, fast RAM reads between writes, catches the old bug).
+    Switches kept for bisecting: POST_CHIP, CHIP_IC, CACR_CLR, RD11,
+    BANK_XOR (all 1).
   - SDRAM bank = word bits [10:9] ^ [12:11] ^ [14:13] (fastmem_zii.v,
     `TG68:`): code and data 4-32 KB apart no longer share a bank.
   - Pair prefetch: an aligned 16-bit fast RAM read miss is a pair read
@@ -356,7 +366,7 @@ that gives the "_fast" files.
 | step 9 (32-bit SDRAM reads, `full`) | 9221 / 4202 | 12.20 / 6.97 |
 | step 10 (instruction prefetch + pairs, `full`) | 9691 / 4918 | 12.28 / 6.60 |
 | step 10 at 16x (board mod) | 12936 / 5982 | 15.91 / 8.28 |
-| step 11 at 16x (D: race fix, seed 1) | 12784 / 5992 | 19.97 / 10.39 |
+| step 11 at 16x (race fix, seed 1) | 12784 / 5992 | 19.97 / 10.39 |
 
 - AIBB MemTest did not move from step 6 to step 7 (pairs only come from
   cache hits; MemTest's reads miss and its writes are 16-bit). Step 8's
@@ -377,8 +387,11 @@ that gives the "_fast" files.
   code. Fixed (D). 16x D boots 1.3 and 3.2.3: SysInfo 12784 / 5992,
   AIBB 19.97 / 10.39 MB/s (+26% / +25% on step 10), xSysInfo 22042 /
   12023, fast RAM 29.19 / 26.21, SD 2.2 MB/s. 12x D (seed 1, -0.51 ns)
-  reached further but failed (1.3 green after the white screen, 3.2.3
-  red): asked Glen whether it ran at a real 12x clock.
+  reached further but failed at a real 12x clock (1.3 green after the
+  white screen, 3.2.3 red); 12x seed 14 (the only timing PASS of seeds
+  1-15, +0.06 / +1.78 ns) boots both. Lesson: a 0.5 ns miss can fail on
+  hardware; ship only timing-PASS 12x builds. step11_games now holds 12x
+  seed 14 and 16x seed 1 of the fixed design. 12x benchmarks not yet run.
   Games on 16x D (Glen): run a lot better, close to a 50 MHz 68030 but
   still a little behind.
 - SD card (sfsd.device 2.4): 2.18 MB/s in SysInfo on steps 4 to 9
