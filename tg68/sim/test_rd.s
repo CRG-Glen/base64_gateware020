@@ -5,6 +5,9 @@
         .long start
         .org 0x100
 start:  moveq   #1,%d0
+        .ifdef NOCACHE
+        moveq   #0,%d0              | bench readoff: caches off
+        .endif
         movec   %d0,%cacr
         lea     0x08000000,%a0
         move.w  #255,%d0

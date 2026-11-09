@@ -15,7 +15,7 @@ AS="m68k-linux-gnu-as -m68020"; LD="m68k-linux-gnu-ld -Ttext=0"; OC="m68k-linux-
 mem() { python3 -I -c "
 d=open('$1','rb').read(); d+=bytes(8192-len(d))
 open('$2','w').write('\n'.join('%02x%02x'%(d[i],d[i+1]) for i in range(0,8192,2))+'\n')"; }
-VL="verilator --binary --timing -Wno-fatal -Wno-lint -Wno-style -O2 --top-module tb"
+VL="verilator --binary --timing -Wno-fatal -Wno-lint -Wno-style -O2 --top-module tb $VLFLAGS"
 SLAVES="$R/base64_fx68k/autoconfig_zii.v $R/base64_fx68k/fastmem_zii.v $R/base64_fx68k/turbomem_zii.v \
  $R/base64_fx68k/sd_subsystem.v $R/base64_fx68k/sdcard.v $R/base64_fx68k/sdram_ctrl.v $R/base64_fx68k/fifo.v \
  $R/base64_fx68k/shifter.v $R/base64_fx68k/rx_cpu_buf.v $R/base64_fx68k/tx_cpu_buf.v"
@@ -38,8 +38,13 @@ bench)
   case "${2:-copy}" in
     copy) SRC=test_mem.s; D=-DBENCH_COPY ;; read) SRC=test_rd.s; D= ;; scatter) SRC=test_rnd.s; D= ;;
     sd) SRC=test_sd.s; D=-DSDTEST ;;
+    # the read loop with the caches off: every instruction fetch and data
+    # read goes to the SDRAM (step 10: instruction prefetch)
+    readoff) SRC=test_rd.s; D=; ASD="--defsym NOCACHE=1" ;;
+    # a loop in chip RAM writing chip RAM (step 11: chip code cache, posted writes)
+    chip) SRC=test_chip.s; D=-DBENCH_CHIP ;;
   esac
-  $AS -o tm.o $SRC && $LD -o tm.elf tm.o 2>/dev/null && $OC tm.elf tm.bin && mem tm.bin rom_mem.mem
+  $AS $ASD -o tm.o $SRC && $LD -o tm.elf tm.o 2>/dev/null && $OC tm.elf tm.bin && mem tm.bin rom_mem.mem
   $VL -DFASTMEM -DMEMBENCH $D tb_top.sv sdram_model_checked.v $R/base64_tg68/base64_tg68_top.sv $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v $SLAVES -o tb_bench > build_bench.log 2>&1
   ./obj_dir/tb_bench | grep -v "^per cycle\|^AS->DTACK" ;;
 esac

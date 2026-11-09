@@ -92,7 +92,13 @@ module base64_tg68_top #(
     //   6 -> 2 master clocks/CPU clock (42.6 MHz)  <-- target
     //   4 -> 3, 3 -> 4, 2 -> 6, 1 -> 12 (bit-identical to the old build)
     // See DESIGN_NOTES: only CPU_MULT<=3 relaxes the fx68k Fmax requirement.
+`ifdef TG68_X16
+    // TG68: 16x build (see CLK_MULT below). Unused by the TG68 core (fx68k's
+    // phase enables); 8 keeps MC4 = CLK_MULT / CPU_MULT whole.
+    parameter integer CPU_MULT   = 8,
+`else
     parameter integer CPU_MULT   = 6,
+`endif
 
     // ---- 7M grid alignment ----------------------------------------------
     // Larger PHASE_OFS moves our S-state grid EARLIER relative to the real
@@ -168,6 +174,12 @@ module base64_tg68_top #(
     // RETIME: 0 = bridge (re-synthesised S0..S7), 1 = SF2000-style
     // pass-through with the core's strobes gated onto the 7M grid.
     parameter         RETIME     = 1'b1,
+    // TG68: POSTED CHIP WRITES (step 11). 1 = a CPU write to chip RAM
+    // ($000000-$1FFFFF) is acknowledged as soon as it is on the motherboard
+    // bus; the bridge finishes it while the CPU carries on, and holds the
+    // CPU's next motherboard cycle until it is done (so order is kept).
+    // Custom chip and CIA registers are never posted. RETIME=1 only.
+    parameter         POST_CHIP  = 1'b1,
     parameter         EARLY_ACK  = 1'b0,
     parameter         DBG_BUNDLE = 1'b0,   // debug done -- keep 0 now
 
@@ -283,7 +295,23 @@ module base64_tg68_top #(
     // DESIGN_NOTES_6x.md before raising it: doubling the master clock does
     // NOT buy fx68k any settling time, it only makes STA harder. The real
     // lever is the multicycle constraints in base64_6x.fdc.
+`ifdef TG68_X16
+    // TG68: EXPERIMENTAL 16x build (build.py --x16 defines TG68_X16), for a
+    // board whose ICS570B is rewired from x12 to x16: 113.50 MHz. A 12x
+    // bitstream on such a board runs this bridge's 7M grid at 9.46 MHz (bus
+    // cycles 25% short and mostly off phase, E and so the CIA timers 33%
+    // fast). Everything 16x-specific is under TG68_X16, so the 12x build is
+    // the same text for yosys and stays bit-identical (even dead code or a
+    // default-valued parameter moves yosys's names and nextpnr's placement).
+    // At 16x: PHASE_OFS stays 2 (it mostly cancels the 7M capture pipeline,
+    // ~3 master clocks at any rate; 3 put our AS edges on the 7M edge and
+    // the simulated Gary missed AS negations), DTACK_LAT/ACK_LEAD are only
+    // used by the RETIME=0 bridge, the address/data hold after AS is 2
+    // clocks, the SDRAM runs CL3 and the SD clock's low half is stretched.
+    localparam integer CLK_MULT = 16;
+`else
     localparam integer CLK_MULT = 12;
+`endif
     localparam [4:0] PH_TOP = CLK_MULT[4:0] - 5'd1;      // counter wrap
     localparam [4:0] PH_HALF= CLK_MULT[4:0] / 5'd2;      // "falling edge"
     localparam [4:0] MC4    = CLK_MULT[4:0] / CPU_MULT;      // 2,3,4,6,12
@@ -475,6 +503,14 @@ module base64_tg68_top #(
 
     // The two 7M half-clock ticks, and the early tick used to lead the ack.
     wire tick_r   = (ph == 5'd0);      // "rising edge of 7M"  -> S0,S2,S4,S6
+    // TG68: tick_rq = tick_r as a register (ph's next value is 0: it wraps
+    // and no 7M edge re-acquires it; PHASE_OFS is never 0). The posted-write
+    // sequencer (POST_CHIP) uses it, so the pin registers it loads (address,
+    // FC, R/W, strobes) don't wait on the 5-bit phase compare: that path
+    // failed 1T by 0.5 ns. The top tb asserts tick_rq == tick_r every clock.
+    reg  tick_rq  = 1'b1;               // ph starts at 0
+    always @(posedge clk)
+        tick_rq <= (ph == PH_TOP) && !(edge_7m && (!ph_locked || slip_cnt == SLIP_TOL[1:0]));
     wire tick_f   = (ph == PH_HALF);      // "falling edge of 7M" -> S1,S3,S5,S7
     wire tick_ack = (ph == PH_ACK);    // tick_f minus ACK_LEAD master clocks
 
@@ -670,7 +706,11 @@ module base64_tg68_top #(
     //
     // `make cfgdump` prints them. Log a few dozen cold starts and the delay
     // question answers itself with numbers instead of blink-counting.
+`ifdef TG68_X16
+    localparam [16:0] MS_TOP = 17'd113500;   // TG68: 1 ms at 113.50 MHz
+`else
     localparam [16:0] MS_TOP = 17'd85129;    // 1 ms at 85.13 MHz
+`endif
 
     reg [16:0] ms_div  = 17'd0;
     reg [15:0] ms_cnt  = 16'd0;
@@ -781,7 +821,8 @@ module base64_tg68_top #(
         .FC0      (core_fc0),
         .DTACKn   (core_dtack_n),
         .BERRn    (core_berr_n),
-        .BRn      (s_br_n[1]),
+        // TG68: no bus grant while a posted chip write is still on the bus
+        .BRn      (s_br_n[1] | rp_pend),
         .BGn      (core_bg_n),
         .BGACKn   (s_bgack_n[1]),
         .IPL2n    (ipl_out[2]),
@@ -1276,12 +1317,73 @@ module base64_tg68_top #(
     reg [1:0]  rt_vst   = 2'd0;
     reg        core_as_d2 = 1'b1;
     always @(posedge clk) core_as_d2 <= core_as_n;
+    // TG68: posted chip writes (POST_CHIP). As soon as the CPU presents a
+    // write to chip RAM (address in rt_a, data in rt_d, a data strobe down)
+    // it is acknowledged, and the bridge runs the motherboard cycle itself:
+    // AS at the next tick_r, the data strobes at the one after (a 68000's
+    // S4), the end at the tick_f after a DTACK seen at a later tick_r than
+    // the strobes (so they stay down >= 1.5 half-periods, as a 68000's),
+    // then address, R/W and data held to the next tick_r.
+    //   rp_pend: the bridge owns a write the CPU has been acked for
+    //   rp_ds:   its data strobes are on the bus
+    //   rp_term: its DTACK was seen;  rp_hold: AS/DS up, holding
+    reg        rp_pend = 1'b0, rp_term = 1'b0, rp_hold = 1'b0, rp_ds = 1'b0;
+    reg        rp_uds = 1'b1, rp_lds = 1'b1;
+    // rt_chip: rt_a is in chip RAM $000000-$1FFFFF. Its own register, loaded
+    // with rt_a: rt_a has syn_useioff, and an I/O register cannot also be
+    // read inside the FPGA (packing fails).
+    reg        rt_chip = 1'b1;
+`ifdef TG68_X16
+    // TG68: at 16x one master clock is 8.81 ns, so the address/data hold
+    // past AS negation below takes two (17.6 ns; 11.75 ns at 12x with one)
+    reg        core_as_d3 = 1'b1;
+    always @(posedge clk) core_as_d3 <= core_as_d2;
+    wire       rt_hold_done = core_as_d3;
+`else
+    wire       rt_hold_done = core_as_d2;
+`endif
 
     always @(posedge clk) begin
         if (ext_reset) begin
             rt_as_n <= 1'b1; rt_uds_n <= 1'b1; rt_lds_n <= 1'b1;
             rt_vma_n <= 1'b1; rt_dtack_lo <= 1'b0; rt_d_oe <= 1'b0;
             rt_vst <= 2'd0; rt_av <= 1'b0;
+            rp_pend <= 1'b0; rp_term <= 1'b0; rp_hold <= 1'b0; rp_ds <= 1'b0;
+        end else if (rp_pend) begin
+            // TG68: posted chip write. The CPU has its ack; drop it once the
+            // CPU ends its cycle, so its next cycle never sees a stale one,
+            // and ignore that next cycle until this one is done.
+            if (core_as_n) rt_dtack_lo <= 1'b0;
+            // the data bus is driven whenever this write's AS is down
+            if (!rt_as_n) rt_d_oe <= 1'b1;
+            if (tick_rq && !rp_term && !rp_hold) begin
+                if (rt_as_n) begin                  // S2: AS down, data out
+                    rt_as_n <= 1'b0;
+                    rt_d_oe <= 1'b1;
+                end else if (!rp_ds) begin          // S4: data strobes down
+                    rt_uds_n <= rp_uds;
+                    rt_lds_n <= rp_lds;
+                    rp_ds    <= 1'b1;
+                end else if (s_berr_n[1] && !s_dtack_n[1])
+                    rp_term  <= 1'b1;               // the slave has it
+            end
+            if (rp_term && tick_f) begin            // end it, as a 68000's S7
+                rt_as_n  <= 1'b1;
+                rt_uds_n <= 1'b1;
+                rt_lds_n <= 1'b1;
+                rp_term  <= 1'b0;
+                rp_hold  <= 1'b1;
+            end
+            if (rp_hold && tick_rq) begin            // address/data held to here
+                rp_hold  <= 1'b0;
+                rp_pend  <= 1'b0;
+                rp_ds    <= 1'b0;
+                rt_rw    <= 1'b1;
+                rt_d_oe  <= 1'b0;
+                rt_a     <= core_a[23:1];           // the CPU's next cycle
+                rt_chip  <= (core_a[23:21] == 3'b000);
+                rt_fc    <= core_fc;
+            end
         end else if (core_as_n) begin
             rt_as_n     <= 1'b1;
             rt_uds_n    <= 1'b1;
@@ -1296,8 +1398,9 @@ module base64_tg68_top #(
             // past AS negation. A 68000 keeps R/W and data valid after AS
             // goes high, and the slave latches a write ON the AS rising
             // edge -- drop them on the same edge and the write is lost.
-            if (core_as_d2) begin
+            if (rt_hold_done) begin
                 rt_a    <= core_a[23:1];
+                rt_chip <= (core_a[23:21] == 3'b000);
                 rt_fc   <= core_fc;
                 rt_rw   <= 1'b1;
                 rt_d_oe <= 1'b0;
@@ -1328,6 +1431,26 @@ module base64_tg68_top #(
             if (core_rw && !rt_as_n &&
                 (s_vpa_n[1] ? 1'b1 : (!rt_vma_n && e_pin)))
                 rt_rd <= cpu_d;
+            // TG68: a write to chip RAM, fully presented by the CPU (a data
+            // strobe down; rt_a and rt_d hold address and data), is acked
+            // now and run by the bridge (POST_CHIP, above). Not a 6800
+            // cycle or one already acked; never an on-chip slave.
+            if (POST_CHIP && !core_rw && rt_chip && !int_win_r && rt_vst == 2'd0
+                && (!core_uds_n || !core_lds_n) && !rt_dtack_lo) begin
+                rt_dtack_lo <= 1'b1;
+                rp_pend     <= 1'b1;
+                rp_uds      <= core_uds_n;
+                rp_lds      <= core_lds_n;
+                rt_rw       <= 1'b0;
+                rt_d        <= core_dout;
+                // drive the data bus now if AS is (or is going) down: when
+                // this clock is also the AS tick above, rt_d_oe was just
+                // loaded from the old rt_as_n (1), and the sequencer below
+                // only enables the data with its own AS step, which it then
+                // skips: the write went out with the data bus undriven.
+                rt_d_oe     <= ~rt_as_n | tick_r;
+                rp_ds       <= 1'b0;
+            end
             if (tick_r && !rt_as_n && s_berr_n[1]) begin
                 if (!s_dtack_n[1])
                     rt_dtack_lo <= 1'b1;
@@ -1668,6 +1791,12 @@ module base64_tg68_top #(
     // DAT0 -> MISO, DAT3 -> CS. DAT1/DAT2 are unused in SPI mode and left
     // released. The slot has no card-detect line, so CD_n is tied asserted.
     sd_subsystem #(
+`ifdef TG68_X16
+        // TG68: at 16x the fastest SCLK settings would exceed SD's limits
+        // (56.8 / 28.4 MHz); one extra clock low gives 37.8 / 22.7 MHz
+        // (see shifter.v)
+        .SD_LO_EXTRA(1),
+`endif
         .ROM_INIT_FILE("sfsd.mem")
     ) u_sd (
         .clk          (clk),
@@ -1707,7 +1836,17 @@ module base64_tg68_top #(
     // TG68: the SDRAM controller only exists with fast RAM. Without it the
     // chip is held deselected with its clock disabled.
     generate if (ENABLE_FASTMEM) begin : g_sdram
+`ifdef TG68_X16
+    // TG68: at 16x (8.81 ns) the IS42S16160 (-7) needs CL3: CL2 wants
+    // tCK >= 10 ns. The other counts stay: the controller adds 1-2 clocks of
+    // state overhead to each, so at 113.5 MHz they give tRCD 4 clocks
+    // (35 ns, needs 20), tRP 3 (26 ns, 20), tRAS 6 (53 ns, 45) and tRFC 8
+    // (70 ns, 65); the fastmem bench's SDRAM model, which checks these in
+    // ns, reports no violation at 16x. CLK_HZ sets the init wait.
+    sdram_ctrl #(.CLK_HZ(113_500_000), .CAS_LAT(3)) u_sdram (
+`else
     sdram_ctrl #(.CLK_HZ(85_130_000), .CAS_LAT(2)) u_sdram (
+`endif
         .clk (clk), .reset (slave_reset),
         .req (sd_req), .we (sd_we), .wr_valid (sd_wr_valid),
         .addr (sd_saddr), .wdata (sd_wdata), .byte_en (sd_byte_en),

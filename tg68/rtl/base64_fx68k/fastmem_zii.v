@@ -38,7 +38,8 @@ module fastmem_zii #(
     // adapter's direct path, which also carries MapROM); the AS/DS bus slave
     // for RAM is removed, and with it its single-cycle DS -> SDRAM paths.
     // Autoconfig is unaffected.
-    parameter        BUS_RAM     = 1'b1
+    parameter        BUS_RAM     = 1'b1,
+    parameter        BANK_XOR    = 1'b1     // TG68: step 11 bank permutation (0: as step 10)
 )(
     input  wire        clk,
     input  wire        reset,        // active high (~s_reset_n | ~pwrup_done)
@@ -457,9 +458,22 @@ wire        s_mre   = (sa[23:19] == 5'b11100);
 wire        s_mrwin = (sa[31:24] == 8'h00) && (s_mrb || s_mre);
 wire        s_cpuw  = CPUSPACE_EN && (sa[31:24] == 8'h08);
 wire [3:0]  s_dense = popcount_below(addr_match, s_slot);
-wire [23:0] s_word  = s_mrwin ? {5'b01000, s_mre, sa[18:1]}
+wire [23:0] s_word0 = s_mrwin ? {5'b01000, s_mre, sa[18:1]}
                     : s_cpuw  ? {1'b1, sa[23:1]}
                               : {1'b0, s_dense, sa[19:1]};
+// TG68: BANK PERMUTATION (step 11). The controller takes the SDRAM bank from
+// word-address bits [10:9], so blocks a multiple of 4 KB apart (code and its
+// data, two buffers) share a bank, and alternating between them closed and
+// reopened a row every time (~5 clocks per access). The bank is now those
+// bits XOR two groups of row bits (word bits [12:11] and [14:13], the same
+// address bits in all three mappings above), so blocks 4-32 KB apart land
+// in different banks. Row and column are unchanged and the map is one to
+// one; a prefetch or pair only changes column bits, so it stays put.
+// Taken from sa itself (word bits [14:9] are sa[15:10] in every mapping),
+// so the bank is one LUT from the address and never waits on the slot
+// decode (fm_cfg_match -> s_dense failed 1T by 0.5 ns through s_word0).
+wire [1:0]  s_bank  = BANK_XOR ? (sa[11:10] ^ sa[13:12] ^ sa[15:14]) : s_word0[10:9];
+wire [23:0] s_word  = {s_word0[23:11], s_bank, s_word0[8:0]};
 always @(posedge clk)
     if (!dp_hold)
         saddr_r <= dp_inc ? {s_word[23:9], s_word[8:0] + 9'd1} : s_word;

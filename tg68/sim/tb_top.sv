@@ -5,14 +5,24 @@
 //   ROM $000000-$001FFF (overlay), RAM $008000-$009FFF, CIA reads $A5
 `timescale 1ns/1ps
 module tb;
+    // -DTG68_X16 (VLFLAGS=-DTG68_X16 sh sim/run.sh ...): the 16x build,
+    // 113.5 MHz and clk_7m = /16, the SDRAM model at CL3 (the RTL takes its
+    // 16x settings from the same define)
+`ifdef TG68_X16
+    localparam integer CM = 16;
+    reg clk12 = 0;
+    always #4.405 clk12 = ~clk12;
+`else
+    localparam integer CM = 12;
     reg clk12 = 0;
     always #5.873 clk12 = ~clk12;
+`endif
     reg [3:0] div = 0;
     reg clk7 = 0;
     always @(posedge clk12) begin
-        div <= (div == 11) ? 0 : div + 1;
-        if (div == 0)  clk7 <= 1;
-        if (div == 6)  clk7 <= 0;
+        div <= (div == CM - 1) ? 0 : div + 1;
+        if (div == 0)      clk7 <= 1;
+        if (div == CM / 2) clk7 <= 0;
     end
 
     wire [23:1] a;
@@ -64,7 +74,7 @@ module tb;
     wire [12:0] sa; wire [1:0] sba, sdqm; wire [15:0] sdq;
     wire sclk, scke, sras, scas, swe, scs;
 `ifdef FASTMEM
-    sdram_model_checked #(.CAS_LAT(2), .ADDR_BITS(24)) u_sdram (
+    sdram_model_checked #(.CAS_LAT(CM == 16 ? 3 : 2), .ADDR_BITS(24)) u_sdram (
         .clk(sclk), .a(sa), .ba(sba), .dq(sdq), .dqm(sdqm),
         .cke(scke), .cs_n(scs), .ras_n(sras), .cas_n(scas), .we_n(swe));
 `endif
@@ -108,16 +118,21 @@ module tb;
     integer long_hits = 0;               // pair hits (32-bit data path)
     integer wr_pairs = 0;                // pair writes (32-bit SDRAM)
     integer hit_4f00 = 0;                // pair hits at 0x08004F00 (step 9)
+    integer ipair_hit = 0, ipair_rd = 0; // instruction-stream pairs (step 10)
+    integer chip_ihit = 0;               // instruction-cache hits on chip RAM (step 11)
+    integer n_posted = 0; reg rp_d = 0;  // posted chip writes (step 11)
+    always @(posedge dut.clk) begin rp_d <= dut.rp_pend; if (dut.rp_pend && !rp_d) n_posted = n_posted + 1; end
+    reg     hp_f = 0;
     // k_long_ack and k_din_sel feed the kernel and are classed adapter ->
     // kernel (2 clocks) by check_timing.py: neither may change in the clock
     // just before the kernel samples (the clkena clock).
-    integer ks_cyc = 0, ks_chg = -10, ks_bad = 0; reg ks_la = 0, ks_ds = 0, ks_hs = 0;
+    integer ks_cyc = 0, ks_chg = -10, ks_bad = 0; reg ks_la = 0, ks_ds = 0, ks_hs = 0, ks_dd = 0;
     integer rd_pairs = 0;                // pair reads from the SDRAM (step 9)
     integer n_clw = 0;                   // steps with clkena_lw (kernel change 2)
     always @(posedge dut.clk) begin
         ks_cyc = ks_cyc + 1;
-        if (dut.cpu.k_long_ack !== ks_la || dut.cpu.k_din_sel !== ks_ds || dut.cpu.k_din_hsel !== ks_hs) ks_chg = ks_cyc;
-        ks_la = dut.cpu.k_long_ack; ks_ds = dut.cpu.k_din_sel; ks_hs = dut.cpu.k_din_hsel;
+        if (dut.cpu.k_long_ack !== ks_la || dut.cpu.k_din_sel !== ks_ds || dut.cpu.k_din_hsel !== ks_hs || dut.cpu.k_din_dsel !== ks_dd) ks_chg = ks_cyc;
+        ks_la = dut.cpu.k_long_ack; ks_ds = dut.cpu.k_din_sel; ks_hs = dut.cpu.k_din_hsel; ks_dd = dut.cpu.k_din_dsel;
         // The kernel's l1 <= long_ack (Base64 change, was long_ack AND cand)
         // relies on this: long_ack only ever answers an offered pair.
         if (dut.cpu.k_long_ack && !dut.cpu.k_long_cand) begin
@@ -126,6 +141,16 @@ module tb;
         end
         if (dut.cpu.dec_r !== (dut.cpu.q == 4'd1)) begin
             $display("FAIL dec_r out of step with q (q=%0d dec_r=%b)", dut.cpu.q, dut.cpu.dec_r);
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
+        // tick_rq is tick_r as a register (posted chip writes): always equal
+        if (dut.tick_rq !== dut.tick_r) begin
+            $display("FAIL tick_rq %b, tick_r %b", dut.tick_rq, dut.tick_r);
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
+        // k_step is the adapter's copy of k_clkena: always equal
+        if (dut.cpu.k_step !== dut.cpu.k_clkena) begin
+            $display("FAIL k_step %b, k_clkena %b", dut.cpu.k_step, dut.cpu.k_clkena);
             ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
         end
         // Kernel change 2: the registered clkena_lw must equal what the
@@ -156,6 +181,12 @@ module tb;
     endtask
     reg [17:0] pb_s; reg [31:1] pb_k;      // {known hi, known lo, data}
     reg [17:0] shadow [int unsigned];
+    // step 11: the program asks the tb to rewrite its chip RAM routine
+    // behind the CPU, as disk or blitter DMA would (the shadow follows)
+    always @(posedge uds_n) if (!rw && ba == 24'h8F10) begin
+        ram[12'hC00] = 16'h7803;                  // $9800: moveq #3,%d4
+        shadow[31'h4C00] = {2'b11, 16'h7803};
+    end
     reg [3:0]  pb_pq = 0; reg pb_mr = 0;
     always @(posedge dut.clk) begin
         pb_pq <= dut.cpu.q;
@@ -183,17 +214,20 @@ module tb;
         // not a cache hit, k_din_sel low): both words against the shadow.
         if (dut.cpu.k_clkena && dut.cpu.k_long_ack && dut.cpu.eRWn && !dut.cpu.k_din_sel) begin
             rd_pairs = rd_pairs + 1;
+            if (dut.cpu.cyc_fetch) ipair_rd = ipair_rd + 1;
             chk_word(dut.cpu.a_r, dut.cpu.k_din_hmux);
             chk_word(dut.cpu.a_r + 31'd1, dut.cpu.k_dat);
         end
         if (hp_pend && dut.cpu.k_clkena) begin
             hp_pend = 0;
+            if (hp_f && hp_a >= 31'h4000 && hp_a < 31'h5000) chip_ihit = chip_ihit + 1;   // tb RAM $8000-$9FFF
             if (dut.cpu.k_long_ack !== hp_long) begin
                 $display("FAIL cache hit at %h: long_ack %b, expected %b", {hp_a, 1'b0}, dut.cpu.k_long_ack, hp_long);
                 hit_bad = hit_bad + 1;
             end
             if (hp_long) begin
                 long_hits = long_hits + 1;
+                if (hp_f) ipair_hit = ipair_hit + 1;
                 // step 9: the re-read at 0x08004F00 (test_top.s) must be a
                 // pair hit, i.e. the pair read filled the second word too
                 if (hp_a == 31'h04002780) hit_4f00 = hit_4f00 + 1;
@@ -203,22 +237,31 @@ module tb;
                 chk_word(hp_a, dut.cpu.k_dat);
         end
         if (dut.cpu.q == 4'd8 && (dut.cpu.cc_long || dut.cpu.cc_hit)) begin
-            hp_pend = 1; hp_long = dut.cpu.cc_long; hp_a = dut.cpu.a_r;
+            hp_pend = 1; hp_long = dut.cpu.cc_long; hp_a = dut.cpu.a_r; hp_f = dut.cpu.cyc_fetch;
         end
     end
     always @(negedge as_n) if (ba[23:19] == 5'b11111) romf = romf + 1;
     reg [2:0] w = 0;
     reg       busy = 0;
+    // Random wait states (0-2 7M clocks per cycle), as DMA contention gives
+    // a real Gary, so CPU cycles land at every phase of the 7M grid (a fixed
+    // DTACK let the step 11 posted-write data-enable race hide). Not in the
+    // throughput benches, which need fixed timing.
+    reg [2:0] xw = 0;
+    integer   jit_seed = 1;
     always @(posedge clk7) begin
         if (as_n) begin
             dtack_n <= 1; vpa_n <= 1; mb_drive <= 0; busy <= 0; w <= 0;
         end else if (!busy) begin
             busy <= 1; cycles = cycles + 1; w <= 0;
+`ifndef MEMBENCH
+            xw <= $unsigned($random(jit_seed)) % 3;
+`endif
             if (fc == 3'b111) begin vpa_n <= 0; iacks = iacks + 1; end
             else if (ba[23:16] == 8'hBF) begin vpa_n <= 0; cia = cia + 1; end
         end else if (vpa_n) begin
             w <= w + 1;
-            if (w == 1) begin
+            if (w == 3'd1 + xw) begin
                 if (rw) begin
                     if (ba < 24'h2000 || ba[23:19] == 5'b11111) mb_q <= rom[ba[12:1]];
                     else if (ba >= 24'h8000 && ba < 24'hA000)  mb_q <= ram[ba[12:1]];
@@ -235,6 +278,13 @@ module tb;
         end
     end
     // writes land on the DS rising edge, like Agnus
+    // ...and the CPU side must be driving the data bus when they do
+    integer undriven = 0;
+    always @(posedge uds_n or posedge lds_n)
+        if (!rw && dut.bus_owned && !dut.rt_d_oe) begin   // (AS may rise on the same edge)
+            undriven = undriven + 1;
+            if (undriven <= 5) $display("FAIL: write to %h latched with the data bus not driven", ba);
+        end
     always @(posedge uds_n) if (!rw && ba >= 24'h8000 && ba < 24'hA000) ram[ba[12:1]][15:8] = d[15:8];
     always @(posedge lds_n) if (!rw && ba >= 24'h8000 && ba < 24'hA000) ram[ba[12:1]][7:0]  = d[7:0];
     always @(posedge uds_n) if (!rw && ba == 24'h8F80) ipl_n = 3'b111;
@@ -333,6 +383,8 @@ module tb;
         check(24'h8100, 32'h000000FF, "first copied long");
         check(24'h8104, 32'h00000000, "last copied long");
         check(24'h8108, 32'h00000000, "copy mismatches");
+`elsif BENCH_CHIP
+        check(24'h8100, 32'h000002FD, "last chip long written");
 `else
         check(24'h8100, 32'h00007F80, "sum");
 `endif
@@ -349,7 +401,18 @@ module tb;
         check(24'h8114, 32'h00007777, "TRAP/RTE");
         check(24'h8118, 32'h000000A5, "CIA (VPA/E) read");
         check(24'h811C, 32'hFFFFFFFF, "32-bit null space");
+        check(24'h81B4, 32'h00000001, "chip code: from cache");
+        check(24'h81B8, 32'h00000002, "chip code: CPU write");
+        check(24'h81BC, 32'h00000003, "chip code: CACR CI");
+        $display("instruction-cache hits on chip RAM code: %0d", chip_ihit);
+        if (chip_ihit < 2) begin $display("FAIL: chip RAM code never came from the cache"); errors = errors + 1; end
+        check(24'h81C0, 32'h12341256, "posted writes, order");
+        check(24'h81C4, 32'h00000468, "posted writes, all phases");
+        $display("posted chip writes: %0d", n_posted);
+        if (n_posted < 10) begin $display("FAIL: chip RAM writes were not posted"); errors = errors + 1; end
+        if (undriven > 0) begin $display("FAIL: %0d writes latched with the data bus not driven", undriven); errors = errors + 1; end
 `ifdef FASTMEM
+        check(24'h81C8, 32'h0000005F, "posted writes after fast RAM reads");
         check(24'h8120, 32'h13579BDF, "fast RAM $08000000");
         check(24'h8124, 32'h2468ACE0, "fast RAM $08FFFFFC");
         check(24'h8128, 32'h0000FA57, "code run from fast RAM");
@@ -379,7 +442,7 @@ module tb;
         check(24'h81A8, 32'h91929394, "pair read, miss");
         check(24'h81AC, 32'h91929394, "pair read, then hit");
         check(24'h81B0, 32'h91929394, "pair read, caches off");
-        $display("pair reads from the SDRAM: %0d", rd_pairs);
+        $display("pair reads from the SDRAM: %0d; instruction-stream pairs: %0d from the cache, %0d from the SDRAM", rd_pairs, ipair_hit, ipair_rd);
         if (rd_pairs < 4) begin $display("FAIL: pair reads (32-bit SDRAM) barely used"); errors = errors + 1; end
         if (hit_4f00 < 1) begin $display("FAIL: a pair read did not fill both words of the data cache"); errors = errors + 1; end
         $display("pair writes: %0d; SDRAM model timing violations: %0d", wr_pairs, u_sdram.n_err);

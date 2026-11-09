@@ -23,8 +23,9 @@ MapROM.
 ```
 rtl/base64_tg68/   top level (base64_tg68_top.sv) and the bus adapter tg68_bus.v
 rtl/tg68/          TG68K.C VHDL: m1nl's fork (github.com/m1nl/TG68K.C, a8e6f38,
-                   32-bit data path) with TWO marked changes (l1 <= long_ack;
-                   clkena_lw from the clkena_lw_in port, see README), + the
+                   32-bit data path) with THREE marked changes (l1 <= long_ack;
+                   clkena_lw from the clkena_lw_in port; CACR CI/CEI held
+                   one step, step 11; see README), + the
                    tg68_020.vhd wrapper;
                    tg68_020_b0.v is the GHDL-converted netlist actually built
                    (regenerate: YOSYS=yowasp-yosys sh scripts/gen_tg68.sh, needs
@@ -95,6 +96,13 @@ that gives the "_fast" files.
 5. Changes to rtl/base64_fx68k files are marked `TG68:` with the reason.
 6. Update README.md (status, table, feature text, timing table) along with
    the code.
+7. **Keep both clocks working (Glen's decision after the 16x test).** The
+   16x build needs a board mod (ICS570B rewired to x16), so every change
+   must work in both the 12x and 16x (`TG68_X16`) builds. Run the sims at
+   both (`VLFLAGS=-DTG68_X16` for 16x), sign off 12x with check_timing as
+   usual, score the 16x build at 113.6 MHz (worst delay/budget ratio; it
+   cannot pass the worst-case model), and give Glen test bitstreams for
+   both. Anything clock-dependent goes under `ifdef TG68_X16`.
 
 ## Working in Claude Code
 
@@ -147,7 +155,9 @@ that gives the "_fast" files.
   - Each read prefetches the next word (pf_*, never across a 1 KB boundary).
 - **Caches (steps 2 and 4):** two 8 KB direct-mapped caches, one 16-bit word
   per entry, in block RAM.
-  - Cacheable: fast RAM and Kickstart $F80000-$FFFFFF. Never Chip RAM.
+  - Cacheable: fast RAM and Kickstart $F80000-$FFFFFF; from step 11 the
+    instruction cache also holds Chip RAM code. The data cache never holds
+    Chip RAM.
   - Both share one lookup pipeline: the RAMs read the kernel's address on
     the edge into DECIDE, DECIDE loads the word into k_din_c and the tag
     into ic_qt, CCMP compares (EARLY LOOKUP, step 6).
@@ -235,6 +245,69 @@ that gives the "_fast" files.
   checks at 0x81A8/0x81AC/0x81B0; mutations (2nd column, S_RD_DONE not
   held, select off, wrong word, no fill) all caught. Timing: seed 7
   +0.36 / +1.16 ns; ~1 seed in 8 passes, as step 8 (README "Timing").
+- **Instruction prefetch and instruction-stream pairs (step 10, known good
+  on hardware, 12x and 16x):** after an instruction read the DDATA prefetch runs for
+  fetches too (`pf_ic` = the buffered word is an instruction word: pf_fill
+  then writes the instruction cache, `pf_dc` holds its fill conditions);
+  k_pf_hit takes fetches (`!k_bs[0]`). Core regenerated with DP32=7
+  (wrapper and gen_tg68.sh default 7; `DP32=1` for data only): 32-bit
+  immediates and abs.L addresses as pairs. The adapter needed nothing for
+  them: the cache-hit pair logic and step 9's pair read are kind-agnostic,
+  and the prefetch change gave the fetch pair's second word its icache
+  fill. Tests: `ipair_hit`/`ipair_rd` counters (fn32 in test_top.s gives 2
+  of each), `bench readoff` (caches off). Gains in sim are small (readoff
+  +7%); hardware will tell for Dhrystone-type code. Timing: 1 seed in 16
+  passed (seed 14: +0.31 / +0.50 ns); kernel -> logic is 1.3-2 ns worse
+  with DP32=7 (long_cand now waits for addr[1:0]). Possible follow-up: a
+  separate instruction prefetch buffer that chains (each hit issues the
+  next prefetch), since a data read in between replaces the shared buffer.
+- **Games (step 11, known good on hardware at 12x seed 14 and 16x seed 1; released as v1.4 with step 10):** Glen saw Frontier and Gloom
+  run the same with caches on and off. Frontier's executable has a 157 KB
+  CODE hunk with the CHIP flag: its code runs from Chip RAM, ~60 clocks
+  per instruction word, never cached. Changes:
+  - The icache also holds Chip RAM code (`ic_chip`, `ic_okf` = window for
+    the LATCH fill/invalidate; `ic_ok_d` includes addr[31:21]==0). DMA
+    writes are invisible, so CACR CI/CEI now flush both caches
+    (`flush_trig`). Kernel change 3: CACR bits 2-3 stay set for one
+    clkena step after the MOVEC (`elsif clkena_in='1' then CACR(3 downto
+    2) <= "00"`), so the adapter sees them; they read back 0. Same
+    behaviour as a real 68020 (A1200): old trackloaders that DMA code and
+    jump without CacheClearU need caches off. Data cache: still no chip.
+  - Posted Chip RAM writes in the top level's RETIME bridge (`POST_CHIP`,
+    `rp_pend/rp_ds/rp_term/rp_hold`): a chip RAM write ($000000-$1FFFFF
+    only, never custom/CIA registers: interrupt-clear ordering) gets
+    `rt_dtack_lo` at once and the bridge runs AS/DS/DTACK on the 7M grid
+    itself; the next core cycle waits; BRn is held off while posting.
+    `rt_chip` is its own register loaded with rt_a (rt_a is syn_useioff:
+    reading it inside the FPGA failed packing). The sequencer uses
+    `tick_rq`, tick_r as a register (tb-asserted equal), so the pin
+    registers' enables skip the phase compare (failed 1T by 0.5 ns).
+    Pin registers in one I/O block must share CE/LSR nets: loading rt_a/
+    rt_fc a clock later than rt_rw (tried) failed packing. The bridge's
+    clear of the stale ack is backed up by the adapter's `ack_idle` (a
+    mutant without it passes). `k_step` (keep) is the adapter's copy of
+    k_clkena, so k_clkena drives only the kernel (tb-asserted equal).
+    The bug found on hardware: a write whose core DS appears on the AS
+    tick (normal branch asserts AS that clock, rt_d_oe <= ~old rt_as_n =
+    0) went out undriven, because the sequencer's AS step (which sets
+    rt_d_oe) is skipped once AS is down. Fix: the post sets `rt_d_oe <=
+    ~rt_as_n | tick_r`, and the rp_pend branch drives it whenever AS is
+    down. tb_top: Gary wait-state jitter (not MEMBENCH), a data-drive
+    check at every Chip RAM write latch, and phase sweeps at 0x81C4/0x81C8
+    (the 81C8 one, fast RAM reads between writes, catches the old bug).
+    Switches kept for bisecting: POST_CHIP, CHIP_IC, CACR_CLR, RD11,
+    BANK_XOR (all 1).
+  - SDRAM bank = word bits [10:9] ^ [12:11] ^ [14:13] (fastmem_zii.v,
+    `TG68:`): code and data 4-32 KB apart no longer share a bank.
+  - Pair prefetch: an aligned 16-bit fast RAM read miss is a pair read
+    (`rp_al`), word 2 -> prefetch buffer (`pf_fill_d`), no second request.
+  - Shorter direct read: `k_din_dw`/`k_din_dsel` (word straight from
+    dp_rdata at DWAIT), DDATA steps the kernel itself. check_timing class
+    'O' (1T) for those endpoints (KDW rule), not 'D'.
+  - Tests: chip code run twice (`chip_ihit` >= 2), CPU patch, "DMA" patch
+    via the tb mailbox at $8F10 then CACR CI (0x81B4/B8/BC), posted write
+    order at 0x81C0, `n_posted` >= 10, `bench chip`. Sim: bench chip 1133
+    -> 442 us, readoff +40%, copy +17%, read/scatter unchanged.
 - **Cache enable:** both caches follow CACR EI. The data cache must NOT get
   the 68030 CACR bit 8: software tells an 020 from an 030 by setting that bit
   and reading it back, so storing it would make the CPU detect as a 68030 and
@@ -294,12 +367,39 @@ that gives the "_fast" files.
 | step 7 (32-bit data path, `full`) | 8728 / 3940 | 7.65 / 5.71 |
 | step 8 (32-bit SDRAM writes, `full`) | 9226 / 3982 | 10.93 / 6.15 |
 | step 9 (32-bit SDRAM reads, `full`) | 9221 / 4202 | 12.20 / 6.97 |
+| step 10 (instruction prefetch + pairs, `full`) | 9691 / 4918 | 12.28 / 6.60 |
+| step 10 at 16x (board mod) | 12936 / 5982 | 15.91 / 8.28 |
+| step 11 (race fix, 12x seed 14) | 9690 / 5161 | 15.73 / 8.49 |
+| step 11 at 16x (race fix, seed 1) | 12784 / 5992 | 19.97 / 10.39 |
 
 - AIBB MemTest did not move from step 6 to step 7 (pairs only come from
   cache hits; MemTest's reads miss and its writes are 16-bit). Step 8's
   pair writes took it to 10.93 MB/s (+43%), and to 6.15 with the caches
   off (pair writes work without them). Step 9's pair reads on a miss:
   12.20 / 6.97 (+12% / +13%). The write queue is what would move it next.
+- Step 10: caches-off Dhrystones +17% (12x) / +15% (16x), cached +5%;
+  caches-off MemTest -5% / -7% (likely unused instruction prefetches
+  holding the SDRAM ahead of data reads). xSysInfo 12x caches on / off
+  15363 / 7536, fast RAM 23.35 / 21.01; 16x 21233 / 10318, 29.19 / 25.98.
+  SD works on both (2.2 MB/s xSysInfo, 16x, caches on).
+- Step 11 (first files): Kickstart 3.2.3 yellow screen, 1.3 reboot loop /
+  green (chip RAM error), all four files; DiagROM fine. Bisect (12x): A
+  (POST_CHIP=0) boots both; B, C fail. Cause: a posted write whose DS met
+  the AS tick went out with the data bus undriven (rt_d_oe loaded from the
+  old rt_as_n; the sequencer then skipped its own AS step). Sims never hit
+  that phase; the fastmem fast-read sweep (81C8) reproduces it on the old
+  code. Fixed (D). 16x D boots 1.3 and 3.2.3: SysInfo 12784 / 5992,
+  AIBB 19.97 / 10.39 MB/s (+26% / +25% on step 10), xSysInfo 22042 /
+  12023, fast RAM 29.19 / 26.21, SD 2.2 MB/s. 12x D (seed 1, -0.51 ns)
+  reached further but failed at a real 12x clock (1.3 green after the
+  white screen, 3.2.3 red); 12x seed 14 (the only timing PASS of seeds
+  1-15, +0.06 / +1.78 ns) boots both. Lesson: a 0.5 ns miss can fail on
+  hardware; ship only timing-PASS 12x builds. step11_games now holds 12x
+  seed 14 and 16x seed 1 of the fixed design. 12x: SysInfo 9690 / 5161,
+  AIBB 15.73 / 8.49 (+28% / +29%), xSysInfo 16245 / 8290, fast RAM 23.31 /
+  21.15 MB/s.
+  Games on 16x D (Glen): run a lot better, close to a 50 MHz 68030 but
+  still a little behind.
 - SD card (sfsd.device 2.4): 2.18 MB/s in SysInfo on steps 4 to 9
   (2184533 bytes/s each time); fx68k gets 1.76 MB/s.
 - xSysInfo (Glen's test suite from step 8): 15711 Dhrystones, 8.94 MIPS,
@@ -323,27 +423,98 @@ that gives the "_fast" files.
 
 ## Ideas not yet done (Glen decides the order)
 
+- Chip RAM write buffer (Glen's next pick, after the 12x build works; as on
+  Cyberstorm/Tsunami boards): a 2-4 entry FIFO behind POST_CHIP, so a
+  longword (two bus words) or a burst posts without stalling. Every other
+  motherboard access (chip reads, custom/CIA registers, IACK, bus grant)
+  waits for the FIFO to drain, keeping program order (a blitter start must
+  see the data written before it). Then the 14x PLL step.
 - A 2-4 entry write queue (copies are write-bound).
+- 16x (or 14x) without the board mod: the ECP5's two PLLs are unused.
+  EHXPLLL from the 12x input (85.13 MHz): CLKI_DIV 3, CLKFB_DIV 4, CLKOP
+  113.5 MHz (PFD 28.4 MHz, VCO 567 MHz with CLKOP_DIV 5), an exact 4/3, so
+  16 clocks per 7M cycle and the phase aligner works as with the mod.
+  14x (7/6, 99.3 MHz) would keep SDRAM CL2 in spec on a -6 part and need
+  less overclock margin than 16x. Not designed yet.
+  Runtime speed select (Glen's idea): ECP5 PLL dividers are fixed in the
+  bitstream (only phase is dynamic, as far as known), so: PLL1 VCO 681 MHz
+  (12x x8) gives /8 = 12x and /6 = 16x, PLL2 (CLKI_DIV 6, CLKFB_DIV 7)
+  gives 14x; glitch-free DCSC muxes pick one. A CLI tool writes a speed
+  register; the adapter holds the kernel, waits for the bus and SDRAM to
+  go idle, switches, lets the 7M aligner re-lock, then resumes. The
+  TG68_X16 ifdefs (CLK_MULT/CPU_MULT counts, rt_ hold, SDRAM CL and
+  refresh count, SD SCLK stretch) become runtime settings. Power-on
+  default 12x, so a bad choice is undone by a power cycle. Even
+  multiples only (tick_f at CLK_MULT/2).
+- SDRAM: 24 of 32 MB mapped (8 MB Z2, 16 MB at $08000000, 1 MB MapROM);
+  7 MB spare. Little software would use more.
 - Bigger caches: 16 more block RAMs, which would crowd out RTG.
-- RTG framebuffer in SDRAM: discussed as a future add-on, no design yet.
-- 16x clock (Glen's experiment after step 9: ICS570B rewired from x12 to
-  x16, step 9 bitstream unchanged, ~113.5 MHz): boots; SysInfo 12311 /
-  5322 Dhrystones (caches on / off), xSysInfo 22117 / 10329, fast RAM
-  31.14 / 27.17 MB/s, SD 2.6 MB/s. A Ripple IDE is configured but its
-  boot ROM is not run. Cause, from the code: `CLK_MULT = 12` is fixed in
-  base64_tg68_top.sv, so the bridge's 7M grid (ph counter, tick_r/f/ack)
-  runs at 9.46 MHz. The lock check is fooled (mismatch, mismatch, match
-  every third cycle never reaches SLIP_TOL), bus cycles are 25% short
-  and mostly off phase, and the flash ROM's data is latched before it is
-  valid. E runs at 946 kHz, so CIA timers (timer.device microsecond
-  delays, floppy step timing, driver timeouts) are 33% fast. The FPGA
-  passes only because real silicon beats the worst-case model (at
-  113.5 MHz it misses by ~2.5 ns on 1T paths, ~4.6 ns on kernel ->
-  kernel). A proper 16x build: CLK_MULT = 16 (+ CPU_MULT so MC4 divides),
-  re-tune PHASE_OFS / ACK_LEAD / DTACK_LAT, MS_TOP, sdram CLK_HZ and tRFC
-  7 clocks, SD clock <= 25 MHz. Signed-off timing at 16x would need
-  STEP=5 (~7% gain) and a much faster adapter, so it would be an
-  overclocked build. Not started; Glen decides.
+- RTG framebuffer in SDRAM: Glen no longer sees it as a runner.
+- USB (Glen's idea, future add-on): the module's USB-C goes to the iCELink
+  MCU, not the FPGA; the FPGA only has its UART (TX B9, RX A9) to the
+  iCELink's USB serial port. So that socket can give the Amiga a fast
+  serial link to a PC (needs an FPGA UART slave and an Amiga driver), not
+  USB peripherals. A USB host needs extra hardware: a host chip that
+  existing Amiga USB stacks (Poseidon) drive, on spare carrier pins, or a
+  soft USB 1.1 host in the FPGA plus a new driver. Mind the module's
+  unprotected USB 5 V (README).
+- WiFi via an ESP (Glen's idea): an ESP32-S2/S3 (USB host capable) could
+  talk to the iCELink's USB serial port, but that depends on the iCELink
+  firmware's UART speed and VBUS behaviour (unknown) and the unprotected
+  5 V. Cleaner: an ESP on FPGA pins (no spare header on the carrier: J2
+  is CFGIN/CFGOUT; needs a mod or revision). Either way the Amiga needs a
+  serial.device-compatible driver for an FPGA UART with a FIFO, and the
+  ESP needs PPP/SLIP-to-WiFi firmware. Works today with no gateware: an
+  ESP WiFi modem on the Amiga's own serial port (~115-230 kbit/s).
+- References for speed-ups and tweaks (reviewed during step 11):
+  - Emu68 (68k JIT for PiStorm), https://github.com/michalsc/Emu68: the
+    one usable tip is software, the VBR (vector table) in fast RAM.
+  - The Amiga Bootcamp guide, https://arisamiga.github.io/amiga-bootcamp/
+    (fetched in full, 254 pages): a general AmigaOS developer reference,
+    unreliable in detail. Its 68030 CACR table is wrong, and it says
+    CacheClearU is a no-op on a 68020; Exec's 020/030 version sets CACR
+    CI|CD ($0808), which step 11's chip code flush relies on (as far as
+    known without a ROM to disassemble: hardware will tell). Nothing in it
+    for the gateware. It prompted a check of posted chip writes against
+    68000 timing (AS S2, DS S4, end S7, next AS S2): the bridge matches;
+    the 6-clock period in `bench chip` is the tb Gary's late DTACK.
+- Not pursued (Glen's decision): faking a 68EC030 (only CachePreDMA/
+  PostDMA change; MMU probes would trap), and watching BLTSIZE/DSKLEN
+  writes to flush code the blitter or disk DMA overwrites. Stale cached
+  chip code after DMA is the same risk as on an A1200, and Glen has never
+  met it in practice.
+- Possible small idea: cache code fetches from A500 trapdoor slow RAM
+  ($C00000-$D7FFFF; no DMA reaches it). Instruction cache only: with no
+  RAM fitted that range mirrors the custom chips, and the data cache's
+  write allocate would fool Kickstart's memory probe.
+- 16x clock: merged into main with step 11 (README "16x clock"); releases
+  have `_x16` files from step 10 on. Glen switches his board between x12
+  and x16 with a jumper on the ICS570B's pin 6. History:
+  Glen's board is rewired x16 (113.5 MHz); a 12x bitstream there runs the
+  bridge's 7M grid at 9.46 MHz (CLK_MULT fixed at 12: bus cycles short,
+  E/CIA 33% fast, a Ripple IDE's ROM not run). `build.py full --x16`
+  defines TG68_X16: CLK_MULT 16, CPU_MULT 8, MS_TOP, 2-clock rt_ hold
+  after AS, SDRAM CL3 (other counts already in spec: controller overhead),
+  SD SCLK low half +1 clock (shifter LO_EXTRA). PHASE_OFS stays 2 (3 broke
+  the sim: Gary missed AS negations). Sims: `VLFLAGS=-DTG68_X16`. Not
+  timing-signed: build.py checks at 113.6 MHz and does not fail on it;
+  score seeds by the worst delay/budget ratio (the 12x step 9 seed 7 that
+  ran on Glen's x16 board needs 1.28x). The 12x build on this branch is
+  logically identical to main but not bit-identical (yosys numbering moves
+  even for ifdef'd-out text), so 12x releases come from main.
+  Hardware (exp16x_seed9 `_fast`, Glen's x16 board): works; the Ripple
+  IDE's ROM now runs (CF 3.13 / 2.93 MB/s caches on / off). SysInfo
+  12311 / 5180 Dhrystones, AIBB MemTest 15.81 / 8.88 MB/s, xSysInfo
+  19429 / 9496 Dhrystones, fast RAM 29.18 / 25.20 MB/s, SD 2.18 MB/s
+  (SysInfo) / 2.1 (xSysInfo). Vs the 12x bitstream on the same board:
+  ~7% less on SDRAM-bound work (CL3), xSysInfo caches-on Dhrystones -12%
+  (22117 -> 19429) with SysInfo unchanged: not explained yet. CL2 at
+  113.5 MHz is in spec only if the SDRAM is a -6 (or faster) part:
+  check the chip marking before trying it. Glen's chip is an
+  IS42S16160J-6BLI: ISSI's key timing table (Rev. C3) gives -6 a 10 ns
+  minimum tCK at CL2 (100 MHz), so CL3 stays at 16x.
+  Hardware: E clock 709379 Hz, a real floppy reads fine. Glen is
+  stress-testing it on the bench.
 - Timing headroom: from step 7 on only ~1 seed in 8 passes every class,
   with a different path missing each time (README "Timing"). A new
   feature will likely need a seed search. A real fix would need fewer

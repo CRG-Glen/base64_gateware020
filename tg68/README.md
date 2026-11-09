@@ -10,10 +10,14 @@ and the SD card. An adapter, `tg68_bus.v`, makes TG68K look like fx68k's
 ports and adds the caches and the direct SDRAM path. Changes to the fx68k
 build's own files are few and marked `TG68:`.
 
-> **Status:** steps 1-9 run on an A500+. The latest, step 9 `full`: 9221
-> Dhrystones, 9.62 MIPS, AIBB MemTest 12.20 MB/s with the caches on,
-> xSysInfo fast RAM 23.31 MB/s, SD card 2.18 MB/s (sfsd.device). That is
-> about 3.3× the 2783 Dhrystones of the first working build.
+> **Status:** steps 1-11 run on an A500+. The latest, step 11 `full`, at
+> the stock 12x clock: 9690 Dhrystones (10.11 MIPS), AIBB MemTest 15.73 MB/s,
+> xSysInfo fast RAM 23.31 MB/s with the caches on; 5161 Dhrystones and
+> 8.49 MB/s with them off. That is about 3.5× the 2783 Dhrystones of the
+> first working build. On a board with its clock multiplier rewired to x16
+> (see *16x clock*), the `_x16` files give 12784 Dhrystones and 19.97 MB/s.
+> Step 11 also caches code that runs from Chip RAM, which many games use:
+> Frontier and Gloom now run much faster with the caches on.
 >
 > **SD card: every `full` bitstream from step 4 on reads the card.** The
 > step 1-3 `full` files drove the card's data-out line (MISO) low, so the
@@ -28,7 +32,10 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
-| `bitstreams/step9_sdram32r/` | + 32-bit SDRAM reads: an aligned longword read that misses the caches is one SDRAM request (two READ commands back to back) and one CPU step | **Latest. Known good on hardware**, SD card included: MemTest 12.20 MB/s (+12% on step 8), xSysInfo fast RAM 23.31 MB/s (+42%); SysInfo Dhrystones unchanged (9221). `full` only |
+| `bitstreams/step11_games/` | + Chip RAM code in the instruction cache (CACR CI/CEI now flush), posted Chip RAM writes, SDRAM bank permutation, pair prefetch, shorter uncached read. 12x and 16x files | **Latest. Known good on hardware**, 12x (seed 14) and 16x (seed 1), Kickstart 1.3 and 3.2.3, SD card included. MemTest 15.73 / 8.49 MB/s at 12x (+28% / +29%), 19.97 / 10.39 at 16x (+26% / +25%), games much faster. Code that DMAs itself into Chip RAM without clearing the cache needs the caches off (see step 11) |
+| `bitstreams/step10_ifetch32/` | + instruction prefetch (the next word after an instruction read from SDRAM) and 32-bit instruction-stream pairs (32-bit immediates and absolute-long addresses in one CPU step). 12x and 16x files | **Known good on hardware**, 12x and 16x, SD card included: 9691 / 12936 Dhrystones (12x / 16x, +5% on step 9), caches off 4918 / 5982 (+17% / +15%). Caches-off MemTest 5-7% lower |
+| `bitstreams/exp16x_seed9/` (never released) | The first 16x build (step 9 design): for a board whose ICS570B is rewired to x16 (113.5 MHz). Correct Amiga-side timing (bus cycles, E/CIA), SDRAM CL3, SD clock in spec. See *16x clock*. Superseded by the `_x16` files of steps 10 and 11 | **Worked on Glen's x16 board**, Ripple IDE ROM included: 12311 Dhrystones, MemTest 15.81 MB/s |
+| `bitstreams/step9_sdram32r/` | + 32-bit SDRAM reads: an aligned longword read that misses the caches is one SDRAM request (two READ commands back to back) and one CPU step | **Known good on hardware**, SD card included: MemTest 12.20 MB/s (+12% on step 8), xSysInfo fast RAM 23.31 MB/s (+42%); SysInfo Dhrystones unchanged (9221). `full` only |
 | `bitstreams/step8_sdram32w/` | + 32-bit SDRAM writes: an aligned longword write to fast RAM is one CPU step and one SDRAM request (two WRITE commands back to back) | **Known good on hardware**, SD card included: 9226 Dhrystones (+6% on step 7), MemTest 10.93 MB/s (+43%). `full` only |
 | `bitstreams/step7_datapath32/` | + 32-bit data path: aligned longword reads from the caches in one CPU step (m1nl's TG68K.C fork, banked caches) | **Known good on hardware**, SD card included: 8728 Dhrystones (+7% on step 6), MemTest 7.65 MB/s. `full` only |
 | `bitstreams/step6_earlylookup/` | + early cache lookup: every cache hit in 5 clocks, not 7 (replaces the pair buffers) | **Known good on hardware**, SD card included: 8144 Dhrystones (+21% on step 5), MemTest 7.65 MB/s. `full` only |
@@ -96,12 +103,14 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   on the Amiga uses them.
 * **Instruction cache (step 2).** 8 KB, direct-mapped, in block RAM. It
   caches instruction fetches from on-board fast RAM and the Kickstart ROM
-  ($F80000–$FFFFFF), never Chip RAM, which DMA writes. Every CPU write to
-  a cacheable address invalidates its entry, so self-modifying code and
-  program loading work without CacheClearU. CACR's EI bit turns it on and
-  off as on a real 68020: off at reset, and Kickstart 2.0+ turns it on;
-  FI freezes it. The clear bits (CI/CEI) are ignored because they aren't
-  needed. The cache is flushed after every reset. `ICACHE=0` in
+  ($F80000–$FFFFFF), and from step 11 also from Chip RAM, as a real
+  68020's does (see step 11 for what that means for DMA-loaded code).
+  Every CPU write to a cacheable address invalidates its entry, so
+  self-modifying code and program loading by the CPU work without
+  CacheClearU. CACR's EI bit turns it on and off as on a real 68020: off
+  at reset, and Kickstart 2.0+ turns it on; FI freezes it. Up to step 10
+  the clear bits (CI/CEI) were ignored; from step 11 either one flushes
+  both caches. The cache is flushed after every reset. `ICACHE=0` in
   `tg68_bus.v` removes it.
 * **Speed.** The adapter steps the core at most once every 4 clocks
   (~21 MHz), samples its outputs 3 clocks after a step, hands it read data
@@ -266,6 +275,141 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   explained yet (one candidate: a speculative read is now a pair read, so
   one dropped on a cache hit holds the SDRAM a clock longer). SD card
   2.18 MB/s as before.
+* **Instruction prefetch and 32-bit instruction-stream pairs (step 10).**
+  Two changes for code that runs from SDRAM, as it does with the caches
+  off or on an instruction-cache miss:
+  * After an instruction read from SDRAM, the next word is prefetched
+    into the one-word buffer, as data reads already did. A following
+    fetch of that word takes it from the buffer, and the word fills the
+    instruction cache.
+  * The CPU core's two instruction-stream pair kinds are on (`DP32 = 7`):
+    a 32-bit immediate (MOVE.L #, ADDI/SUBI/CMPI/ANDI/ORI/EORI.L #,
+    ADDA/SUBA/CMPA.L #) or an absolute-long address (MOVE, LEA, PEA, TST,
+    CLR, ADD/SUB/CMP/AND/OR from abs.L) is taken in one CPU step instead
+    of two, from the instruction cache (both banks) or from SDRAM (a step
+    9 pair read). In step 7 these modes failed the clock-enable paths by
+    2-5 ns on every seed; with step 8's registered `clkena_lw` they now
+    cost ~1-2 ns on kernel -> logic.
+  The core never fetches opcodes 32 bits at a time, so the pairs only help
+  instructions with those operands. In simulation, the caches-off read
+  loop (`bench readoff`) goes from 5.06 to 5.42 MB/s at 12x (+7%) and
+  6.32 to 6.72 MB/s at 16x; the other benches don't move (their loops have
+  no such operands and run from the caches). The prefetch is small because
+  the single buffer is shared: a data read in between replaces the
+  prefetched instruction word, and a buffer hit doesn't chain the next
+  prefetch. The tests count instruction-stream pairs from the cache and
+  from SDRAM and check them against the write shadow.
+
+  On the A500+ (step 9, or the first 16x build, → step 10):
+
+  | | 12x | 16x |
+  | --- | --- | --- |
+  | SysInfo Dhrystones, caches on | 9221 → 9691 (+5%) | 12311 → 12936 (+5%) |
+  | SysInfo Dhrystones, caches off | 4202 → 4918 (+17%) | 5180 → 5982 (+15%) |
+  | AIBB MemTest, caches on | 12.20 → 12.28 MB/s | 15.81 → 15.91 MB/s |
+  | AIBB MemTest, caches off | 6.97 → 6.60 MB/s (−5%) | 8.88 → 8.28 MB/s (−7%) |
+  | xSysInfo Dhrystones, caches on / off | 15075 / 7802 → 15363 / 7536 | 19429 / 9496 → 21233 / 10318 |
+  | xSysInfo fast RAM, caches on / off | 23.31 / 20.28 → 23.35 / 21.01 MB/s | 29.18 / 25.20 → 29.19 / 25.98 MB/s |
+
+  CPU-bound code gains (the instruction-stream pairs with the caches on,
+  both changes with them off). Caches-off MemTest loses 5-7%, most likely
+  because an instruction prefetch the loop doesn't use still occupies the
+  SDRAM when the next data read wants it. xSysInfo varies by a few percent
+  between runs (see step 9). The SD card works on both; 2.2 MB/s in
+  xSysInfo at 16x with the caches on.
+* **Games and uncached code (step 11).** CPU-heavy games such as
+  Frontier and Gloom ran about as fast with the caches off as on. Frontier
+  shows why: its executable puts 157 KB of code in a hunk that must load
+  into Chip RAM (`HUNK_CODE` with the CHIP flag), and the caches never
+  held Chip RAM. Every instruction word from there is a motherboard cycle,
+  about 60 clocks, against 4-5 for a cache hit. Fast RAM was not the
+  bottleneck. Step 11 changes:
+  * **Chip RAM code is cached** in the instruction cache, as on a real
+    68020 (the A1200's included). A CPU write to Chip RAM drops its
+    entry, as for fast RAM. Writes by DMA (the blitter, the disk) are not
+    seen, so code loaded by DMA needs the cache cleared before it runs:
+    AmigaOS does that (LoadSeg calls CacheClearU, which sets CACR CI), and
+    CI and CEI now flush both caches (kernel change 3: the kernel keeps
+    CACR bits 2-3 set for one step after the MOVEC that sets them; they
+    always read back 0). An old trackloader that DMAs code into Chip RAM
+    and jumps to it without clearing the cache can crash with the caches
+    on, as it can on an A1200; turn the caches off for it (SysInfo, or
+    `CPU NOCACHE`). The data cache still never holds Chip RAM.
+  * **Posted Chip RAM writes.** A CPU write to Chip RAM ($000000-$1FFFFF)
+    is acknowledged as soon as the CPU presents it, and the bridge runs
+    the motherboard cycle on its own, with 68000 timing (AS at a 7 MHz
+    rising edge, the data strobes one edge later, the end on the falling
+    edge after DTACK, address and data held to the next rising edge). The
+    CPU carries on from the caches and fast RAM meanwhile; its next
+    motherboard cycle waits for the posted one to end. Writes to custom
+    chip and CIA registers are never posted, so an interrupt clear has
+    happened before the next instruction runs. `POST_CHIP = 0` in the
+    top level turns it off.
+  * **SDRAM bank permutation** (`fastmem_zii.v`). The SDRAM bank came from
+    word-address bits 10:9, so code and data a multiple of 4 KB apart
+    shared a bank, and every switch between them closed and reopened a
+    row (~5 clocks). The bank now also takes two groups of row bits (XOR),
+    so blocks 4-32 KB apart sit in different banks. The map is one to one
+    and the same for every fast RAM and MapROM address.
+  * **Pair prefetch.** A 16-bit read from fast RAM at an even longword
+    address that misses the caches is now an SDRAM pair read (step 9),
+    and the second word goes to the prefetch buffer; before, the prefetch
+    was a second request after the first.
+  * **A shorter direct read.** An uncached 16-bit read hands its word to
+    the CPU straight from the SDRAM's early data (`k_din_dw`) and steps it
+    in DDATA, one state earlier.
+  In simulation (12x / 16x; 16x in brackets):
+
+  | Bench | Step 10 | Step 11 |
+  | --- | --- | --- |
+  | `bench chip`: a loop in Chip RAM writing 1 KB to Chip RAM (a game drawing into its screen) | 1133 µs | 442 µs (2.56×) |
+  | `bench readoff`: fast RAM read loop, caches off | 5.42 (6.72) MB/s | 7.61 (9.29) MB/s (+40%) |
+  | `bench copy`: fast RAM copy, caches on | 7.38 (9.40) MB/s | 8.63 (10.89) MB/s (+17%) |
+  | `bench read`, `bench scatter` | | unchanged |
+
+  `bench chip`'s gain is all from caching the loop: it writes back to
+  back, so each write waits for the posted one before it, and posting off
+  gives the same 442 µs. With twelve ALU instructions between the writes
+  (a variant, not in the tree), posting takes it from 695 to 550 µs
+  (1.26×): it pays off where code computes between Chip RAM writes, as a
+  chunky-to-planar loop does.
+  The tests run code from Chip RAM twice and require cache hits the
+  second time, change it by CPU write (the new code must run), change it
+  "by DMA" (the test bench rewrites the word behind the CPU: the old code
+  must still run, and the new one after CACR CI), and check that posted
+  writes land in program order (at least 10 must be posted).
+
+  **The first step 11 files did not boot** (a yellow screen with
+  Kickstart 3.2.3, a reset loop or a green Chip RAM error with 1.3;
+  DiagROM ran). Test builds with each change switched off found posted
+  writes to blame (`POST_CHIP=0` booted both ROMs). When the CPU's data
+  strobe for a write arrived on the very clock the bridge asserted AS on
+  the motherboard, the bridge's data-enable register was loaded from the
+  old AS value and the posted-write sequencer then skipped its own "AS
+  down, data out" step, so the write went to Chip RAM with the data bus
+  undriven. In the simulation the CPU's cycles never started at that
+  phase of the 7M clock; on the Amiga, cached code and DMA shift it all
+  the time. The data bus is now driven whenever a posted write's AS is
+  down. The test bench gained random wait states, a check that the data
+  bus is driven whenever Chip RAM latches a write, and a loop of fast RAM
+  reads and Chip RAM writes that starts writes at every phase; it
+  reproduces the bug on the old bridge. The switches used to find it stay
+  in the source: `POST_CHIP` (top level), `CHIP_IC`, `CACR_CLR`, `RD11`
+  (`tg68_bus.v`) and `BANK_XOR` (`fastmem_zii.v`), all on by default.
+
+  On the A500+ (step 10 → step 11, caches on / off):
+
+  | | 12x | 16x |
+  | --- | --- | --- |
+  | SysInfo Dhrystones | 9691 / 4918 → 9690 / 5161 | 12936 / 5982 → 12784 / 5992 |
+  | AIBB MemTest | 12.28 / 6.60 → 15.73 / 8.49 MB/s (+28% / +29%) | 15.91 / 8.28 → 19.97 / 10.39 MB/s (+26% / +25%) |
+  | xSysInfo Dhrystones | 15363 / 7536 → 16245 / 8290 (+6% / +10%) | 21233 / 10318 → 22042 / 12023 (+4% / +17%) |
+  | xSysInfo fast RAM | 23.35 / 21.01 → 23.31 / 21.15 MB/s | 29.19 / 25.98 → 29.19 / 26.21 MB/s |
+
+  The benchmarks run from fast RAM and the caches, so they show the SDRAM
+  changes (MemTest +25%) but not the Chip RAM ones; the games do: Glen
+  reports Frontier and Gloom running much better, close to a 50 MHz
+  68030. SD card 2.2 MB/s. Kickstart 1.3 and 3.2.3 boot at 12x and 16x.
 * **MapROM.** The board's boot ROM (`turbomem.mem`, built with
   `DIAG_MAPROM=1`) copies Kickstart into the SDRAM shadow at every boot,
   verifies it and switches over, so it is normally already on. Both caches
@@ -333,6 +477,89 @@ attempt as failed until 1.3 s after power-up and resets the machine every
 off, if you want to see whether TG68 needs it at all. Ctrl-A-A always works
 either way.
 
+## 16x clock (board mod, optional)
+
+From step 10 every release has `_x16` files as well as the normal ones.
+They are for a Base64 whose clock multiplier has been rewired from x12 to
+x16, and are overclocked (see below). On Glen's board a jumper on the
+ICS570B's pin 6 (grounded or not) switches between x12 and x16; flash the
+files that match the setting.
+
+The Base64's ICS570B multiplies the Amiga's 7.09 MHz clock by 12 (85.13
+MHz). Rewired to multiply by 16, it gives 113.50 MHz. On such a board a
+normal (12x) bitstream boots and runs about a third faster, but its Amiga
+side runs at the wrong speed. The bus bridge builds its 7 MHz grid from a
+fixed count of 12 fast clocks, so it thinks the Amiga clock is 9.46 MHz.
+Its lock check doesn't notice, because the count matches again every third
+cycle. The effects:
+
+* bus cycles to the motherboard are 25% short and mostly off phase, so a
+  slow device reads wrong: a Ripple IDE's boot ROM was found but never run;
+* E, which clocks the CIAs, runs at 946 kHz instead of 709 kHz, so every
+  CIA-timed delay (timer.device microseconds, floppy stepping, driver
+  timeouts) is 25% short.
+
+`build.py full --x16` builds a bitstream for an x16 board. Everything that
+differs is under `` `ifdef TG68_X16 ``:
+
+* the 7M grid counts 16 fast clocks (`CLK_MULT`), so bus cycles, E and the
+  CIA timers are correct again; `PHASE_OFS` stays 2 (it mostly cancels the
+  7M capture pipeline, which is a fixed number of fast clocks);
+* the address, R/W and write data are held 2 fast clocks (17.6 ns) after
+  AS rises instead of 1;
+* the SDRAM runs at CAS latency 3 (the IS42S16160 -7 needs a 10 ns clock
+  for CL2). Its other timings were already in spec at 113.5 MHz, because
+  the controller adds state-machine clocks to each count; the fastmem
+  bench's SDRAM model, which checks them in ns, reports no violation;
+* the SD card's clock holds its low half one clock longer, so the fastest
+  settings give 37.8 / 22.7 MHz (within SD's 50 / 25 MHz) instead of
+  56.8 / 28.4 MHz;
+* the 1 ms counter and the SDRAM controller's start-up wait use 113.5 MHz.
+
+In simulation (`VLFLAGS=-DTG68_X16 sh sim/run.sh ...`) every test passes
+at 113.5 MHz, with no SDRAM timing violations. Against the 12x build: copy
+7.33 → 9.31 MB/s, read 12.59 → 16.22, scatter 20.35 → 25.67.
+
+On Glen's A500+ with the ICS570B rewired to x16 (the `_fast` file), it
+works, and a Ripple IDE's boot ROM now runs (its CF card mounts):
+
+| | 12x, step 9 | 16x, step 9 bitstream (12x timing) | 16x, this build |
+| --- | --- | --- | --- |
+| SysInfo Dhrystones, caches on / off | 9221 / 4202 | 12311 / 5322 | 12311 / 5180 |
+| AIBB MemTest, caches on / off | 12.20 / 6.97 MB/s | - | 15.81 / 8.88 MB/s |
+| xSysInfo Dhrystones, caches on / off | 15075 / 7802 | 22117 / 10329 | 19429 / 9496 |
+| xSysInfo fast RAM, caches on / off | 23.31 / 20.28 MB/s | 31.14 / 27.17 MB/s | 29.18 / 25.20 MB/s |
+| SD card, SysInfo / xSysInfo | 2.18 / 1.9 MB/s | - / 2.6 MB/s | 2.18 / 2.1 MB/s |
+| Ripple CF card, SysInfo (caches on / off) | ~2.8 MB/s | ROM not run | 3.13 / 2.93 MB/s |
+
+Against the 12x build: SysInfo +34%, MemTest +30%, xSysInfo fast RAM
++25%. Against the 12x bitstream on the x16 board, this build gives up
+about 7% on SDRAM-bound work (xSysInfo fast RAM and caches-off figures)
+for CAS latency 3, and the SD card's xSysInfo figure falls from 2.6 to
+2.1 MB/s with its clock back inside the SD limits. xSysInfo's caches-on
+Dhrystones fell 12% (22117 to 19429) while SysInfo's are unchanged, which
+CAS latency alone does not obviously explain.
+
+**It is overclocked.** The FPGA's timing is signed off against a worst-case
+model (slowest chip, hot, low supply). At 113.5 MHz no seed comes close to
+passing it, and none could without a much faster design. The kernel's
+paths alone need the chip to be ~28% faster than the model. It works
+because real chips at room temperature usually are: the 12x step 9
+bitstream ran on Glen's x16 board, and by the same check it needs 1.28×.
+For each 16x seed, `timing.txt` (checked at 113.6 MHz) shows how far past
+the model it is. The test bitstream, seed 9, needs 1.36×: the best of
+15 seeds, but more than the 1.28× of the 12x bitstream that ran on the x16
+board, because that 12x seed was an unusually good placement (it is the
+one seed in eight that passes at 12x). So it may be less stable on the
+same board; more seeds can be tried if it is. nextpnr's clock target makes
+no difference (seeds placed for 114 MHz came out identical), so `--x16`
+keeps 86 MHz.
+
+The 12x and 16x builds come from the same source; `--x16` only changes
+what is under `` `ifdef TG68_X16 ``. From step 11 on, a step's 16x file
+is scored the same way as this one: step 11's needs 1.36× and runs on
+Glen's board at x16.
+
 ## Building it yourself
 
 1. Install **oss-cad-suite** from
@@ -344,6 +571,7 @@ either way.
    ```
    build.bat full
    build.bat full --seed 9  (start the seed search somewhere else)
+   build.bat full --x16     (for a board rewired to x16, see 16x clock)
    ```
 
    On Linux/macOS: `python3 scripts/build.py full` with oss-cad-suite's
@@ -351,9 +579,12 @@ either way.
    `yowasp-nextpnr-ecp5` pip packages installed (`build.py` falls back to
    them when plain `yosys` / `nextpnr-ecp5` are missing). A build takes a
    few minutes per seed.
-3. The bitstream lands in `build\full\base64_tg68_full.bit`. Step 9
-   `full` uses ~10.5k of the FPGA's 24k LUTs and 35 of its 56 block RAMs.
-   Expect to try several seeds (`--seeds 12`): the timing margins are thin.
+3. The bitstream lands in `build\full\base64_tg68_full.bit`
+   (`build\full_x16\` for `--x16`). Step 11 `full` uses ~12k of the
+   FPGA's 24k LUTs and 35 of its 56 block RAMs. Expect to try several
+   seeds (`--seeds 16`): the timing margins are thin, and only a seed that
+   passes `check_timing.py` outright should be used (step 11's seed 1
+   missed by 0.5 ns and failed on hardware).
 
 **One trap, already handled in `build.py`:** the TG68 kernel and ALU must
 keep their own hierarchy during synthesis (`keep_hierarchy`, then
@@ -396,6 +627,56 @@ actually provides:
 (`--seeds N` for more) until it gets `RESULT: PASS`, and writes `timing.txt`. Expect the 1T classes to
 pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
+
+Step 11 (games: Chip RAM code cached, posted Chip RAM writes, faster
+uncached reads) builds as supplied (runs on hardware, 12x and 16x):
+
+| Build | Seed | Worst 1T slack | Worst multicycle slack |
+| --- | --- | --- | --- |
+| full | 14 | +0.06 ns | +1.78 ns |
+
+That is the build with the posted-write fix; seed 14 was the only one of
+seeds 1-15 to pass, the others missing by 0.5-2 ns on a different class
+each time. **A near miss is not good enough on hardware:** seed 1 of the
+same design missed by 0.51 ns and failed on the A500+ at 12x (Kickstart
+1.3 reached the boot screen, then a green screen; 3.2.3 a red one),
+while seed 14 boots both. The 16x file is seed 1 of the fixed design
+(1.36× the worst-case model; it runs on Glen's board). What follows is the
+history of the first (broken) step 11 build:
+
+It took four rounds of seeds 1-4. The first two failed in nextpnr's
+packer: the posted-write logic read `rt_a`, a pin register with
+`syn_useioff`, and a later attempt loaded `rt_a`/`rt_fc` on a different
+clock from `rt_rw`, but pin registers sharing an I/O block need the same
+enable and reset nets. The paths that missed and were new in step 11 were
+then restructured, not seed-hunted: the SDRAM bank bits come straight from
+the address (not after the slot decode), the prefetch buffer's data loads
+without the SDRAM ack in its enable, the posted-write sequencer uses
+`tick_rq` (the 7M rising tick as a register, asserted equal in the test
+bench), and the adapter has its own copy of `k_clkena` (`k_step`), so
+`k_clkena` drives only the kernel. With those, seed 1 passes; seeds 2-4
+miss by 0.5-1.9 ns, the usual spread (see "how close to the edge" below).
+The first build's 16x file (`--x16`, seed 1, best of seeds 1-8) needed
+the chip 1.34× faster than the worst-case model.
+The checker classes the new direct-read registers `k_din_dw`/`k_din_dsel`
+as logic (1T): as read-data latches they would have had a 2T budget they
+don't have.
+
+Step 10 (instruction prefetch, instruction-stream pairs) builds as supplied
+(known good on hardware, 12x and 16x):
+
+| Build | Seed | Worst 1T slack | Worst multicycle slack |
+| --- | --- | --- | --- |
+| full | 14 | +0.31 ns | +0.50 ns |
+
+Seed 14 was the only one of 16 to pass. Without the pair modes (prefetch
+only) seeds 1-4 missed by 0.16-1.79 ns, the usual spread; with them
+kernel -> logic missed by 1.3-2 ns on most seeds, because the core's pair
+offer for an instruction word now depends on the low address bits, which
+come from its address adder, and DECIDE waits for it. The 16x file
+(`--x16`, seed 2) needs the chip 1.31× faster than the worst-case model
+(see *16x clock*), less than the 1.36× of the 16x build that works on
+Glen's board.
 
 Step 9 (32-bit SDRAM reads) builds as supplied (known good on hardware):
 
@@ -557,7 +838,7 @@ rtl/base64_tg68/
   base64_tg68_top.sv            fx68k top with the CPU swapped ("TG68:" marks changes)
   tg68_bus.v                    TG68K -> 68000-style bus adapter
 rtl/tg68/
-  TG68K*.vhd                    TG68K.C (m1nl's fork), two changes marked "Base64"
+  TG68K*.vhd                    TG68K.C (m1nl's fork), three changes marked "Base64"
   tg68_020.vhd                  68020-mode wrapper
   tg68_020_b0.v                 the same, converted to Verilog (what the build uses)
 rtl/base64_fx68k/               the fx68k build's slaves; changes marked "TG68:"
@@ -580,17 +861,19 @@ committed netlist byte for byte). Its arguments select variants: barrel
 shifter, no bitfields, iterative multiply.
 
 From step 7 the VHDL is m1nl's fork of TG68K.C
-(<https://github.com/m1nl/TG68K.C>, commit `a8e6f38`), with two marked
+(<https://github.com/m1nl/TG68K.C>, commit `a8e6f38`), with three marked
 changes (below): upstream
 TG68K.C (our kernel was identical to its base) plus a cheaper rotate unit and
 the 32-bit data path (`long_cand`/`long_ack`, `data_in_hi`,
 `data_write_lo`). The wrapper `tg68_020.vhd` passes those ports through and
-sets `DataPath32` with its `DP32` generic. It is 1: longword data reads
-only. The fork can also pair 32-bit immediates and absolute-long address
-extensions (bits 1 and 2), but either of those put the kernel's clock-enable
-paths 2-5 ns over budget on every seed tried (they sit in its program-counter
-and fetch logic), while data pairs alone leave the kernel's address timing as
-it was.
+sets `DataPath32` with its `DP32` generic. Up to step 9 it was 1: longword
+data reads only. The fork can also pair 32-bit immediates and absolute-long
+address extensions (bits 1 and 2), but in step 7 either of those put the
+kernel's clock-enable paths 2-5 ns over budget on every seed tried (they sit
+in its program-counter and fetch logic). From step 10 it is 7, all three:
+with `clkena_lw` registered (kernel change 2) the cost fell to ~1-2 ns on
+kernel -> logic (see *Timing*). `DP32=1 scripts/gen_tg68.sh` regenerates
+the data-only core.
 
 **The changes to the fork** (`TG68KdotC_Kernel.vhd`, marked "Base64"):
 
@@ -617,6 +900,12 @@ identical to step 7's, and so did a build with the pair writes switched off,
 so the path was simply fragile under any change elsewhere. With the register
 it gets +0.3 to +1.7 ns on three of four seeds. Both test benches check on
 every clock that `k_clkena_lw` equals the kernel's original formula.
+
+3. (step 11) The CACR clear bits, CEI (bit 2) and CI (bit 3), are kept for
+one `clkena` step after the MOVEC that sets them, then cleared (they still
+read back as 0, as on a real 68020). The adapter flushes both caches when
+it sees either, which is how Exec's CacheClearU reaches the caches now that
+the instruction cache holds Chip RAM code.
 
 GHDL turns a handful of VHDL `case ... when others => null` statements into
 latches that yosys rejects. `fix_latches.py` neutralises exactly those.

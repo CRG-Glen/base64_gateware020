@@ -4202,6 +4202,13 @@ PROCESS (clk, cpu, OP1out, OP2out, opcode, exe_condition, nextpass, micro_state,
 		  when X"804" => NULL; -- isP -- 68020+
 		  when others => NULL;
 		end case;
+	  -- Base64 change 3 (tg68/README.md, "chip RAM code in the instruction
+	  -- cache"): CEI and CI (bits 2, 3) are write-only commands on a real
+	  -- 68020. Held for the rest of the MOVEC's step and cleared at the next
+	  -- one, they reach the bus side as a pulse of >= STEP clocks for every
+	  -- MOVEC to CACR that sets them, which flushes the caches there.
+	  elsif clkena_in = '1' then
+		CACR(3 downto 2) <= "00";
 	  end if;
 	end if;
 

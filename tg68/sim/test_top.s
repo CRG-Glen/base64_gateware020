@@ -226,6 +226,67 @@ cp32:   move.l  (%a0)+,(%a1)+
         movec   %d0,%cacr           | caches on again
         move.l  %d2,0x81B0          | 81B0 91929394
         .endif
+        | -- step 11: chip RAM code in the instruction cache --
+        lea     chipfn,%a0
+        movea.l #0x9800,%a1         | chip RAM (the tb's RAM is $8000-$9FFF)
+        move.l  (%a0)+,(%a1)+       | moveq #1,%d4 ; rts
+        jsr     0x9800              | fills the instruction cache
+        jsr     0x9800              | runs from it (tb counts chip hits)
+        move.l  %d4,0x81B4          | 81B4 00000001
+        move.w  #0x7802,0x9800      | a CPU write drops the cached entry
+        jsr     0x9800
+        move.l  %d4,0x81B8          | 81B8 00000002
+        move.b  #1,0x8F10           | tb rewrites $9800 behind the CPU, as DMA would
+        move.l  #9,%d0              | EI + CI: clear the cache, as CacheClearU does
+        movec   %d0,%cacr
+        jsr     0x9800
+        move.l  %d4,0x81BC          | 81BC 00000003
+        moveq   #1,%d0
+        movec   %d0,%cacr
+        | -- step 11: posted chip RAM writes keep their order --
+        move.w  #0x1234,0x8E00      | posted
+        move.w  0x8E00,%d0          | the read waits for it
+        move.b  #0x56,0x8E01        | posted byte write
+        move.w  0x8E00,%d1
+        swap    %d0
+        move.w  %d1,%d0
+        move.l  %d0,0x81C0          | 81C0 12341256
+        | -- posted writes at every phase of the 7M grid: the delay loop
+        | after each write shifts when the next one starts (the bridge once
+        | left the data bus undriven when a write's DS met the AS tick) --
+        lea     0x8E40,%a0
+        moveq   #0,%d0
+        moveq   #47,%d2
+ph1:    move.w  %d0,(%a0)+          | posted
+        move.w  %d0,%d1
+        and.w   #3,%d1
+ph2:    dbra    %d1,ph2
+        addq.w  #1,%d0
+        dbra    %d2,ph1
+        lea     0x8E40,%a0
+        moveq   #0,%d3
+        moveq   #47,%d2
+ph3:    add.w   (%a0)+,%d3
+        dbra    %d2,ph3
+        move.l  %d3,0x81C4          | 81C4 0+1+...+47 = 0x468
+        .ifdef FASTMEM
+        | ...and with a fast RAM read before each write: the SDRAM's latency
+        | is not a whole number of CPU steps, so the writes start at every
+        | phase of the 7M grid, the DS-on-the-AS-tick one included
+        lea     0x8E40,%a0
+        movea.l #0x08006000,%a1
+        moveq   #0,%d0
+        moveq   #95,%d2
+pf1:    move.w  (%a1)+,%d5
+        move.w  %d0,(%a0)
+        move.w  %d0,%d1
+        and.w   #3,%d1
+pf2:    dbra    %d1,pf2
+        addq.w  #1,%d0
+        dbra    %d2,pf1
+        move.w  (%a0),%d3
+        move.l  %d3,0x81C8          | 81C8 last value written: 95 = 0x5F
+        .endif
         moveq   #0,%d7
         jsr     romfn+0xF80000      | Kickstart-ROM range: over the 7M bus,
         jsr     romfn+0xF80000      | then from the cache
@@ -237,6 +298,8 @@ wait:   tst.l   %d3
         move.l  %d3,(%a5)+          | 8120 33333333
         move.l  #0x600DC0DE,0x8FF0
 done:   bra.s   done
+chipfn: moveq   #1,%d4              | step 11 test routine, copied to $9800
+        rts
 romfn:  moveq   #0x55,%d7
         rts
         .balign 4

@@ -29,7 +29,13 @@ ap.add_argument('cfg', nargs='?', default='min', choices=CFGS)
 ap.add_argument('--seed', type=int, default=1)
 ap.add_argument('--seeds', type=int, default=8, help='try up to this many seeds (stops at the first that passes)')
 ap.add_argument('--skip-synth', action='store_true', help='reuse an existing yosys netlist')
+ap.add_argument('--x16', action='store_true',
+                help='EXPERIMENTAL: for a board whose ICS570B is rewired from x12 to x16 '
+                     '(113.5 MHz). Defines TG68_X16, output in build/<cfg>_x16. Overclocked: '
+                     'check_timing at 113.6 MHz is expected to fail, see README "16x clock"')
 a = ap.parse_args()
+if a.x16 and '--seeds' not in sys.argv:
+    a.seeds = 1   # it never passes at 113.6 MHz, so a search would run every seed
 
 def find_tool(var, *candidates):
     """$var if set, else the first candidate found on PATH, else the first
@@ -45,7 +51,7 @@ YOSYS = find_tool('YOSYS', 'yosys', 'yowasp-yosys')
 NEXTPNR = find_tool('NEXTPNR', 'nextpnr-ecp5', 'yowasp-nextpnr-ecp5')
 ECPPACK = os.environ.get('ECPPACK', 'ecppack')
 fm, sd = CFGS[a.cfg]
-name = a.cfg
+name = a.cfg + ('_x16' if a.x16 else '')
 out = os.path.join(ROOT, 'build', name)
 os.makedirs(out, exist_ok=True)
 for f in ('turbomem.mem', 'sfsd.mem'):        # $readmemh looks in the cwd
@@ -71,8 +77,11 @@ srcs_v = [R('base64_tg68', 'tg68_bus.v'), R('tg68', core)] + \
 
 if not a.skip_synth:
     print('== yosys  (%s: ENABLE_FASTMEM=%d ENABLE_SD=%d)' % (a.cfg, fm, sd))
-    script = '\n'.join(['read_verilog -sv ' + f for f in srcs_sv] +
-                       ['read_verilog ' + f for f in srcs_v] + [
+    # --x16: every 16x change is under `ifdef TG68_X16, so without it yosys
+    # reads exactly the 12x text (and the 12x bitstreams stay reproducible)
+    dfl = '-DTG68_X16 ' if a.x16 else ''
+    script = '\n'.join(['read_verilog %s-sv ' % dfl + f for f in srcs_sv] +
+                       ['read_verilog %s' % dfl + f for f in srcs_v] + [
         'read_verilog -lib +/ecp5/cells_bb.v',   # BB: the SD card input pins
         'chparam -set ENABLE_FASTMEM %d -set ENABLE_SD %d base64_tg68_top' % (fm, sd),
         # Keep the TG68 kernel and ALU as separate modules through
@@ -114,6 +123,9 @@ if not a.skip_synth:
                  + ', '.join(lost))
 
 lpf = os.path.join(ROOT, 'constraints', 'base64_tg68.lpf')
+# (--x16 keeps nextpnr's 86 MHz target: aimed at 114 MHz, nextpnr, which
+# times the multicycle kernel as one clock, spent its effort on the kernel
+# and the 1T paths came out 1-3 ns worse on every seed tried)
 for seed in range(a.seed, a.seed + a.seeds):
     print('== nextpnr  (seed %d)' % seed)
     # --timing-allow-fail: nextpnr cannot be told the TG68 kernel is
@@ -130,7 +142,8 @@ for seed in range(a.seed, a.seed + a.seeds):
          '--seed', str(seed), '-l', 'nextpnr.log'])
     print('== timing check')
     r = subprocess.run([sys.executable, os.path.join(ROOT, 'scripts', 'check_timing.py'),
-                        'base64_tg68.sdf'], cwd=out, capture_output=True, text=True)
+                        'base64_tg68.sdf'] + (['--freq', '113.6'] if a.x16 else []),
+                       cwd=out, capture_output=True, text=True)
     open(os.path.join(out, 'timing.txt'), 'w').write(r.stdout)
     print('\n'.join(l for l in r.stdout.splitlines()[:12]))
     if r.returncode == 0 or seed == a.seed + a.seeds - 1:
@@ -146,6 +159,9 @@ print('== ecppack')
 bit = 'base64_tg68_%s.bit' % name
 run([ECPPACK] + os.environ.get('ECPPACK_OPTS', '').split() + ['base64_tg68.config', bit])
 print('== done: %s' % os.path.join(out, bit))
-if r.returncode != 0:
+if r.returncode != 0 and a.x16:
+    print('NOTE: x16 is an overclocked build. check_timing at 113.6 MHz fails by design;\n'
+          '      the worst slacks in timing.txt say how far past the worst-case model it runs.')
+elif r.returncode != 0:
     print('WARNING: timing check FAILED on every seed tried -- see timing.txt')
     sys.exit(2)

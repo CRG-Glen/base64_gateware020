@@ -10,15 +10,15 @@
 -- a8e6f38): bit 0 longword data reads/writes, bit 1 32-bit immediates, bit 2
 -- absolute-long address extensions, each as one aligned pair when the bus
 -- side answers long_cand with long_ack. With long_ack held at 0 the kernel
--- runs the ordinary 16-bit sequence. Base64 uses 1 (data only): bits 1 and
--- 2 put the kernel's clkena paths 2-5 ns over budget on every seed tried.
+-- runs the ordinary 16-bit sequence. Base64: 7 from step 10 (1 before; 2-5
+-- ns over on clkena until step 8's clkena_lw, now ~1-2 ns, README Timing).
 -- CLKLW generic: 1 = the kernel takes clkena_lw (its long-word clock enable)
 -- from clkena_lw_in, a register in tg68_bus, instead of computing
 -- clkena_in AND (NOT longword OR long_ack) itself (Base64 kernel change 2).
 library ieee; use ieee.std_logic_1164.all; use ieee.numeric_std.all;
 entity tg68_020 is
   generic (BARREL : integer := 0; BITFIELD : integer := 1; MULHW : integer := 1;
-           DP32 : integer := 1; CLKLW : integer := 1);
+           DP32 : integer := 7; CLKLW : integer := 1);
   port (
     clk        : in  std_logic;
     nreset     : in  std_logic;
