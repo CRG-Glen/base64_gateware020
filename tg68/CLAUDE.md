@@ -405,6 +405,11 @@ that gives the "_fast" files.
     for the gateware. It prompted a check of posted chip writes against
     68000 timing (AS S2, DS S4, end S7, next AS S2): the bridge matches;
     the 6-clock period in `bench chip` is the tb Gary's late DTACK.
+- Not pursued (Glen's decision): faking a 68EC030 (only CachePreDMA/
+  PostDMA change; MMU probes would trap), and watching BLTSIZE/DSKLEN
+  writes to flush code the blitter or disk DMA overwrites. Stale cached
+  chip code after DMA is the same risk as on an A1200, and Glen has never
+  met it in practice.
 - Possible small idea: cache code fetches from A500 trapdoor slow RAM
   ($C00000-$D7FFFF; no DMA reaches it). Instruction cache only: with no
   RAM fitted that range mirrors the custom chips, and the data cache's
