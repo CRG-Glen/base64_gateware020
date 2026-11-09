@@ -397,6 +397,16 @@ that gives the "_fast" files.
   16 clocks per 7M cycle and the phase aligner works as with the mod.
   14x (7/6, 99.3 MHz) would keep SDRAM CL2 in spec on a -6 part and need
   less overclock margin than 16x. Not designed yet.
+  Runtime speed select (Glen's idea): ECP5 PLL dividers are fixed in the
+  bitstream (only phase is dynamic, as far as known), so: PLL1 VCO 681 MHz
+  (12x x8) gives /8 = 12x and /6 = 16x, PLL2 (CLKI_DIV 6, CLKFB_DIV 7)
+  gives 14x; glitch-free DCSC muxes pick one. A CLI tool writes a speed
+  register; the adapter holds the kernel, waits for the bus and SDRAM to
+  go idle, switches, lets the 7M aligner re-lock, then resumes. The
+  TG68_X16 ifdefs (CLK_MULT/CPU_MULT counts, rt_ hold, SDRAM CL and
+  refresh count, SD SCLK stretch) become runtime settings. Power-on
+  default 12x, so a bad choice is undone by a power cycle. Even
+  multiples only (tick_f at CLK_MULT/2).
 - SDRAM: 24 of 32 MB mapped (8 MB Z2, 16 MB at $08000000, 1 MB MapROM);
   7 MB spare. Little software would use more.
 - Bigger caches: 16 more block RAMs, which would crowd out RTG.
