@@ -243,16 +243,25 @@ module tb;
     always @(negedge as_n) if (ba[23:19] == 5'b11111) romf = romf + 1;
     reg [2:0] w = 0;
     reg       busy = 0;
+    // Random wait states (0-2 7M clocks per cycle), as DMA contention gives
+    // a real Gary, so CPU cycles land at every phase of the 7M grid (a fixed
+    // DTACK let the step 11 posted-write data-enable race hide). Not in the
+    // throughput benches, which need fixed timing.
+    reg [2:0] xw = 0;
+    integer   jit_seed = 1;
     always @(posedge clk7) begin
         if (as_n) begin
             dtack_n <= 1; vpa_n <= 1; mb_drive <= 0; busy <= 0; w <= 0;
         end else if (!busy) begin
             busy <= 1; cycles = cycles + 1; w <= 0;
+`ifndef MEMBENCH
+            xw <= $unsigned($random(jit_seed)) % 3;
+`endif
             if (fc == 3'b111) begin vpa_n <= 0; iacks = iacks + 1; end
             else if (ba[23:16] == 8'hBF) begin vpa_n <= 0; cia = cia + 1; end
         end else if (vpa_n) begin
             w <= w + 1;
-            if (w == 1) begin
+            if (w == 3'd1 + xw) begin
                 if (rw) begin
                     if (ba < 24'h2000 || ba[23:19] == 5'b11111) mb_q <= rom[ba[12:1]];
                     else if (ba >= 24'h8000 && ba < 24'hA000)  mb_q <= ram[ba[12:1]];
@@ -269,6 +278,13 @@ module tb;
         end
     end
     // writes land on the DS rising edge, like Agnus
+    // ...and the CPU side must be driving the data bus when they do
+    integer undriven = 0;
+    always @(posedge uds_n or posedge lds_n)
+        if (!rw && !as_n && dut.bus_owned && !dut.rt_d_oe) begin
+            undriven = undriven + 1;
+            if (undriven <= 5) $display("FAIL: write to %h latched with the data bus not driven", ba);
+        end
     always @(posedge uds_n) if (!rw && ba >= 24'h8000 && ba < 24'hA000) ram[ba[12:1]][15:8] = d[15:8];
     always @(posedge lds_n) if (!rw && ba >= 24'h8000 && ba < 24'hA000) ram[ba[12:1]][7:0]  = d[7:0];
     always @(posedge uds_n) if (!rw && ba == 24'h8F80) ipl_n = 3'b111;
@@ -391,8 +407,10 @@ module tb;
         $display("instruction-cache hits on chip RAM code: %0d", chip_ihit);
         if (chip_ihit < 2) begin $display("FAIL: chip RAM code never came from the cache"); errors = errors + 1; end
         check(24'h81C0, 32'h12341256, "posted writes, order");
+        check(24'h81C4, 32'h00000468, "posted writes, all phases");
         $display("posted chip writes: %0d", n_posted);
         if (n_posted < 10) begin $display("FAIL: chip RAM writes were not posted"); errors = errors + 1; end
+        if (undriven > 0) begin $display("FAIL: %0d writes latched with the data bus not driven", undriven); errors = errors + 1; end
 `ifdef FASTMEM
         check(24'h8120, 32'h13579BDF, "fast RAM $08000000");
         check(24'h8124, 32'h2468ACE0, "fast RAM $08FFFFFC");

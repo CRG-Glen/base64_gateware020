@@ -1354,6 +1354,8 @@ module base64_tg68_top #(
             // CPU ends its cycle, so its next cycle never sees a stale one,
             // and ignore that next cycle until this one is done.
             if (core_as_n) rt_dtack_lo <= 1'b0;
+            // the data bus is driven whenever this write's AS is down
+            if (!rt_as_n) rt_d_oe <= 1'b1;
             if (tick_rq && !rp_term && !rp_hold) begin
                 if (rt_as_n) begin                  // S2: AS down, data out
                     rt_as_n <= 1'b0;
@@ -1441,6 +1443,12 @@ module base64_tg68_top #(
                 rp_lds      <= core_lds_n;
                 rt_rw       <= 1'b0;
                 rt_d        <= core_dout;
+                // drive the data bus now if AS is (or is going) down: when
+                // this clock is also the AS tick above, rt_d_oe was just
+                // loaded from the old rt_as_n (1), and the sequencer below
+                // only enables the data with its own AS step, which it then
+                // skips: the write went out with the data bus undriven.
+                rt_d_oe     <= ~rt_as_n | tick_r;
                 rp_ds       <= 1'b0;
             end
             if (tick_r && !rt_as_n && s_berr_n[1]) begin
