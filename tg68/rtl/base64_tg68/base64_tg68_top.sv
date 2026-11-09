@@ -503,6 +503,14 @@ module base64_tg68_top #(
 
     // The two 7M half-clock ticks, and the early tick used to lead the ack.
     wire tick_r   = (ph == 5'd0);      // "rising edge of 7M"  -> S0,S2,S4,S6
+    // TG68: tick_rq = tick_r as a register (ph's next value is 0: it wraps
+    // and no 7M edge re-acquires it; PHASE_OFS is never 0). The posted-write
+    // sequencer (POST_CHIP) uses it, so the pin registers it loads (address,
+    // FC, R/W, strobes) don't wait on the 5-bit phase compare: that path
+    // failed 1T by 0.5 ns. The top tb asserts tick_rq == tick_r every clock.
+    reg  tick_rq  = 1'b1;               // ph starts at 0
+    always @(posedge clk)
+        tick_rq <= (ph == PH_TOP) && !(edge_7m && (!ph_locked || slip_cnt == SLIP_TOL[1:0]));
     wire tick_f   = (ph == PH_HALF);      // "falling edge of 7M" -> S1,S3,S5,S7
     wire tick_ack = (ph == PH_ACK);    // tick_f minus ACK_LEAD master clocks
 
@@ -1321,12 +1329,6 @@ module base64_tg68_top #(
     //   rp_term: its DTACK was seen;  rp_hold: AS/DS up, holding
     reg        rp_pend = 1'b0, rp_term = 1'b0, rp_hold = 1'b0, rp_ds = 1'b0;
     reg        rp_uds = 1'b1, rp_lds = 1'b1;
-    // rp_ld: the clock after a posted write ends, R/W, data and address are
-    // released and the CPU's next cycle's address loaded (a clock after the
-    // tick_r: from a register, so the pin registers' enables do not wait on
-    // the 7M phase decode, which failed 1T by 0.5 ns; nothing goes out on
-    // the bus before the next tick_r, >= 7 clocks away)
-    reg        rp_ld = 1'b0;
     // rt_chip: rt_a is in chip RAM $000000-$1FFFFF. Its own register, loaded
     // with rt_a: rt_a has syn_useioff, and an I/O register cannot also be
     // read inside the FPGA (packing fails).
@@ -1342,19 +1344,7 @@ module base64_tg68_top #(
 `endif
 
     always @(posedge clk) begin
-        // TG68: the release after a posted write (rp_ld). Before the chain
-        // below, so that anything it does on this clock wins (a new chip
-        // write is not posted on this clock: rt_chip is being reloaded).
-        if (rp_ld) begin
-            rp_ld   <= 1'b0;
-            rt_rw   <= 1'b1;
-            rt_d_oe <= 1'b0;
-            rt_a    <= core_a[23:1];               // the CPU's next cycle
-            rt_chip <= (core_a[23:21] == 3'b000);
-            rt_fc   <= core_fc;
-        end
         if (ext_reset) begin
-            rp_ld <= 1'b0;
             rt_as_n <= 1'b1; rt_uds_n <= 1'b1; rt_lds_n <= 1'b1;
             rt_vma_n <= 1'b1; rt_dtack_lo <= 1'b0; rt_d_oe <= 1'b0;
             rt_vst <= 2'd0; rt_av <= 1'b0;
@@ -1364,7 +1354,7 @@ module base64_tg68_top #(
             // CPU ends its cycle, so its next cycle never sees a stale one,
             // and ignore that next cycle until this one is done.
             if (core_as_n) rt_dtack_lo <= 1'b0;
-            if (tick_r && !rp_term && !rp_hold) begin
+            if (tick_rq && !rp_term && !rp_hold) begin
                 if (rt_as_n) begin                  // S2: AS down, data out
                     rt_as_n <= 1'b0;
                     rt_d_oe <= 1'b1;
@@ -1382,11 +1372,15 @@ module base64_tg68_top #(
                 rp_term  <= 1'b0;
                 rp_hold  <= 1'b1;
             end
-            if (rp_hold && tick_r) begin            // address/data held to here
+            if (rp_hold && tick_rq) begin            // address/data held to here
                 rp_hold  <= 1'b0;
                 rp_pend  <= 1'b0;
                 rp_ds    <= 1'b0;
-                rp_ld    <= 1'b1;                   // next clock: next address
+                rt_rw    <= 1'b1;
+                rt_d_oe  <= 1'b0;
+                rt_a     <= core_a[23:1];           // the CPU's next cycle
+                rt_chip  <= (core_a[23:21] == 3'b000);
+                rt_fc    <= core_fc;
             end
         end else if (core_as_n) begin
             rt_as_n     <= 1'b1;
@@ -1439,7 +1433,7 @@ module base64_tg68_top #(
             // strobe down; rt_a and rt_d hold address and data), is acked
             // now and run by the bridge (POST_CHIP, above). Not a 6800
             // cycle or one already acked; never an on-chip slave.
-            if (POST_CHIP && !core_rw && rt_chip && !rp_ld && !int_win_r && rt_vst == 2'd0
+            if (POST_CHIP && !core_rw && rt_chip && !int_win_r && rt_vst == 2'd0
                 && (!core_uds_n || !core_lds_n) && !rt_dtack_lo) begin
                 rt_dtack_lo <= 1'b1;
                 rp_pend     <= 1'b1;

@@ -276,11 +276,14 @@ that gives the "_fast" files.
     `rt_dtack_lo` at once and the bridge runs AS/DS/DTACK on the 7M grid
     itself; the next core cycle waits; BRn is held off while posting.
     `rt_chip` is its own register loaded with rt_a (rt_a is syn_useioff:
-    reading it inside the FPGA failed packing). The release (R/W, data
-    off, next address) happens the clock after the end tick_r (`rp_ld`,
-    a register: from tick_r it failed 1T), and no post starts on that
-    clock (rt_chip is stale then). The bridge's clear of the stale ack
-    is backed up by the adapter's `ack_idle` (a mutant without it passes).
+    reading it inside the FPGA failed packing). The sequencer uses
+    `tick_rq`, tick_r as a register (tb-asserted equal), so the pin
+    registers' enables skip the phase compare (failed 1T by 0.5 ns).
+    Pin registers in one I/O block must share CE/LSR nets: loading rt_a/
+    rt_fc a clock later than rt_rw (tried) failed packing. The bridge's
+    clear of the stale ack is backed up by the adapter's `ack_idle` (a
+    mutant without it passes). `k_step` (keep) is the adapter's copy of
+    k_clkena, so k_clkena drives only the kernel (tb-asserted equal).
   - SDRAM bank = word bits [10:9] ^ [12:11] ^ [14:13] (fastmem_zii.v,
     `TG68:`): code and data 4-32 KB apart no longer share a bank.
   - Pair prefetch: an aligned 16-bit fast RAM read miss is a pair read

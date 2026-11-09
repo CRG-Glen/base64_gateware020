@@ -143,6 +143,16 @@ module tb;
             $display("FAIL dec_r out of step with q (q=%0d dec_r=%b)", dut.cpu.q, dut.cpu.dec_r);
             ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
         end
+        // tick_rq is tick_r as a register (posted chip writes): always equal
+        if (dut.tick_rq !== dut.tick_r) begin
+            $display("FAIL tick_rq %b, tick_r %b", dut.tick_rq, dut.tick_r);
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
+        // k_step is the adapter's copy of k_clkena: always equal
+        if (dut.cpu.k_step !== dut.cpu.k_clkena) begin
+            $display("FAIL k_step %b, k_clkena %b", dut.cpu.k_step, dut.cpu.k_clkena);
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
         // Kernel change 2: the registered clkena_lw must equal what the
         // kernel computed itself, clkena AND (NOT longword OR long_ack), on
         // every clock (kernel outputs read live).

@@ -70,6 +70,11 @@ module tb;
             $display("FAIL dec_r out of step with q (q=%0d dec_r=%b)", dut.q, dut.dec_r);
             ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
         end
+        // k_step is the adapter's copy of k_clkena: always equal
+        if (dut.k_step !== dut.k_clkena) begin
+            $display("FAIL k_step %b, k_clkena %b", dut.k_step, dut.k_clkena);
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
         // Kernel change 2: the registered clkena_lw must equal what the
         // kernel computed itself, clkena AND (NOT longword OR long_ack), on
         // every clock (kernel outputs read live).

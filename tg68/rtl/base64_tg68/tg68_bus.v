@@ -129,6 +129,11 @@ module tg68_bus #(
     // Kernel
     // ------------------------------------------------------------------
     reg         k_clkena = 1'b0;
+    // k_step: a copy of k_clkena for the adapter's own uses (the clears at
+    // the end of a step, nReset), so k_clkena drives only the kernel and
+    // can sit among its ~90 loads (clkena -> kernel is 1T and mostly
+    // routing). keep: yosys would merge the two identical registers.
+    (* keep *) reg k_step = 1'b0;
     // The kernel's long-word clock enable, clkena AND (NOT longword OR
     // long_ack), set on the same edge as k_clkena from settled inputs:
     // longword is a kernel output, final SETTLE clocks after a step, and
@@ -655,6 +660,7 @@ module tg68_bus #(
 
     always @(posedge clk) begin
         k_clkena <= 1'b0;
+        k_step   <= 1'b0;
         k_clkena_lw <= 1'b0;
         ic_we    <= 1'b0;
         dc_we    <= 1'b0;
@@ -673,7 +679,7 @@ module tg68_bus #(
         end
         // The kernel samples data_in at the end of the clkena clock; the
         // select goes back to k_din on that same edge.
-        if (k_clkena) begin k_din_sel <= 1'b0; k_long_ack <= 1'b0; k_din_hsel <= 1'b0; k_din_dsel <= 1'b0; end
+        if (k_step) begin k_din_sel <= 1'b0; k_long_ack <= 1'b0; k_din_hsel <= 1'b0; k_din_dsel <= 1'b0; end
         // (step 11: chip RAM too; only fetches look it up, k_look)
         ic_ok_d  <= (ICACHE != 0) && (k_rom || k_z2 || k_cpuw || icache_win_k
                                       || (k_addr[31:21] == 11'd0));
@@ -710,6 +716,7 @@ module tg68_bus #(
             q        <= Q_SETTLE;
             if (cnt >= STEP - 1) begin
                 k_clkena <= 1'b1;
+                k_step   <= 1'b1;
                 k_clkena_lw <= !k_longword || k_long_ack;
                 cnt      <= 6'd0;
                 k_ipl    <= {IPL2n, IPL1n, IPL0n};
@@ -1122,7 +1129,7 @@ module tg68_bus #(
 
         // nReset is released on a clkena edge so it is stable for the
         // kernel's next STEP clocks.
-        if (!extReset && k_clkena) k_nreset <= 1'b1;
+        if (!extReset && k_step) k_nreset <= 1'b1;
     end
 
     // One kernel step. IPL is re-sampled on the same edge so it is stable
@@ -1131,6 +1138,7 @@ module tg68_bus #(
     task step;
         begin
             k_clkena <= 1'b1;
+            k_step   <= 1'b1;
             k_clkena_lw <= !k_longword || k_long_ack;
             cnt      <= 6'd0;
             k_ipl    <= {IPL2n, IPL1n, IPL0n};
