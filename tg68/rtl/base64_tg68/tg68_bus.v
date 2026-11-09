@@ -64,6 +64,10 @@ module tg68_bus #(
     parameter integer DP32_RD    = 1,  // read aligned longwords from fast RAM as
                                        // one pair on a cache miss (step 9)
     parameter integer IC_AW      = 12, // log2(cache words): 12 = 4096 = 8 KB
+    // Step 11 switches (1 = on; 0 = as step 10), for bisecting on hardware:
+    parameter integer CHIP_IC    = 1,  // instruction cache holds chip RAM code
+    parameter integer CACR_CLR   = 1,  // CACR CI/CEI flush both caches
+    parameter integer RD11       = 1,  // pair prefetch + one-clock-shorter direct read
     parameter integer BARREL     = 0   // documentation only: which netlist
 )(
     input  wire        clk,
@@ -352,7 +356,7 @@ module tg68_bus #(
     // entry on any CPU write. DMA writes are invisible here, so software
     // must clear the cache after loading code, as on a 68020 (CACR CI/CEI,
     // which flush both caches: flush_trig below; Exec's CacheClearU).
-    wire ic_chip = (ICACHE != 0) && (a_r[31:21] == 11'd0);
+    wire ic_chip = (ICACHE != 0) && (CHIP_IC != 0) && (a_r[31:21] == 11'd0);
     wire ic_okf  = ic_ok || ic_chip;
     wire [TAGW-1:0] ic_want = {1'b1, (a_r[31:24] == 8'h08), (a_r[31:24] == 8'h00),
                                a_r[23:IC_AW+1]};
@@ -363,7 +367,8 @@ module tg68_bus #(
     reg  mr_act_d = 1'b0;  // MapROM state last clock (flush on change)
     // (step 11: also CACR CEI/CI, bits 2-3, which the kernel holds for one
     // step after the MOVEC that sets them, kernel change 3)
-    wire flush_trig = extReset || !oRESETn || (mr_active != mr_act_d) || k_cacr[3] || k_cacr[2];
+    wire flush_trig = extReset || !oRESETn || (mr_active != mr_act_d)
+                    || ((CACR_CLR != 0) && (k_cacr[3] || k_cacr[2]));
     wire flush_nxt  = flush_trig || (ic_flush && !(&ic_fcnt));
     reg  ic_on_r = 1'b0, dc_on_r = 1'b0;
     wire ic_on   = ic_on_r;
@@ -602,7 +607,7 @@ module tg68_bus #(
     // a pair read, whether or not the kernel takes the pair: the second word
     // goes to the prefetch buffer with no request of its own (it used to be
     // a separate SDRAM request, which the next read then queued behind)
-    wire k_ralg   = (DP32_RD != 0) && !k_addr[1];
+    wire k_ralg   = (RD11 != 0) ? ((DP32_RD != 0) && !k_addr[1]) : k_rpair;
     wire k_dpair  = k_nwr ? k_ralg : k_wpair;
     // rp_go: this cycle is an aligned pair read from fast RAM (registered at
     // DECIDE). A cache miss keeps k_long_ack = rp_go whichever way it goes
@@ -682,7 +687,7 @@ module tg68_bus #(
         if (k_step) begin k_din_sel <= 1'b0; k_long_ack <= 1'b0; k_din_hsel <= 1'b0; k_din_dsel <= 1'b0; end
         // (step 11: chip RAM too; only fetches look it up, k_look)
         ic_ok_d  <= (ICACHE != 0) && (k_rom || k_z2 || k_cpuw || icache_win_k
-                                      || (k_addr[31:21] == 11'd0));
+                                      || ((CHIP_IC != 0) && (k_addr[31:21] == 11'd0)));
         mr_act_d <= mr_active;
         ic_on_r  <= (ICACHE != 0) && k_cacr[0] && !flush_nxt;
         dc_on_r  <= (DCACHE != 0) && k_cacr[0] && !flush_nxt;
@@ -932,7 +937,7 @@ module tg68_bus #(
             Q_DWAIT: if (dp_ack) begin
                 dp_q     <= dp_rdata;
                 k_din_dw   <= dp_rdata;            // step 11 (not for a kernel pair)
-                k_din_dsel <= !k_long_ack;
+                k_din_dsel <= (RD11 != 0) && !k_long_ack;
                 dp_req_i <= 1'b0;
                 dp_busy  <= 1'b0; dp_kind <= 2'd0;
                 // a data read will be followed by a prefetch: point the
@@ -961,7 +966,7 @@ module tg68_bus #(
                 dp_q     <= dp_rdata;
                 // step 11: a plain direct read steps the kernel now (its
                 // word is in k_din_dw since DWAIT), FINISH if cnt says wait
-                if (!k_long_ack && cnt >= STEP - 1 && DIN_SETUP <= 1) step();
+                if ((RD11 != 0) && !k_long_ack && cnt >= STEP - 1 && DIN_SETUP <= 1) step();
                 else q   <= k_long_ack ? Q_DDATA2 : Q_FINISH;
                 // Data read: fetch the next word while the kernel settles,
                 // unless that would leave this 1 KB (row/slot boundaries).

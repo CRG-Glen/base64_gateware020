@@ -38,7 +38,8 @@ module fastmem_zii #(
     // adapter's direct path, which also carries MapROM); the AS/DS bus slave
     // for RAM is removed, and with it its single-cycle DS -> SDRAM paths.
     // Autoconfig is unaffected.
-    parameter        BUS_RAM     = 1'b1
+    parameter        BUS_RAM     = 1'b1,
+    parameter        BANK_XOR    = 1'b1     // TG68: step 11 bank permutation (0: as step 10)
 )(
     input  wire        clk,
     input  wire        reset,        // active high (~s_reset_n | ~pwrup_done)
@@ -471,7 +472,7 @@ wire [23:0] s_word0 = s_mrwin ? {5'b01000, s_mre, sa[18:1]}
 // Taken from sa itself (word bits [14:9] are sa[15:10] in every mapping),
 // so the bank is one LUT from the address and never waits on the slot
 // decode (fm_cfg_match -> s_dense failed 1T by 0.5 ns through s_word0).
-wire [1:0]  s_bank  = sa[11:10] ^ sa[13:12] ^ sa[15:14];
+wire [1:0]  s_bank  = BANK_XOR ? (sa[11:10] ^ sa[13:12] ^ sa[15:14]) : s_word0[10:9];
 wire [23:0] s_word  = {s_word0[23:11], s_bank, s_word0[8:0]};
 always @(posedge clk)
     if (!dp_hold)
