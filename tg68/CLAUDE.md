@@ -23,8 +23,9 @@ MapROM.
 ```
 rtl/base64_tg68/   top level (base64_tg68_top.sv) and the bus adapter tg68_bus.v
 rtl/tg68/          TG68K.C VHDL: m1nl's fork (github.com/m1nl/TG68K.C, a8e6f38,
-                   32-bit data path) with TWO marked changes (l1 <= long_ack;
-                   clkena_lw from the clkena_lw_in port, see README), + the
+                   32-bit data path) with THREE marked changes (l1 <= long_ack;
+                   clkena_lw from the clkena_lw_in port; CACR CI/CEI held
+                   one step, step 11; see README), + the
                    tg68_020.vhd wrapper;
                    tg68_020_b0.v is the GHDL-converted netlist actually built
                    (regenerate: YOSYS=yowasp-yosys sh scripts/gen_tg68.sh, needs
@@ -154,7 +155,9 @@ that gives the "_fast" files.
   - Each read prefetches the next word (pf_*, never across a 1 KB boundary).
 - **Caches (steps 2 and 4):** two 8 KB direct-mapped caches, one 16-bit word
   per entry, in block RAM.
-  - Cacheable: fast RAM and Kickstart $F80000-$FFFFFF. Never Chip RAM.
+  - Cacheable: fast RAM and Kickstart $F80000-$FFFFFF; from step 11 the
+    instruction cache also holds Chip RAM code. The data cache never holds
+    Chip RAM.
   - Both share one lookup pipeline: the RAMs read the kernel's address on
     the edge into DECIDE, DECIDE loads the word into k_din_c and the tag
     into ic_qt, CCMP compares (EARLY LOOKUP, step 6).
@@ -258,7 +261,7 @@ that gives the "_fast" files.
   with DP32=7 (long_cand now waits for addr[1:0]). Possible follow-up: a
   separate instruction prefetch buffer that chains (each hit issues the
   next prefetch), since a data read in between replaces the shared buffer.
-- **Games (step 11, runs on hardware at 12x seed 14 and 16x seed 1):** Glen saw Frontier and Gloom
+- **Games (step 11, known good on hardware at 12x seed 14 and 16x seed 1; released as v1.4 with step 10):** Glen saw Frontier and Gloom
   run the same with caches on and off. Frontier's executable has a 157 KB
   CODE hunk with the CHIP flag: its code runs from Chip RAM, ~60 clocks
   per instruction word, never cached. Changes:
@@ -484,7 +487,9 @@ that gives the "_fast" files.
   ($C00000-$D7FFFF; no DMA reaches it). Instruction cache only: with no
   RAM fitted that range mirrors the custom chips, and the data cache's
   write allocate would fool Kickstart's memory probe.
-- 16x clock: branch `exp-16x-clock` (not merged; README "16x clock").
+- 16x clock: merged into main with step 11 (README "16x clock"); releases
+  have `_x16` files from step 10 on. Glen switches his board between x12
+  and x16 with a jumper on the ICS570B's pin 6. History:
   Glen's board is rewired x16 (113.5 MHz); a 12x bitstream there runs the
   bridge's 7M grid at 9.46 MHz (CLK_MULT fixed at 12: bus cycles short,
   E/CIA 33% fast, a Ripple IDE's ROM not run). `build.py full --x16`
