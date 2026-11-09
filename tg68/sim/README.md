@@ -67,7 +67,7 @@
   (`n_posted`). (Checked against broken versions: no chip fill, no
   invalidate on a CPU write, no flush on CI, a posted write's byte lanes
   swapped: all caught.)
-* **bench chip**: a loop in Chip RAM writes 1 KB to fast RAM, timed on the
+* **bench chip**: a loop in Chip RAM writes 1 KB to Chip RAM, timed on the
   second pass (Chip RAM code from the instruction cache).
 * **bench copy | read | scatter | sd**: fast RAM throughput, timed on a second
   pass with the loop running from the instruction cache. `copy` copies

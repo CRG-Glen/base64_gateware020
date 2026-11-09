@@ -365,11 +365,17 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
 
   | Bench | Step 10 | Step 11 |
   | --- | --- | --- |
-  | `bench chip`: a loop in Chip RAM writing 1 KB to fast RAM | 1133 µs | 442 µs (2.56×) |
+  | `bench chip`: a loop in Chip RAM writing 1 KB to Chip RAM (a game drawing into its screen) | 1133 µs | 442 µs (2.56×) |
   | `bench readoff`: fast RAM read loop, caches off | 5.42 (6.72) MB/s | 7.61 (9.29) MB/s (+40%) |
   | `bench copy`: fast RAM copy, caches on | 7.38 (9.40) MB/s | 8.63 (10.89) MB/s (+17%) |
   | `bench read`, `bench scatter` | | unchanged |
 
+  `bench chip`'s gain is all from caching the loop: it writes back to
+  back, so each write waits for the posted one before it, and posting off
+  gives the same 442 µs. With twelve ALU instructions between the writes
+  (a variant, not in the tree), posting takes it from 695 to 550 µs
+  (1.26×): it pays off where code computes between Chip RAM writes, as a
+  chunky-to-planar loop does.
   The tests run code from Chip RAM twice and require cache hits the
   second time, change it by CPU write (the new code must run), change it
   "by DMA" (the test bench rewrites the word behind the CPU: the old code
