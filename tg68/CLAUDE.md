@@ -308,7 +308,7 @@ that gives the "_fast" files.
     via the tb mailbox at $8F10 then CACR CI (0x81B4/B8/BC), posted write
     order at 0x81C0, `n_posted` >= 10, `bench chip`. Sim: bench chip 1133
     -> 442 us, readoff +40%, copy +17%, read/scatter unchanged.
-- **Chip RAM write buffer (step 12, known good on hardware, 12x seed 6 and 16x seed 4):** `CHIP_WB` (top
+- **Chip RAM write buffer (step 12, known good on hardware, 12x seed 6 and 16x seed 4; released as v1.5):** `CHIP_WB` (top
   level, default 8) entries {a, d, fc, uds/lds} in `wb_*` (storage always
   8 deep, 3-bit pointers; CHIP_WB only limits the fill). `postable` =
   POST_CHIP && core AS low && write && `core_chip_r` (registered

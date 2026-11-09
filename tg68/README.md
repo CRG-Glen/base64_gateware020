@@ -10,14 +10,16 @@ and the SD card. An adapter, `tg68_bus.v`, makes TG68K look like fx68k's
 ports and adds the caches and the direct SDRAM path. Changes to the fx68k
 build's own files are few and marked `TG68:`.
 
-> **Status:** steps 1-11 run on an A500+. The latest, step 11 `full`, at
-> the stock 12x clock: 9690 Dhrystones (10.11 MIPS), AIBB MemTest 15.73 MB/s,
-> xSysInfo fast RAM 23.31 MB/s with the caches on; 5161 Dhrystones and
-> 8.49 MB/s with them off. That is about 3.5× the 2783 Dhrystones of the
+> **Status:** steps 1-12 run on an A500+. The latest, step 12 `full`, at
+> the stock 12x clock: 9690 Dhrystones (10.11 MIPS), AIBB MemTest 15.74 MB/s,
+> xSysInfo fast RAM 23.33 MB/s with the caches on; 5177 Dhrystones and
+> 8.14 MB/s with them off. That is about 3.5× the 2783 Dhrystones of the
 > first working build. On a board with its clock multiplier rewired to x16
-> (see *16x clock*), the `_x16` files give 12784 Dhrystones and 19.97 MB/s.
-> Step 11 also caches code that runs from Chip RAM, which many games use:
-> Frontier and Gloom now run much faster with the caches on.
+> (see *16x clock*), the `_x16` files give 12907 Dhrystones and 19.97 MB/s.
+> Steps 11 and 12 are for games: code that runs from Chip RAM is cached
+> (step 11), and Chip RAM writes go through an 8-entry write buffer while
+> the CPU carries on (step 12). Frontier and Gloom run much faster with
+> the caches on.
 >
 > **SD card: every `full` bitstream from step 4 on reads the card.** The
 > step 1-3 `full` files drove the card's data-out line (MISO) low, so the
@@ -32,7 +34,7 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
-| `bitstreams/step12_wbuf/` | + 8-entry Chip RAM write buffer: up to 8 Chip RAM writes (4 longwords) are taken at once and written out in order while the CPU carries on. 12x and 16x files | **Known good on hardware**, 12x (seed 6) and 16x (seed 4), SD card included. Benchmarks as step 11 (they run from fast RAM and the caches); games look smoother, not yet measured |
+| `bitstreams/step12_wbuf/` | + 8-entry Chip RAM write buffer: up to 8 Chip RAM writes (4 longwords) are taken at once and written out in order while the CPU carries on. 12x and 16x files | **Latest. Known good on hardware**, 12x (seed 6) and 16x (seed 4), SD card included. Benchmarks as step 11 (they run from fast RAM and the caches); games look smoother, not yet measured |
 | `bitstreams/step11_games/` | + Chip RAM code in the instruction cache (CACR CI/CEI now flush), posted Chip RAM writes, SDRAM bank permutation, pair prefetch, shorter uncached read. 12x and 16x files | **Known good on hardware**, 12x (seed 14) and 16x (seed 1), Kickstart 1.3 and 3.2.3, SD card included. MemTest 15.73 / 8.49 MB/s at 12x (+28% / +29%), 19.97 / 10.39 at 16x (+26% / +25%), games much faster. Code that DMAs itself into Chip RAM without clearing the cache needs the caches off (see step 11) |
 | `bitstreams/step10_ifetch32/` | + instruction prefetch (the next word after an instruction read from SDRAM) and 32-bit instruction-stream pairs (32-bit immediates and absolute-long addresses in one CPU step). 12x and 16x files | **Known good on hardware**, 12x and 16x, SD card included: 9691 / 12936 Dhrystones (12x / 16x, +5% on step 9), caches off 4918 / 5982 (+17% / +15%). Caches-off MemTest 5-7% lower |
 | `bitstreams/exp16x_seed9/` (never released) | The first 16x build (step 9 design): for a board whose ICS570B is rewired to x16 (113.5 MHz). Correct Amiga-side timing (bus cycles, E/CIA), SDRAM CL3, SD clock in spec. See *16x clock*. Superseded by the `_x16` files of steps 10 and 11 | **Worked on Glen's x16 board**, Ripple IDE ROM included: 12311 Dhrystones, MemTest 15.81 MB/s |
@@ -679,8 +681,8 @@ actually provides:
 pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
 
-Step 12 (Chip RAM write buffer) builds as supplied (not yet run on
-hardware):
+Step 12 (Chip RAM write buffer) builds as supplied (known good on
+hardware, 12x and 16x):
 
 | Build | Seed | Worst 1T slack | Worst multicycle slack |
 | --- | --- | --- | --- |
@@ -693,6 +695,8 @@ registers (the ALU and the data-in and address processes on the second)
 cut that class's misses from 1.2-3.8 ns to 0-1.5 ns over seeds 1-4, but
 none of those four passed outright, so it is kept on the branch
 `kernel-change4-clkena-split` for a later step that needs it.
+The 16x file is seed 4 of seeds 1-4: it needs the chip 1.35× faster than
+the worst-case model (step 11's 16x file: 1.36×) and runs on Glen's board.
 
 Step 11 (games: Chip RAM code cached, posted Chip RAM writes, faster
 uncached reads) builds as supplied (runs on hardware, 12x and 16x):
