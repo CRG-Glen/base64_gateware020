@@ -164,6 +164,11 @@ module tb;
             $display("FAIL tick_rq %b, tick_r %b", dut.tick_rq, dut.tick_r);
             ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
         end
+        // k_clkena_lw2 is an identical copy of k_clkena_lw (kernel change 4)
+        if (dut.cpu.k_clkena_lw2 !== dut.cpu.k_clkena_lw) begin
+            $display("FAIL k_clkena_lw2 %b, k_clkena_lw %b", dut.cpu.k_clkena_lw2, dut.cpu.k_clkena_lw);
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
         // k_step is the adapter's copy of k_clkena: always equal
         if (dut.cpu.k_step !== dut.cpu.k_clkena) begin
             $display("FAIL k_step %b, k_clkena %b", dut.cpu.k_step, dut.cpu.k_clkena);
