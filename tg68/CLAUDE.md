@@ -258,6 +258,40 @@ that gives the "_fast" files.
   with DP32=7 (long_cand now waits for addr[1:0]). Possible follow-up: a
   separate instruction prefetch buffer that chains (each hit issues the
   next prefetch), since a data read in between replaces the shared buffer.
+- **Games (step 11, not yet on hardware):** Glen saw Frontier and Gloom
+  run the same with caches on and off. Frontier's executable has a 157 KB
+  CODE hunk with the CHIP flag: its code runs from Chip RAM, ~60 clocks
+  per instruction word, never cached. Changes:
+  - The icache also holds Chip RAM code (`ic_chip`, `ic_okf` = window for
+    the LATCH fill/invalidate; `ic_ok_d` includes addr[31:21]==0). DMA
+    writes are invisible, so CACR CI/CEI now flush both caches
+    (`flush_trig`). Kernel change 3: CACR bits 2-3 stay set for one
+    clkena step after the MOVEC (`elsif clkena_in='1' then CACR(3 downto
+    2) <= "00"`), so the adapter sees them; they read back 0. Same
+    behaviour as a real 68020 (A1200): old trackloaders that DMA code and
+    jump without CacheClearU need caches off. Data cache: still no chip.
+  - Posted Chip RAM writes in the top level's RETIME bridge (`POST_CHIP`,
+    `rp_pend/rp_ds/rp_term/rp_hold`): a chip RAM write ($000000-$1FFFFF
+    only, never custom/CIA registers: interrupt-clear ordering) gets
+    `rt_dtack_lo` at once and the bridge runs AS/DS/DTACK on the 7M grid
+    itself; the next core cycle waits; BRn is held off while posting.
+    `rt_chip` is its own register loaded with rt_a (rt_a is syn_useioff:
+    reading it inside the FPGA failed packing). The release (R/W, data
+    off, next address) happens the clock after the end tick_r (`rp_ld`,
+    a register: from tick_r it failed 1T), and no post starts on that
+    clock (rt_chip is stale then). The bridge's clear of the stale ack
+    is backed up by the adapter's `ack_idle` (a mutant without it passes).
+  - SDRAM bank = word bits [10:9] ^ [12:11] ^ [14:13] (fastmem_zii.v,
+    `TG68:`): code and data 4-32 KB apart no longer share a bank.
+  - Pair prefetch: an aligned 16-bit fast RAM read miss is a pair read
+    (`rp_al`), word 2 -> prefetch buffer (`pf_fill_d`), no second request.
+  - Shorter direct read: `k_din_dw`/`k_din_dsel` (word straight from
+    dp_rdata at DWAIT), DDATA steps the kernel itself. check_timing class
+    'O' (1T) for those endpoints (KDW rule), not 'D'.
+  - Tests: chip code run twice (`chip_ihit` >= 2), CPU patch, "DMA" patch
+    via the tb mailbox at $8F10 then CACR CI (0x81B4/B8/BC), posted write
+    order at 0x81C0, `n_posted` >= 10, `bench chip`. Sim: bench chip 1133
+    -> 442 us, readoff +40%, copy +17%, read/scatter unchanged.
 - **Cache enable:** both caches follow CACR EI. The data cache must NOT get
   the 68030 CACR bit 8: software tells an 020 from an 030 by setting that bit
   and reading it back, so storing it would make the CPU detect as a 68030 and

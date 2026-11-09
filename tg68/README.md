@@ -17,6 +17,11 @@ build's own files are few and marked `TG68:`.
 > Step 10 (instruction prefetch and 32-bit instruction-stream pairs) runs
 > on the A500+ too: 9691 Dhrystones at 12x, 12936 at 16x (board mod).
 >
+> **Step 11** (Chip RAM code in the instruction cache, posted Chip RAM
+> writes, faster uncached fast RAM) is for games such as Frontier that
+> ran no faster with the caches on. Simulated and timing-checked; not yet
+> run on hardware.
+>
 > **SD card: every `full` bitstream from step 4 on reads the card.** The
 > step 1-3 `full` files drove the card's data-out line (MISO) low, so the
 > driver loaded but could never talk to the card (HDToolBox: "Drive does
@@ -30,6 +35,7 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
+| `bitstreams/step11_games/` | + Chip RAM code in the instruction cache (CACR CI/CEI now flush), posted Chip RAM writes, SDRAM bank permutation, pair prefetch, shorter uncached read. 12x and 16x files | Simulated and timing-checked; **not yet run on hardware**. Code that DMAs itself into Chip RAM without clearing the cache needs the caches off (see step 11) |
 | `bitstreams/step10_ifetch32/` | + instruction prefetch (the next word after an instruction read from SDRAM) and 32-bit instruction-stream pairs (32-bit immediates and absolute-long addresses in one CPU step). 12x and 16x files | **Known good on hardware**, 12x and 16x, SD card included: 9691 / 12936 Dhrystones (12x / 16x, +5% on step 9), caches off 4918 / 5982 (+17% / +15%). Caches-off MemTest 5-7% lower |
 | `bitstreams/exp16x_seed9/` (branch `exp-16x-clock` only) | **Experimental, overclocked**: for a board whose ICS570B is rewired to x16 (113.5 MHz). Correct Amiga-side timing (bus cycles, E/CIA), SDRAM CL3, SD clock in spec. See *16x clock* | **Works on Glen's x16 board** (`_fast` file), Ripple IDE ROM included: 12311 Dhrystones, MemTest 15.81 MB/s. Not timing-signed (needs the chip ~36% faster than the worst-case model) |
 | `bitstreams/step9_sdram32r/` | + 32-bit SDRAM reads: an aligned longword read that misses the caches is one SDRAM request (two READ commands back to back) and one CPU step | **Latest. Known good on hardware**, SD card included: MemTest 12.20 MB/s (+12% on step 8), xSysInfo fast RAM 23.31 MB/s (+42%); SysInfo Dhrystones unchanged (9221). `full` only |
@@ -100,12 +106,14 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   on the Amiga uses them.
 * **Instruction cache (step 2).** 8 KB, direct-mapped, in block RAM. It
   caches instruction fetches from on-board fast RAM and the Kickstart ROM
-  ($F80000–$FFFFFF), never Chip RAM, which DMA writes. Every CPU write to
-  a cacheable address invalidates its entry, so self-modifying code and
-  program loading work without CacheClearU. CACR's EI bit turns it on and
-  off as on a real 68020: off at reset, and Kickstart 2.0+ turns it on;
-  FI freezes it. The clear bits (CI/CEI) are ignored because they aren't
-  needed. The cache is flushed after every reset. `ICACHE=0` in
+  ($F80000–$FFFFFF), and from step 11 also from Chip RAM, as a real
+  68020's does (see step 11 for what that means for DMA-loaded code).
+  Every CPU write to a cacheable address invalidates its entry, so
+  self-modifying code and program loading by the CPU work without
+  CacheClearU. CACR's EI bit turns it on and off as on a real 68020: off
+  at reset, and Kickstart 2.0+ turns it on; FI freezes it. Up to step 10
+  the clear bits (CI/CEI) were ignored; from step 11 either one flushes
+  both caches. The cache is flushed after every reset. `ICACHE=0` in
   `tg68_bus.v` removes it.
 * **Speed.** The adapter steps the core at most once every 4 clocks
   (~21 MHz), samples its outputs 3 clocks after a step, hands it read data
@@ -312,6 +320,62 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   SDRAM when the next data read wants it. xSysInfo varies by a few percent
   between runs (see step 9). The SD card works on both; 2.2 MB/s in
   xSysInfo at 16x with the caches on.
+* **Games and uncached code (step 11).** CPU-heavy games such as
+  Frontier and Gloom ran about as fast with the caches off as on. Frontier
+  shows why: its executable puts 157 KB of code in a hunk that must load
+  into Chip RAM (`HUNK_CODE` with the CHIP flag), and the caches never
+  held Chip RAM. Every instruction word from there is a motherboard cycle,
+  about 60 clocks, against 4-5 for a cache hit. Fast RAM was not the
+  bottleneck. Step 11 changes:
+  * **Chip RAM code is cached** in the instruction cache, as on a real
+    68020 (the A1200's included). A CPU write to Chip RAM drops its
+    entry, as for fast RAM. Writes by DMA (the blitter, the disk) are not
+    seen, so code loaded by DMA needs the cache cleared before it runs:
+    AmigaOS does that (LoadSeg calls CacheClearU, which sets CACR CI), and
+    CI and CEI now flush both caches (kernel change 3: the kernel keeps
+    CACR bits 2-3 set for one step after the MOVEC that sets them; they
+    always read back 0). An old trackloader that DMAs code into Chip RAM
+    and jumps to it without clearing the cache can crash with the caches
+    on, as it can on an A1200; turn the caches off for it (SysInfo, or
+    `CPU NOCACHE`). The data cache still never holds Chip RAM.
+  * **Posted Chip RAM writes.** A CPU write to Chip RAM ($000000-$1FFFFF)
+    is acknowledged as soon as the CPU presents it, and the bridge runs
+    the motherboard cycle on its own, with 68000 timing (AS at a 7 MHz
+    rising edge, the data strobes one edge later, the end on the falling
+    edge after DTACK, address and data held to the next rising edge). The
+    CPU carries on from the caches and fast RAM meanwhile; its next
+    motherboard cycle waits for the posted one to end. Writes to custom
+    chip and CIA registers are never posted, so an interrupt clear has
+    happened before the next instruction runs. `POST_CHIP = 0` in the
+    top level turns it off.
+  * **SDRAM bank permutation** (`fastmem_zii.v`). The SDRAM bank came from
+    word-address bits 10:9, so code and data a multiple of 4 KB apart
+    shared a bank, and every switch between them closed and reopened a
+    row (~5 clocks). The bank now also takes two groups of row bits (XOR),
+    so blocks 4-32 KB apart sit in different banks. The map is one to one
+    and the same for every fast RAM and MapROM address.
+  * **Pair prefetch.** A 16-bit read from fast RAM at an even longword
+    address that misses the caches is now an SDRAM pair read (step 9),
+    and the second word goes to the prefetch buffer; before, the prefetch
+    was a second request after the first.
+  * **A shorter direct read.** An uncached 16-bit read hands its word to
+    the CPU straight from the SDRAM's early data (`k_din_dw`) and steps it
+    in DDATA, one state earlier.
+  In simulation (12x / 16x; 16x in brackets):
+
+  | Bench | Step 10 | Step 11 |
+  | --- | --- | --- |
+  | `bench chip`: a loop in Chip RAM writing 1 KB to fast RAM | 1133 µs | 442 µs (2.56×) |
+  | `bench readoff`: fast RAM read loop, caches off | 5.42 (6.72) MB/s | 7.61 (9.29) MB/s (+40%) |
+  | `bench copy`: fast RAM copy, caches on | 7.38 (9.40) MB/s | 8.63 (10.89) MB/s (+17%) |
+  | `bench read`, `bench scatter` | | unchanged |
+
+  The tests run code from Chip RAM twice and require cache hits the
+  second time, change it by CPU write (the new code must run), change it
+  "by DMA" (the test bench rewrites the word behind the CPU: the old code
+  must still run, and the new one after CACR CI), and check that posted
+  writes land in program order (at least 10 must be posted).
+  Hardware results: not yet run.
 * **MapROM.** The board's boot ROM (`turbomem.mem`, built with
   `DIAG_MAPROM=1`) copies Kickstart into the SDRAM shadow at every boot,
   verifies it and switches over, so it is normally already on. Both caches

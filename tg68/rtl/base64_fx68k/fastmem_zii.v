@@ -468,7 +468,10 @@ wire [23:0] s_word0 = s_mrwin ? {5'b01000, s_mre, sa[18:1]}
 // address bits in all three mappings above), so blocks 4-32 KB apart land
 // in different banks. Row and column are unchanged and the map is one to
 // one; a prefetch or pair only changes column bits, so it stays put.
-wire [1:0]  s_bank  = s_word0[10:9] ^ s_word0[12:11] ^ s_word0[14:13];
+// Taken from sa itself (word bits [14:9] are sa[15:10] in every mapping),
+// so the bank is one LUT from the address and never waits on the slot
+// decode (fm_cfg_match -> s_dense failed 1T by 0.5 ns through s_word0).
+wire [1:0]  s_bank  = sa[11:10] ^ sa[13:12] ^ sa[15:14];
 wire [23:0] s_word  = {s_word0[23:11], s_bank, s_word0[8:0]};
 always @(posedge clk)
     if (!dp_hold)

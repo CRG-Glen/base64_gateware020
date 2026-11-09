@@ -969,10 +969,16 @@ module tg68_bus #(
                 // dp_pair) brings the next word now: it goes straight to the
                 // prefetch buffer, and to its cache two clocks later (pf_a
                 // two clocks old, its 2T class), with no request of its own.
+                // pf_valid/pf_d outside the boundary test: dp_pair means an
+                // even word, never the last of a 1 KB block, and pf_d loads
+                // in every DDATA (and every clock of a prefetch, below), so
+                // its enable is two registers (q, dp_kind) and no dp_ack:
+                // the old enable failed 1T by 0.1 ns (rule 3: conditions on
+                // the valid bit, not the data register).
+                pf_valid <= dp_pair && !k_long_ack;
+                pf_d     <= dp_rdata;
                 if (a_r[9:1] != 9'h1FF) begin
                     pf_a     <= a_r + 31'd1;
-                    pf_valid <= dp_pair && !k_long_ack;
-                    pf_d     <= dp_rdata;
                     pf_fill_d <= dp_pair && !k_long_ack;
                     pf_ic    <= cyc_fetch;
                     pf_dc    <= cyc_fetch ? ((ICACHE != 0) && ic_ok && ic_on && !k_cacr[1])
@@ -1072,10 +1078,13 @@ module tg68_bus #(
             if (dp_ack && dp_kind == 2'd2) begin
                 dp_req_i <= 1'b0; dp_busy <= 1'b0; dp_kind <= 2'd0;
             end
+            // pf_d follows the SDRAM data all through a prefetch (pf_valid
+            // is 0 until its ack, the last load); DDATA loads it as well
+            if (dp_kind == 2'd3) pf_d <= dp_rdata;
             if (dp_ack && dp_kind == 2'd3) begin
                 dp_req_i <= 1'b0; dp_busy <= 1'b0; dp_kind <= 2'd0;
                 dp_inc   <= 1'b0;
-                pf_d <= dp_rdata; pf_valid <= 1'b1;
+                pf_valid <= 1'b1;
                 dp_q <= dp_rdata;          // for the data-cache fill
                 pf_fill <= pf_dc;
             end

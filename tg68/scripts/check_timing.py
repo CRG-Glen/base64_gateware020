@@ -172,7 +172,13 @@ WINREG = re.compile(r'^g_fastmem\.u_fastmem\.(owns_r|cpu_win_r|mr_win_r|fm_win)(
 # (address, and conservatively every other pin); paths from anything else are
 # ordinary 1T logic, as before.
 CRAM = re.compile(r'^cpu\.(ic_data|ic_tag|g_dcache\.dc_data|g_dcache\.dc_tag)(\.|_|\[|$)')
+# k_din_dw / k_din_dsel (step 11) are loaded at the SDRAM controller's ack
+# from its read data, in the clock the data arrives: single-cycle endpoints,
+# not read-data latches (whose 2T budget is for slaves that hold their data
+# from DTACK on). As starts they stay adapter -> kernel (KDIN, 'M').
+KDW = re.compile(r'^cpu\.(k_din_dw|k_din_dsel)(_|\[|$)')
 def end_class(inst):
+    if KDW.match(inst): return 'O'
     if KDIN.match(inst): return 'D'
     if CRAM.match(inst): return 'R'
     if WINREG.match(inst): return 'W'

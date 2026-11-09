@@ -56,6 +56,19 @@
   (Checked against broken versions: the second READ to the wrong column,
   `S_RD_DONE` not held, the data-input select never set, the second word
   replaced by the first, and no fill of the second word: all caught.)
+  Step 11 (games): `top` copies a routine to Chip RAM at $9800 and runs
+  it twice; the second run must hit the instruction cache (`chip_ihit`
+  >= 2, check at 0x81B4). The CPU then patches it (the new code must run,
+  0x81B8); then the test bench rewrites the word behind the CPU's back, as
+  DMA would (mailbox at $8F10): the cached old code must still run, and
+  the new code after `MOVEC CACR` with CI set (0x81BC). Posted Chip RAM
+  writes: a run of byte, word and longword writes to one place must land
+  in program order (0x81C0), and at least 10 writes must be posted
+  (`n_posted`). (Checked against broken versions: no chip fill, no
+  invalidate on a CPU write, no flush on CI, a posted write's byte lanes
+  swapped: all caught.)
+* **bench chip**: a loop in Chip RAM writes 1 KB to fast RAM, timed on the
+  second pass (Chip RAM code from the instruction cache).
 * **bench copy | read | scatter | sd**: fast RAM throughput, timed on a second
   pass with the loop running from the instruction cache. `copy` copies
   1 KB, `read` sums 1 KB sequentially, `scatter` reads four longs in

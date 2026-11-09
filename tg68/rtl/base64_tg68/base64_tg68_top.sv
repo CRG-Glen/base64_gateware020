@@ -1321,7 +1321,16 @@ module base64_tg68_top #(
     //   rp_term: its DTACK was seen;  rp_hold: AS/DS up, holding
     reg        rp_pend = 1'b0, rp_term = 1'b0, rp_hold = 1'b0, rp_ds = 1'b0;
     reg        rp_uds = 1'b1, rp_lds = 1'b1;
-    wire       rt_chip = (rt_a[23:21] == 3'b000);   // chip RAM $000000-$1FFFFF
+    // rp_ld: the clock after a posted write ends, R/W, data and address are
+    // released and the CPU's next cycle's address loaded (a clock after the
+    // tick_r: from a register, so the pin registers' enables do not wait on
+    // the 7M phase decode, which failed 1T by 0.5 ns; nothing goes out on
+    // the bus before the next tick_r, >= 7 clocks away)
+    reg        rp_ld = 1'b0;
+    // rt_chip: rt_a is in chip RAM $000000-$1FFFFF. Its own register, loaded
+    // with rt_a: rt_a has syn_useioff, and an I/O register cannot also be
+    // read inside the FPGA (packing fails).
+    reg        rt_chip = 1'b1;
 `ifdef TG68_X16
     // TG68: at 16x one master clock is 8.81 ns, so the address/data hold
     // past AS negation below takes two (17.6 ns; 11.75 ns at 12x with one)
@@ -1333,7 +1342,19 @@ module base64_tg68_top #(
 `endif
 
     always @(posedge clk) begin
+        // TG68: the release after a posted write (rp_ld). Before the chain
+        // below, so that anything it does on this clock wins (a new chip
+        // write is not posted on this clock: rt_chip is being reloaded).
+        if (rp_ld) begin
+            rp_ld   <= 1'b0;
+            rt_rw   <= 1'b1;
+            rt_d_oe <= 1'b0;
+            rt_a    <= core_a[23:1];               // the CPU's next cycle
+            rt_chip <= (core_a[23:21] == 3'b000);
+            rt_fc   <= core_fc;
+        end
         if (ext_reset) begin
+            rp_ld <= 1'b0;
             rt_as_n <= 1'b1; rt_uds_n <= 1'b1; rt_lds_n <= 1'b1;
             rt_vma_n <= 1'b1; rt_dtack_lo <= 1'b0; rt_d_oe <= 1'b0;
             rt_vst <= 2'd0; rt_av <= 1'b0;
@@ -1365,10 +1386,7 @@ module base64_tg68_top #(
                 rp_hold  <= 1'b0;
                 rp_pend  <= 1'b0;
                 rp_ds    <= 1'b0;
-                rt_rw    <= 1'b1;
-                rt_d_oe  <= 1'b0;
-                rt_a     <= core_a[23:1];           // the CPU's next cycle
-                rt_fc    <= core_fc;
+                rp_ld    <= 1'b1;                   // next clock: next address
             end
         end else if (core_as_n) begin
             rt_as_n     <= 1'b1;
@@ -1386,6 +1404,7 @@ module base64_tg68_top #(
             // edge -- drop them on the same edge and the write is lost.
             if (rt_hold_done) begin
                 rt_a    <= core_a[23:1];
+                rt_chip <= (core_a[23:21] == 3'b000);
                 rt_fc   <= core_fc;
                 rt_rw   <= 1'b1;
                 rt_d_oe <= 1'b0;
@@ -1420,7 +1439,7 @@ module base64_tg68_top #(
             // strobe down; rt_a and rt_d hold address and data), is acked
             // now and run by the bridge (POST_CHIP, above). Not a 6800
             // cycle or one already acked; never an on-chip slave.
-            if (POST_CHIP && !core_rw && rt_chip && !int_win_r && rt_vst == 2'd0
+            if (POST_CHIP && !core_rw && rt_chip && !rp_ld && !int_win_r && rt_vst == 2'd0
                 && (!core_uds_n || !core_lds_n) && !rt_dtack_lo) begin
                 rt_dtack_lo <= 1'b1;
                 rp_pend     <= 1'b1;
