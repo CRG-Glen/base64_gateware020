@@ -379,6 +379,8 @@ that gives the "_fast" files.
   12023, fast RAM 29.19 / 26.21, SD 2.2 MB/s. 12x D (seed 1, -0.51 ns)
   reached further but failed (1.3 green after the white screen, 3.2.3
   red): asked Glen whether it ran at a real 12x clock.
+  Games on 16x D (Glen): run a lot better, close to a 50 MHz 68030 but
+  still a little behind.
 - SD card (sfsd.device 2.4): 2.18 MB/s in SysInfo on steps 4 to 9
   (2184533 bytes/s each time); fx68k gets 1.76 MB/s.
 - xSysInfo (Glen's test suite from step 8): 15711 Dhrystones, 8.94 MIPS,
@@ -402,6 +404,12 @@ that gives the "_fast" files.
 
 ## Ideas not yet done (Glen decides the order)
 
+- Chip RAM write buffer (Glen's next pick, after the 12x build works; as on
+  Cyberstorm/Tsunami boards): a 2-4 entry FIFO behind POST_CHIP, so a
+  longword (two bus words) or a burst posts without stalling. Every other
+  motherboard access (chip reads, custom/CIA registers, IACK, bus grant)
+  waits for the FIFO to drain, keeping program order (a blitter start must
+  see the data written before it). Then the 14x PLL step.
 - A 2-4 entry write queue (copies are write-bound).
 - 16x (or 14x) without the board mod: the ECP5's two PLLs are unused.
   EHXPLLL from the 12x input (85.13 MHz): CLKI_DIV 3, CLKFB_DIV 4, CLKOP
