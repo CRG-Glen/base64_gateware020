@@ -401,6 +401,14 @@ that gives the "_fast" files.
   existing Amiga USB stacks (Poseidon) drive, on spare carrier pins, or a
   soft USB 1.1 host in the FPGA plus a new driver. Mind the module's
   unprotected USB 5 V (README).
+- WiFi via an ESP (Glen's idea): an ESP32-S2/S3 (USB host capable) could
+  talk to the iCELink's USB serial port, but that depends on the iCELink
+  firmware's UART speed and VBUS behaviour (unknown) and the unprotected
+  5 V. Cleaner: an ESP on FPGA pins (no spare header on the carrier: J2
+  is CFGIN/CFGOUT; needs a mod or revision). Either way the Amiga needs a
+  serial.device-compatible driver for an FPGA UART with a FIFO, and the
+  ESP needs PPP/SLIP-to-WiFi firmware. Works today with no gateware: an
+  ESP WiFi modem on the Amiga's own serial port (~115-230 kbit/s).
 - References for speed-ups and tweaks (reviewed during step 11):
   - Emu68 (68k JIT for PiStorm), https://github.com/michalsc/Emu68: the
     one usable tip is software, the VBR (vector table) in fast RAM.
