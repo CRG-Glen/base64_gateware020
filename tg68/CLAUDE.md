@@ -356,6 +356,7 @@ that gives the "_fast" files.
 | step 9 (32-bit SDRAM reads, `full`) | 9221 / 4202 | 12.20 / 6.97 |
 | step 10 (instruction prefetch + pairs, `full`) | 9691 / 4918 | 12.28 / 6.60 |
 | step 10 at 16x (board mod) | 12936 / 5982 | 15.91 / 8.28 |
+| step 11 at 16x (D: race fix, seed 1) | 12784 / 5992 | 19.97 / 10.39 |
 
 - AIBB MemTest did not move from step 6 to step 7 (pairs only come from
   cache hits; MemTest's reads miss and its writes are 16-bit). Step 8's
@@ -367,6 +368,17 @@ that gives the "_fast" files.
   holding the SDRAM ahead of data reads). xSysInfo 12x caches on / off
   15363 / 7536, fast RAM 23.35 / 21.01; 16x 21233 / 10318, 29.19 / 25.98.
   SD works on both (2.2 MB/s xSysInfo, 16x, caches on).
+- Step 11 (first files): Kickstart 3.2.3 yellow screen, 1.3 reboot loop /
+  green (chip RAM error), all four files; DiagROM fine. Bisect (12x): A
+  (POST_CHIP=0) boots both; B, C fail. Cause: a posted write whose DS met
+  the AS tick went out with the data bus undriven (rt_d_oe loaded from the
+  old rt_as_n; the sequencer then skipped its own AS step). Sims never hit
+  that phase; the fastmem fast-read sweep (81C8) reproduces it on the old
+  code. Fixed (D). 16x D boots 1.3 and 3.2.3: SysInfo 12784 / 5992,
+  AIBB 19.97 / 10.39 MB/s (+26% / +25% on step 10), xSysInfo 22042 /
+  12023, fast RAM 29.19 / 26.21, SD 2.2 MB/s. 12x D (seed 1, -0.51 ns)
+  reached further but failed (1.3 green after the white screen, 3.2.3
+  red): asked Glen whether it ran at a real 12x clock.
 - SD card (sfsd.device 2.4): 2.18 MB/s in SysInfo on steps 4 to 9
   (2184533 bytes/s each time); fx68k gets 1.76 MB/s.
 - xSysInfo (Glen's test suite from step 8): 15711 Dhrystones, 8.94 MIPS,
