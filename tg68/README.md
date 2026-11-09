@@ -584,6 +584,29 @@ actually provides:
 pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
 
+Step 11 (games: Chip RAM code cached, posted Chip RAM writes, faster
+uncached reads) builds as supplied (not yet run on hardware):
+
+| Build | Seed | Worst 1T slack | Worst multicycle slack |
+| --- | --- | --- | --- |
+| full | 1 | +0.20 ns | +1.40 ns |
+
+It took four rounds of seeds 1-4. The first two failed in nextpnr's
+packer: the posted-write logic read `rt_a`, a pin register with
+`syn_useioff`, and a later attempt loaded `rt_a`/`rt_fc` on a different
+clock from `rt_rw`, but pin registers sharing an I/O block need the same
+enable and reset nets. The paths that missed and were new in step 11 were
+then restructured, not seed-hunted: the SDRAM bank bits come straight from
+the address (not after the slot decode), the prefetch buffer's data loads
+without the SDRAM ack in its enable, the posted-write sequencer uses
+`tick_rq` (the 7M rising tick as a register, asserted equal in the test
+bench), and the adapter has its own copy of `k_clkena` (`k_step`), so
+`k_clkena` drives only the kernel. With those, seed 1 passes; seeds 2-4
+miss by 0.5-1.9 ns, the usual spread (README "how close to the edge").
+The checker classes the new direct-read registers `k_din_dw`/`k_din_dsel`
+as logic (1T): as read-data latches they would have had a 2T budget they
+don't have.
+
 Step 10 (instruction prefetch, instruction-stream pairs) builds as supplied
 (known good on hardware, 12x and 16x):
 
