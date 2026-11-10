@@ -622,7 +622,7 @@ module base64_tg68_top #(
     reg  [4:0]  fr     = 5'd0;
     reg  [4:0]  fr_f   = 5'd0, fr_r = 5'd0;
     reg  [16:0] cal_n  = 17'd0;
-    reg  [15:0] jit_f  = 16'd0, jit_r = 16'd0;
+    reg  [7:0]  jit_f  = 8'd0, jit_r = 8'd0;   // saturating (step 14: 8 bits)
     reg         cal_on = 1'b0, cal_sp = 1'b0, cal_pr = 1'b0;
     reg         cal_jf = 1'b0, cal_jr = 1'b0;
     reg         cal_st = 1'b0;          // start a window (registered)
@@ -635,14 +635,14 @@ module base64_tg68_top #(
         if (edge_7m_f) begin
             fr_f <= fr;
             if (fr != fr_f) begin
-                if (cal_pr && jit_f != 16'hFFFF) jit_f <= jit_f + 16'd1;
+                if (cal_pr && jit_f != 8'hFF) jit_f <= jit_f + 8'd1;
                 if (cal_pr) cal_jf <= 1'b1;
             end
         end
         if (edge_7m_r) begin
             fr_r <= fr;
             if (fr != fr_r) begin
-                if (cal_pr && jit_r != 16'hFFFF) jit_r <= jit_r + 16'd1;
+                if (cal_pr && jit_r != 8'hFF) jit_r <= jit_r + 8'd1;
                 if (cal_pr) cal_jr <= 1'b1;
             end
         end
@@ -651,7 +651,7 @@ module base64_tg68_top #(
             cal_sp <= pwrup_done;           // started by the sequencer
             cal_n  <= 17'd0;
             cal_pr <= 1'b0;
-            jit_f  <= 16'd0;  jit_r  <= 16'd0;
+            jit_f  <= 8'd0;   jit_r  <= 8'd0;
             cal_jf <= 1'b0;   cal_jr <= 1'b0;
         end else if (cal_on) begin
             if (edge_7m_f && !cal_n[16]) cal_n <= cal_n + 17'd1;

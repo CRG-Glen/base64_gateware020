@@ -456,6 +456,7 @@ module tb;
         check(24'h8100, 32'h00007F80, "sum");
 `endif
         check(24'h8FF0, 32'h600DC0DE, "done marker");
+        if (dut.cpu.cc_bad) begin $display("FAIL: %0d CCMP compares used registered inputs that differ from a_r", dut.cpu.cc_bad); errors = errors + 1; end
         if (errors) $display("FAILED"); else $display("PASS");
         $finish;
 `else
@@ -591,6 +592,7 @@ module tb;
         if (iacks != 1) begin $display("FAIL IACK count %0d", iacks); errors = errors + 1; end
         if (unmapped)   begin $display("FAIL %0d unmapped accesses reached the MB", unmapped); errors = errors + 1; end
         if (led_r)      begin $display("FAIL red LED (stall)"); errors = errors + 1; end
+        if (dut.cpu.cc_bad) begin $display("FAIL: %0d CCMP compares used registered inputs that differ from a_r", dut.cpu.cc_bad); errors = errors + 1; end
         if (errors) $display("FAILED, %0d errors", errors); else $display("PASS");
         $finish;
 `endif

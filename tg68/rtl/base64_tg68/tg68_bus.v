@@ -527,10 +527,22 @@ module tg68_bus #(
     // a clock sooner.
     // Both banks' tags are compared; the word the cycle asked for (a_r[1])
     // decides a narrow hit.
-    wire cc_hit_e = (ic_qt_e == ic_want);
-    wire cc_hit_o = (ic_qt_o == ic_want);
-    wire cc_on    = ic_ok_d && (cyc_fetch ? ic_on : dc_on);
-    wire cc_hit   = cc_on && (a_r[1] ? cc_hit_o : cc_hit_e);
+    // Step 14: the compare's other inputs are registered from the kernel's
+    // address beside ic_ok_d (every clock, so in CCMP they hold DECIDE's
+    // address, the one a_r loaded): the wanted tag, the cache-on term and
+    // the word select. Decoding them from a_r in CCMP put two 8-bit
+    // compares and a mux in front of the tag compare, on a 1T path into the
+    // next state that missed on seeds. cc_on_k samples ic_on/dc_on in
+    // DECIDE, a clock before cc_on did: every flush trigger and CACR EI
+    // change >= SETTLE clocks before a DECIDE, so it is the same value,
+    // except at the end of a flush sweep, where it can only say "off" (one
+    // lookup misses; never a false hit). Sim-only check: cc_bad.
+    reg [TAGW-1:0] cc_want_k = {TAGW{1'b0}};
+    reg            cc_on_k = 1'b0, cc_sel_k = 1'b0;
+    wire cc_hit_e = (ic_qt_e == cc_want_k);
+    wire cc_hit_o = (ic_qt_o == cc_want_k);
+    wire cc_on    = cc_on_k;
+    wire cc_hit   = cc_on && (cc_sel_k ? cc_hit_o : cc_hit_e);
     // ...and a pair hit (k_long_ack is only set for aligned pairs) needs both
     wire cc_long  = k_long_ack && cc_on && cc_hit_e && cc_hit_o;
 
@@ -706,6 +718,13 @@ module tg68_bus #(
         // (step 11: chip RAM too; only fetches look it up, k_look)
         ic_ok_d  <= (ICACHE != 0) && (k_rom || k_z2 || k_cpuw || icache_win_k
                                       || ((CHIP_IC != 0) && (k_addr[31:21] == 11'd0)));
+        // step 14: the rest of CCMP's compare inputs, from the same address
+        cc_want_k <= {1'b1, (k_addr[31:24] == 8'h08), (k_addr[31:24] == 8'h00),
+                      k_addr[23:IC_AW+1]};
+        cc_sel_k  <= k_addr[1];
+        cc_on_k   <= (ICACHE != 0) && (k_rom || k_z2 || k_cpuw || icache_win_k
+                                      || ((CHIP_IC != 0) && (k_addr[31:21] == 11'd0)))
+                     && ((k_bs == 2'b00) ? ic_on : dc_on);
         mr_act_d <= mr_active;
         ic_on_r  <= (ICACHE != 0) && k_cacr[0] && !flush_nxt;
         dc_on_r  <= (DCACHE != 0) && k_cacr[0] && !flush_nxt;
@@ -1179,6 +1198,19 @@ module tg68_bus #(
         dp_inc = 1'b0; dp_pair = 1'b0; dp_wdata_lo = 16'd0;
     end
 
+`ifndef YOSYS
+    // step 14, sim only: in CCMP the registered compare inputs must equal
+    // what a_r and the cache-on registers give (cc_on_k may only be 0 where
+    // the live term is 1); the benches fail if cc_bad is not 0
+    integer cc_bad = 0;
+    wire    cc_on_live = ic_ok_d && (cyc_fetch ? ic_on : dc_on);
+    always @(posedge clk)
+        if (q == Q_CCMP && (cc_want_k != ic_want || cc_sel_k != a_r[1]
+                            || (cc_on_k && !cc_on_live))) begin
+            cc_bad = cc_bad + 1;
+            if (cc_bad <= 5) $display("%0t: tg68_bus: CCMP compare inputs differ from a_r", $time);
+        end
+`endif
 endmodule
 
 `default_nettype wire

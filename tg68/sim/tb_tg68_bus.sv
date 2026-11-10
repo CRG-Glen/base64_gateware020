@@ -267,6 +267,7 @@ module tb;
         if (hit_bad) errors = errors + hit_bad;
         if (hit_chk == 0) begin $display("FAIL cache-hit oracle never used"); errors = errors + 1; end
         if (stalled) begin $display("FAIL stall flag set"); errors = errors + 1; end
+        if (dut.cc_bad) begin $display("FAIL: %0d CCMP compares used registered inputs that differ from a_r", dut.cc_bad); errors = errors + 1; end
         if (errors == 0) $display("PASS");
         else             $display("FAILED with %0d errors", errors);
         $finish;
