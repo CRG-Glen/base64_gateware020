@@ -809,7 +809,8 @@ supplied (not yet on hardware):
 
 Seeds 1, 4, 8 and 11 of 1-11 pass (step 13b: none of 40). At 14x the
 build needs the chip 1.11× faster than the worst-case model, at 16x
-1.27×.
+1.27×. The `_x16` file is seed 9 of seeds 1-12: 1.30× (step 13's: 1.32×,
+step 12's: 1.35×).
 
 Step 13 (run-time clock speed) builds as supplied (runs on hardware at
 all three speeds):

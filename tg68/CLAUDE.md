@@ -428,7 +428,7 @@ that gives the "_fast" files.
   mutants pre_open=0 (269) and inverted select caught; cc_on_k without
   EI is equivalent (CCMP only via k_look). Not simulated: an external bus
   master (tb ties BR off). Result: seeds 1, 4, 8, 11 of 1-11 pass; seed 8
-  +0.43 / +2.53 ns, 14x 1.11x, 16x 1.27x. Remaining misses mostly clkena
+  +0.43 / +2.53 ns, 14x 1.11x, 16x 1.27x; --x16 seed 9 of 1-12, 1.30x. Remaining misses mostly clkena
   -> kernel (next free step: more clkena_lw copies). Not done (costs
   clocks): eab loaded a clock later (Chip RAM +1 clock).
 - **Cache enable:** both caches follow CACR EI. The data cache must NOT get
