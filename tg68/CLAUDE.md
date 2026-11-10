@@ -402,6 +402,10 @@ that gives the "_fast" files.
   more reset latency) and rt_hold_done as one register fed from one stage
   earlier (spd_hold2 ? core_as_d2 : core_as_n; the mux missed 0.45 ns into
   the address pins on a step 13 seed). Both touch the x16 build too.
+  Then ext_reset (registered) -> mr_act_d -> dc_wa still missed on a
+  seed: tg68_bus's flush_trig is now a register too (flush_ev the OR;
+  one clock later is safe: every source is >= SETTLE clocks before the
+  next DECIDE, fills are blocked during the sweep).
   Seed 12's clock paths (typ): 12x mux +5.3 ns (falling 7M sample ~0.5
   ns from a transition, so calibration should pick rising), 14x +13.4 ns
   (PLL14's CLKI route is 6.7 ns: pin L1 is next to PLL16 only), 16x +6.9.

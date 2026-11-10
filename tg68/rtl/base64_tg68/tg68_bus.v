@@ -370,8 +370,17 @@ module tg68_bus #(
     reg  mr_act_d = 1'b0;  // MapROM state last clock (flush on change)
     // (step 11: also CACR CEI/CI, bits 2-3, which the kernel holds for one
     // step after the MOVEC that sets them, kernel change 3)
-    wire flush_trig = extReset || !oRESETn || (mr_active != mr_act_d)
+    // (step 13b: registered. As a combinational OR it sat in front of the
+    // caches' write-address muxes, from ext_reset, and missed 1T on seeds.
+    // One clock later is safe for every source: a reset holds the CPU; the
+    // RESET instruction and a CACR clear are kernel steps, a MapROM switch
+    // is a bus write, and the next DECIDE, where a lookup starts, is >=
+    // SETTLE clocks after either; fills during the sweep are blocked and
+    // the sweep clears every entry anyway.)
+    wire flush_ev   = extReset || !oRESETn || (mr_active != mr_act_d)
                     || ((CACR_CLR != 0) && (k_cacr[3] || k_cacr[2]));
+    reg  flush_trig = 1'b0;
+    always @(posedge clk) flush_trig <= flush_ev;
     wire flush_nxt  = flush_trig || (ic_flush && !(&ic_fcnt));
     reg  ic_on_r = 1'b0, dc_on_r = 1'b0;
     wire ic_on   = ic_on_r;
