@@ -976,6 +976,7 @@ module base64_tg68_top #(
     // latency: external HALT is already two flops deep, and the sequencer
     // waits 16 quiet clocks after raising spd_hold.
     reg tg_halt_n = 1'b1;
+    reg tg_br_n = 1'b1;     // step 14: the adapter's BRn, loaded by the write buffer (below)
     always @(posedge clk) tg_halt_n <= (s_halt_n[1] | ~core_ohalted_n) & ~spd_hold;
     tg68_bus #(.STEP(TG_STEP), .SETTLE(TG_SETTLE), .DIN_SETUP(TG_DIN),
                .ADDR_SETUP(TG_ASU)) cpu (
@@ -1001,7 +1002,7 @@ module base64_tg68_top #(
         .DTACKn   (core_dtack_n),
         .BERRn    (core_berr_n),
         // TG68: no bus grant while a posted chip write is still on the bus
-        .BRn      (s_br_n[1] | wb_busy),
+        .BRn      (tg_br_n),
         .BGn      (core_bg_n),
         .BGACKn   (s_bgack_n[1]),
         .IPL2n    (ipl_out[2]),
@@ -1524,6 +1525,14 @@ module base64_tg68_top #(
     reg        rp_uds = 1'b1, rp_lds = 1'b1;
     wire       wb_full = (wb_cnt == WB_N[3:0]);
     wire       wb_busy = rp_act || (wb_cnt != 4'd0);
+    // TG68 step 14: BRn to the adapter as a register (as HALTn, step 13): as
+    // s_br_n | wb_busy straight into bus_free it put the write buffer's
+    // state on a 1T path into DECIDE that missed on seeds. Its job is to
+    // hide external bus requests while the buffer drains; the buffer only
+    // starts draining while the CPU is in the write cycle that filled it,
+    // and the adapter grants nothing mid-cycle, so a clock's lag is safe
+    // (and external BRn is asynchronous anyway).
+    always @(posedge clk) tg_br_n <= s_br_n[1] | wb_busy;   // (declared by tg_halt_n)
     // the core's address is in chip RAM: a registered decode like int_win_r
     // (the address is stable >= 2 clocks before AS, so it is current by AS)
     reg        core_chip_r = 1'b0;

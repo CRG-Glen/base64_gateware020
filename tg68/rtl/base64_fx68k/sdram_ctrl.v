@@ -145,6 +145,8 @@ module sdram_ctrl #(
     localparam [7:0] REF_DEFER = 8'd64;
     reg  [7:0] ref_defer = 8'd0;
     wire       ref_urgent = (ref_defer >= REF_DEFER);
+    reg        ref_blk = 1'b0;       // TG68 step 14: urgent refresh, registered
+    always @(posedge clk) ref_blk <= refresh_due && ref_urgent;
     reg [12:0] open_row [0:3];
     reg [3:0]  row_open;          // bit b = bank b has an open row
     reg [3:0]  ras_timer [0:3];   // per-bank tRAS since activate (saturating)
@@ -322,36 +324,14 @@ module sdram_ctrl #(
                 sdram_dqm <= 2'b11;
                 if (timer != 0) begin
                     timer <= timer - 1'b1;
-                end else if (refresh_due && (!req || ref_urgent)) begin
-                    // A pending CPU access now takes priority over refresh.
-                    // Previously refresh_due was tested BEFORE req, so a
-                    // refresh falling due while the 68000 was mid-cycle
-                    // inserted precharge-all + tRFC + a guaranteed row miss
-                    // into that cycle -- the source of the 22-CPU-clock
-                    // outliers. Refresh has enormous slack (one per 640
-                    // clocks against a 64 ms window), so deferring it by up
-                    // to REF_DEFER clocks costs nothing and is bounded.
-                    refresh_due <= 1'b0;
-                    ref_defer   <= 8'd0;
-                    cfg_ref     <= cfg_go;           // TG68 step 13: then LOAD MODE
-                    // must close all rows before refresh
-                    if (row_open != 4'b0000) begin
-                        // NOTE: restoring the evicted row after refresh was
-                        // tried and measured a wash (w2 556->561 but w3/w4
-                        // 514->511), so it is deliberately NOT done. The
-                        // post-refresh miss is cheaper than the extra
-                        // ACTIVATE plus tRCD it would cost.
-                        set_cmd(CMD_PRECHG);
-                        sdram_a[10] <= 1'b1;         // precharge all
-                        row_open <= 4'b0000;
-                        timer <= T_RP[3:0];
-                        state <= S_REF_PRE;
-                    end else begin
-                        set_cmd(CMD_REFRESH);
-                        timer <= T_RFC[3:0];
-                        state <= S_REFRESH;
-                    end
-                end else if (req) begin
+                end else if (req && !ref_blk) begin
+                    // TG68 step 14: the request branch first. The old chain
+                    // tested refresh first with (!req || ref_urgent), which
+                    // put req through the refresh decision on its way to the
+                    // row registers (1T misses). Same priority: a request goes
+                    // unless a refresh is urgent (ref_blk, registered: it
+                    // builds over REF_DEFER clocks, so a refresh waits at
+                    // most one more access); refresh_due alone then refreshes.
                     // latch the request. Only the ADDRESS and direction are
                     // captured here. Write DATA is NOT latched - it is sampled
                     // live at the WRITE command, which is gated on wr_valid.
@@ -407,6 +387,35 @@ module sdram_ctrl #(
                         ras_timer[a_bank] <= 4'd0;
                         timer <= T_RCD[3:0];
                         state <= S_ACTIVE;
+                    end
+                end else if (refresh_due) begin
+                    // A pending CPU access now takes priority over refresh.
+                    // Previously refresh_due was tested BEFORE req, so a
+                    // refresh falling due while the 68000 was mid-cycle
+                    // inserted precharge-all + tRFC + a guaranteed row miss
+                    // into that cycle -- the source of the 22-CPU-clock
+                    // outliers. Refresh has enormous slack (one per 640
+                    // clocks against a 64 ms window), so deferring it by up
+                    // to REF_DEFER clocks costs nothing and is bounded.
+                    refresh_due <= 1'b0;
+                    ref_defer   <= 8'd0;
+                    cfg_ref     <= cfg_go;           // TG68 step 13: then LOAD MODE
+                    // must close all rows before refresh
+                    if (row_open != 4'b0000) begin
+                        // NOTE: restoring the evicted row after refresh was
+                        // tried and measured a wash (w2 556->561 but w3/w4
+                        // 514->511), so it is deliberately NOT done. The
+                        // post-refresh miss is cheaper than the extra
+                        // ACTIVATE plus tRCD it would cost.
+                        set_cmd(CMD_PRECHG);
+                        sdram_a[10] <= 1'b1;         // precharge all
+                        row_open <= 4'b0000;
+                        timer <= T_RP[3:0];
+                        state <= S_REF_PRE;
+                    end else begin
+                        set_cmd(CMD_REFRESH);
+                        timer <= T_RFC[3:0];
+                        state <= S_REFRESH;
                     end
                 end
             end
@@ -532,8 +541,7 @@ module sdram_ctrl #(
     // may only lag); the fastmem bench fails if pre_bad is not 0
     integer pre_bad = 0;
     always @(posedge clk)
-        if (!reset && state == S_IDLE && timer == 0 && req
-                && !(refresh_due && (!req || ref_urgent))) begin
+        if (!reset && state == S_IDLE && timer == 0 && req && !ref_blk) begin
             if (pre_open != row_open[a_bank]
                     || pre_hit != (row_open[a_bank] && (open_row[a_bank] == a_row))
                     || (pre_ras && !(ras_timer[a_bank] >= T_RAS[3:0]))) begin
