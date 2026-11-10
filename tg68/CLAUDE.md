@@ -387,7 +387,8 @@ that gives the "_fast" files.
   raises refresh_due, the refresh (precharge-all) sets cfg_ref, REFRESH
   ends in S_INIT_MODE, which loads `cl3_nx` (= cfg_cl3 once init_done).
   IDLE is as in step 12. Timing: seed 12 of 12 passes (+0.24 / +0.45 ns);
-  14x needs 1.14x, 16x 1.30x the worst-case model (step 12 x16: 1.35x).
+  14x needs 1.14x, 16x 1.30x the worst-case model (step 12 x16: 1.35x);
+  the --x16 file is seed 7 of 1-8, 1.32x (others 1.37-1.52x).
   LUTs 51% (step 12 48%); misses are step-12-depth paths routed longer.
   Kernel change 4 did worse here (seeds 1-4). Not in the build, passed
   sims, worth trying when a seed search stalls: rt_hold_done as one

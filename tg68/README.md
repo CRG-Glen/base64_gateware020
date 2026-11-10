@@ -794,7 +794,10 @@ timer's CAS latency) as config registers: they change only in a switch,
 with the CPU held and 64+ clocks before anything uses them. Scored as
 the 16x files are: at 14x the build needs the chip 1.14× faster than the
 worst-case model, at 16x 1.30× (`timing_full_at14x.txt`,
-`timing_full_at16x.txt`).
+`timing_full_at16x.txt`). The `_x16` file (board mod, fixed clock) is
+seed 7, the best of seeds 1-8: 1.32× (step 12's: 1.35×). So on a board
+with the clock chip back at x12, `speed 16` runs at least as close to
+the model as the `_x16` file does on a modded one.
 
 Step 12 (Chip RAM write buffer) builds as supplied (known good on
 hardware, 12x and 16x):
