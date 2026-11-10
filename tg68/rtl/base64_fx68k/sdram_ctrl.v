@@ -166,17 +166,22 @@ module sdram_ctrl #(
                S_REFRESH   = 4'd13,
                S_ACK_WAIT  = 4'd14,  // hold after ack until req deasserts
                S_WR2       = 4'd15;  // TG68: second WRITE of a pair
-    // (TG68 step 13: a run-time CAS latency change reuses S_INIT_MODE, so
-    // state stays 4 bits: a fifth bit, for a state of its own, lengthened
-    // the request decode in IDLE; it missed 1T on a seed)
+    // (TG68 step 13: a run-time CAS latency change reuses the refresh path
+    // and S_INIT_MODE, so state stays 4 bits: a fifth bit, for a state of
+    // its own, lengthened the request decode in IDLE)
 
     reg [3:0]  state;
-    // TG68 step 13: a new CAS latency is asked for (registered: see S_IDLE).
-    // Cleared while the mode register is being loaded, so the clock after
-    // it (cl3_now not yet seen) cannot start a second one.
-    reg       cfg_go = 1'b0;
+    // TG68 step 13: a new CAS latency is asked for. It rides on a refresh,
+    // so IDLE's request decode is untouched (a branch of its own there,
+    // even last in the chain and from a register, merged into the request
+    // branch's next-state and row logic and missed 1T on most seeds): cfg_go
+    // raises refresh_due; the refresh, which precharges every bank first,
+    // records it in cfg_ref and ends in S_INIT_MODE, which loads cfg_cl3.
+    // cfg_go is cleared from the refresh start until cl3_now follows.
+    reg       cfg_go  = 1'b0;
+    reg       cfg_ref = 1'b0;
     always @(posedge clk)
-        cfg_go <= cfg_req && (cfg_cl3 != cl3_now) && (state != S_INIT_MODE);
+        cfg_go <= cfg_req && (cfg_cl3 != cl3_now) && !cfg_ref && (state != S_INIT_MODE);
     reg [3:0]  timer;
     reg        init_done;
     wire      cl3_nx = init_done ? cfg_cl3 : cl3_now;   // S_INIT_MODE's latency
@@ -211,6 +216,7 @@ module sdram_ctrl #(
             timer       <= 4'd0;
             refresh_timer <= 11'd0;
             refresh_due <= 1'b0;
+            cfg_ref     <= 1'b0;
             init_done   <= 1'b0;
             row_open    <= 4'b0000;
             for (b=0;b<4;b=b+1) begin open_row[b] <= 13'd0; ras_timer[b] <= 4'd0; end
@@ -242,6 +248,7 @@ module sdram_ctrl #(
                 if (row_open[b] && ras_timer[b] != 4'hF)
                     ras_timer[b] <= ras_timer[b] + 4'd1;
             end
+            if (cfg_go && !cfg_ref) refresh_due <= 1'b1;   // TG68 step 13
             if (refresh_due && ref_defer < 8'hFF) ref_defer <= ref_defer + 8'd1;
             if (!refresh_due)                     ref_defer <= 8'd0;
 
@@ -284,7 +291,7 @@ module sdram_ctrl #(
                     // is not reset: the system clock keeps its speed over an
                     // Amiga reset, and a re-init must match it; MODE_REG at
                     // power-on); after init this state is the run-time
-                    // change (IDLE, cfg_go), and loads cfg_cl3
+                    // change (after a refresh, cfg_ref), and loads cfg_cl3
                     sdram_a  <= {MODE_REG[12:7], cl3_nx ? 3'd3 : 3'd2, MODE_REG[3:0]};
                     cl3_now   <= cl3_nx;
                     cas_lat_r <= cl3_nx ? 4'd3 : 4'd2;
@@ -309,6 +316,7 @@ module sdram_ctrl #(
                     // to REF_DEFER clocks costs nothing and is bounded.
                     refresh_due <= 1'b0;
                     ref_defer   <= 8'd0;
+                    cfg_ref     <= cfg_go;           // TG68 step 13: then LOAD MODE
                     // must close all rows before refresh
                     if (row_open != 4'b0000) begin
                         // NOTE: restoring the evicted row after refresh was
@@ -383,18 +391,6 @@ module sdram_ctrl #(
                         timer <= T_RCD[3:0];
                         state <= S_ACTIVE;
                     end
-                end else if (cfg_go) begin
-                    // TG68 step 13: new CAS latency. Close every row, then
-                    // reload the mode register (S_INIT_MODE). Last in the
-                    // chain and from a register: as the term before the
-                    // request branch (with !req) it sat in the request
-                    // decode and failed 1T by 1 ns. Requests never meet it:
-                    // the speed switch holds the CPU with the port idle.
-                    set_cmd(CMD_PRECHG);
-                    sdram_a[10] <= 1'b1;             // precharge all
-                    row_open <= 4'b0000;
-                    timer <= T_RP[3:0];
-                    state <= S_INIT_MODE;
                 end
             end
             // wait tRP after precharging the wrong row, then activate target
@@ -503,7 +499,11 @@ module sdram_ctrl #(
             end
             S_REFRESH: begin
                 if (timer != 0) timer <= timer - 1'b1;
-                else state <= S_IDLE;
+                else begin
+                    // TG68 step 13: a CAS latency change rides on this refresh
+                    state   <= cfg_ref ? S_INIT_MODE : S_IDLE;
+                    cfg_ref <= 1'b0;
+                end
             end
             default: state <= S_IDLE;
             endcase
