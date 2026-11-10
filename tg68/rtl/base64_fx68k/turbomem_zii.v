@@ -177,6 +177,7 @@ module turbomem_zii #(
     // TG68 step 13: the speed register at +$F00A (see below)
     output reg         spd_wr = 1'b0,   // one-clock pulse: a keyed write
     output reg  [1:0]  spd_val = 2'd0,  // 0 12x, 1 14x, 2 16x
+    output reg  [1:0]  spd_smp = 2'd0,  // 7M sampling: 0 auto, 1 rise, 2 fall
     input  wire [15:0] spd_stat         // what +$F00A reads
 );
 
@@ -347,9 +348,12 @@ always @(posedge clk) rom_q <= rom[a[ROM_AWID:1]];
 //   +$F008  mapROM control     READ/WRITE
 //   +$F00A  speed (step 13)    READ/WRITE, key $5B:
 //           write $5B0C / $5B0E / $5B10 asks for 12x / 14x / 16x (the top
-//           level switches when the CPU and both buses are idle); reads
-//           {4'b0, busy, sw_ok, lock16, lock14, multiplier} (multiplier 12,
-//           14 or 16, the one in force)
+//           level switches when the CPU and both buses are idle, and
+//           recalibrates its 7M capture; the speed in force just
+//           recalibrates); +$40 / +$80 force the 7M sample to the rising /
+//           falling clock edge instead of the calibration's choice. Reads
+//           {slip, jit_r, jit_f, rise, busy, sw_ok, lock16, lock14,
+//           multiplier} (the top level's spd_stat)
 //   +$F00C..            reserved, read as zero
 //
 // The mapROM control register needs a key. A stray write of 0 is harmless,
@@ -408,10 +412,10 @@ reg  spd_wr_q;
 always @(posedge clk) spd_wr_q <= spd_wr_hit;
 always @(posedge clk) begin
     spd_wr <= 1'b0;
-    if (spd_wr_hit && !spd_wr_q && d_in[15:8] == SPEED_KEY) begin
-        if      (d_in[7:0] == 8'd12) begin spd_wr <= 1'b1; spd_val <= 2'd0; end
-        else if (d_in[7:0] == 8'd14) begin spd_wr <= 1'b1; spd_val <= 2'd1; end
-        else if (d_in[7:0] == 8'd16) begin spd_wr <= 1'b1; spd_val <= 2'd2; end
+    if (spd_wr_hit && !spd_wr_q && d_in[15:8] == SPEED_KEY && d_in[7:6] != 2'd3) begin
+        if      (d_in[5:0] == 6'd12) begin spd_wr <= 1'b1; spd_val <= 2'd0; spd_smp <= d_in[7:6]; end
+        else if (d_in[5:0] == 6'd14) begin spd_wr <= 1'b1; spd_val <= 2'd1; spd_smp <= d_in[7:6]; end
+        else if (d_in[5:0] == 6'd16) begin spd_wr <= 1'b1; spd_val <= 2'd2; spd_smp <= d_in[7:6]; end
     end
 end
 

@@ -75,10 +75,8 @@ module tg68_bus #(
     input  wire        enPhi2,     // unused
     input  wire        HALTn,      // external HALT: holds off new cycles
     input  wire        extReset,   // core reset (RESET+HALT, power-up)
-    // TG68 step 13: hold off every bus cycle, SDRAM request and cache
-    // lookup (internal steps and prefetch-buffer hits carry on); cyc_idle =
-    // no cycle in progress and the SDRAM port free. The speed switch.
-    input  wire        spd_hold,
+    // TG68 step 13: cyc_idle = no cycle in progress and the SDRAM port
+    // free, for the speed switch (which holds the CPU through HALTn)
     output wire        cyc_idle,
     input  wire        pwrUp,      // unused, extReset already covers it
     output reg         oRESETn,    // RESET instruction
@@ -823,7 +821,7 @@ module tg68_bus #(
                     bus_berr <= 1'b0;
                     tmr      <= 6'd0;
                     q        <= Q_FINISH;
-                end else if (bus_free && ack_idle && !spd_hold && (!dp_busy || (k_look && !pf_wait))) begin
+                end else if (bus_free && ack_idle && (!dp_busy || (k_look && !pf_wait))) begin
                     a_r      <= k_addr[31:1];
                     fc_r     <= k_fc;
                     eRWn     <= k_nwr;          // RW valid before AS, like S1

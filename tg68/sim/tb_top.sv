@@ -18,12 +18,23 @@ module tb;
     always #5.873 clk12 = ~clk12;
 `endif
     reg [3:0] div = 0;
-    reg clk7 = 0;
+    reg clk7_0 = 0;
     always @(posedge clk12) begin
         div <= (div == CM - 1) ? 0 : div + 1;
-        if (div == 0)      clk7 <= 1;
-        if (div == CM / 2) clk7 <= 0;
+        if (div == 0)      clk7_0 <= 1;
+        if (div == CM / 2) clk7_0 <= 0;
     end
+`ifdef CAL_TEST
+    // step 13: 7M edges 0-0.4 ns late at random, with the clock delayed in
+    // clkgen.v, to test the 7M capture calibration
+    reg clk7 = 0;
+    always @(clk7_0) begin
+        #($urandom_range(0, 400) * 0.001);
+        clk7 = clk7_0;
+    end
+`else
+    wire clk7 = clk7_0;
+`endif
 
     wire [23:1] a;
     wire [15:0] d;
@@ -41,7 +52,7 @@ module tb;
     assign d = mb_drive ? mb_q : 16'bz;
 
     base64_tg68_top #(
-        .PWRUP_BIT(12), .COLD_RETRY(1'b0), .FORCE_RETRY_MS(0),
+        .PWRUP_BIT(12), .CAL_EDGES(64), .COLD_RETRY(1'b0), .FORCE_RETRY_MS(0),
 `ifdef SDTEST
         .PASSIVE_EN(1'b0), .ENABLE_SD(1'b1),
 `else
@@ -315,7 +326,9 @@ module tb;
     end
     integer n_switch = 0; reg [1:0] cur_d = 0;
     always @(posedge dut.clk) begin
-        if (dut.clk_cur != cur_d) begin
+        // (only arrivals at the selected source: between two PLL clocks the
+        // switch has a moment with neither on, which cur shows as 12x)
+        if (dut.clk_cur != cur_d && dut.clk_cur == dut.clk_sel) begin
             n_switch = n_switch + 1;
             $display("%0t: system clock now %0s", $time,
                      dut.clk_cur == 2'd2 ? "16x" : dut.clk_cur == 2'd1 ? "14x" : "12x");
@@ -478,18 +491,42 @@ module tb;
         check(24'h81E8, 32'h00000010, "speed: write ignored (12)");
         check(24'h81EC, 32'hACF1E135, "speed: memory traffic");
         check(24'h81F0, 32'h00000010, "speed: unkeyed / invalid writes ignored");
+        check(24'h81F4, 32'h00000010, "speed: write ignored (12, rising)");
+        check(24'h81F8, 32'h00000010, "speed: write ignored (invalid select)");
+        check(24'h81FC, 32'hACF1E135, "speed: memory traffic");
         $display("clock switches: %0d; SDRAM mode loads: %0d", n_switch, u_sdram.n_mrs);
         if (n_switch != 0) begin $display("FAIL: the clock switched in the fixed 16x build"); errors = errors + 1; end
         if (u_sdram.n_mrs != 1) begin $display("FAIL: expected 1 SDRAM mode load"); errors = errors + 1; end
 `else
+`ifdef CAL_TEST
+        // at 12x the falling sample sits in the 7M jitter: the power-up
+        // calibration and each one at 12x must pick the rising stream (bit
+        // 12) and report the falling one moving (bit 13); at 14x and 16x
+        // both are clean and the falling stream stays
+        check(24'h81D4, 32'h0000370C, "speed: 12x at power-on, rising 7M stream");
+        check(24'h81D8, 32'h00000710, "speed: 16x, falling stream");
+        check(24'h81E0, 32'h0000070E, "speed: 14x, falling stream");
+        check(24'h81E8, 32'h0000370C, "speed: back to 12x, rising stream");
+        check(24'h81F0, 32'h0000370C, "speed: unkeyed / invalid writes ignored");
+        check(24'h81F4, 32'h0000370C, "speed: 12x, rising forced");
+        check(24'h81F8, 32'h0000370C, "speed: invalid sample select ignored");
+        if (dut.smp_r !== 1'b1) begin $display("FAIL: the calibration left the jittery stream in use"); errors = errors + 1; end
+`else
         check(24'h81D4, 32'h0000070C, "speed: 12x at power-on, PLLs locked");
         check(24'h81D8, 32'h00000710, "speed: 16x");
-        check(24'h81DC, 32'hACF1E135, "speed: memory traffic at 16x");
         check(24'h81E0, 32'h0000070E, "speed: 14x");
-        check(24'h81E4, 32'hACF1E135, "speed: memory traffic at 14x");
         check(24'h81E8, 32'h0000070C, "speed: back to 12x");
-        check(24'h81EC, 32'hACF1E135, "speed: memory traffic at 12x");
         check(24'h81F0, 32'h0000070C, "speed: unkeyed / invalid writes ignored");
+        check(24'h81F4, 32'h0000170C, "speed: 12x, rising 7M stream forced");
+        check(24'h81F8, 32'h0000170C, "speed: invalid sample select ignored");
+        if (dut.smp_r !== 1'b0) begin $display("FAIL: the calibration left the falling stream"); errors = errors + 1; end
+`endif
+        check(24'h81DC, 32'hACF1E135, "speed: memory traffic at 16x");
+        check(24'h81E4, 32'hACF1E135, "speed: memory traffic at 14x");
+        check(24'h81EC, 32'hACF1E135, "speed: memory traffic at 12x");
+        check(24'h81FC, 32'hACF1E135, "speed: memory traffic after a recalibration");
+        if (dut.ph_slip) begin $display("FAIL: the 7M aligner slipped"); errors = errors + 1; end
+        if (!dut.ph_locked) begin $display("FAIL: the 7M aligner is not locked"); errors = errors + 1; end
         $display("clock switches: %0d; SDRAM mode loads: %0d", n_switch, u_sdram.n_mrs);
         if (n_switch != 3) begin $display("FAIL: expected 3 clock switches"); errors = errors + 1; end
         if (u_sdram.n_mrs != 3) begin $display("FAIL: expected 3 SDRAM mode loads (init, CL3, CL2)"); errors = errors + 1; end

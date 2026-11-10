@@ -341,6 +341,18 @@ pf2:    dbra    %d1,pf2
         moveq   #0,%d0
         move.w  0xEAF00A,%d0
         move.l  %d0,0x81F0          | 81F0 0000070C
+        move.w  #0x5B4C,0xEAF00A    | 12x again, 7M sample forced to the rising edge
+        bsr     spdchk
+        moveq   #0,%d0
+        move.w  0xEAF00A,%d0
+        move.l  %d0,0x81F4          | 81F4 0000170C (bit 12: rising stream)
+        move.w  #0x5BCC,0xEAF00A    | sample select 3: not valid, ignored
+        moveq   #0,%d0
+        move.w  0xEAF00A,%d0
+        move.l  %d0,0x81F8          | 81F8 0000170C
+        move.w  #0x5B0C,0xEAF00A    | 12x, calibration decides again
+        bsr     spdchk
+        move.l  %d3,0x81FC          | 81FC ACF1E135
         .endif
         moveq   #0,%d7
         jsr     romfn+0xF80000      | Kickstart-ROM range: over the 7M bus,

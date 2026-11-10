@@ -86,6 +86,15 @@ end else begin : g_pll
     assign cur = e16 ? 2'd2 : e14 ? 2'd1 : 2'd0;
 `ifdef YOSYS
     DCCA u_gbuf (.CLKI(mux), .CE(1'b1), .CLKO(clk));
+`elsif CAL_TEST
+    // sim (tb_top.sv CAL_TEST): an insertion delay of half a 12x period plus
+    // 0.2 ns, so at 12x the falling-edge 7M sample lands inside the tb's
+    // 0-0.4 ns 7M jitter and the calibration must pick the rising stream
+    // (a transport delay: a delayed continuous assign is inertial and would
+    // swallow the 14x / 16x half periods, which are shorter than the delay)
+    reg clk_d = 1'b0;
+    always @(mux) clk_d <= #(6.073) mux;
+    assign clk = clk_d;
 `else
     assign clk = mux;
 `endif
