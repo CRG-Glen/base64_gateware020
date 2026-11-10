@@ -395,12 +395,13 @@ that gives the "_fast" files.
   14x needs 1.14x, 16x 1.30x the worst-case model (step 12 x16: 1.35x);
   the --x16 file is seed 7 of 1-8, 1.32x (others 1.37-1.52x).
   LUTs 51% (step 12 48%); misses are step-12-depth paths routed longer.
-  Kernel change 4 did worse here (seeds 1-4). Not in the build, passed
-  sims, worth trying when a seed search stalls: rt_hold_done as one
-  register fed from one stage earlier (spd_hold2 ? core_as_d2 :
-  core_as_n; the mux missed 0.45 ns into the address pins on a seed) and
-  ext_reset registered (its OR of four registers fans out to most of
-  the design; missed on several seeds).
+  Kernel change 4 did worse here (seeds 1-4). Step 13b (longer
+  calibration) missed logic -> logic by 1.2-2.1 ns on seeds 1, 5, 9, all
+  pwrup_done -> ext_reset OR -> mr_act_d -> dc_wa, so it has two changes
+  first tried (and set aside) on step 13: ext_reset registered (one clock
+  more reset latency) and rt_hold_done as one register fed from one stage
+  earlier (spd_hold2 ? core_as_d2 : core_as_n; the mux missed 0.45 ns into
+  the address pins on a step 13 seed). Both touch the x16 build too.
   Seed 12's clock paths (typ): 12x mux +5.3 ns (falling 7M sample ~0.5
   ns from a transition, so calibration should pick rising), 14x +13.4 ns
   (PLL14's CLKI route is 6.7 ns: pin L1 is next to PLL16 only), 16x +6.9.

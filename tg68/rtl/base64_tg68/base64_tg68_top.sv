@@ -759,7 +759,13 @@ module base64_tg68_top #(
     //     is far easier to debug than a box that silently reboots itself.
     //     The red LED reports it (section 12).
     // ------------------------------------------------------------------
-    wire ext_reset = (~s_reset_n[1] & ~s_halt_n[1]) | ~pwrup_done | cold_armed;
+    // TG68 step 13: registered. As a combinational OR of four registers it
+    // put two LUT levels in front of a fan-out to most of the design, and
+    // its 1T paths missed on several seeds once step 13 had grown the
+    // chip. One clock more reset latency is nothing next to a reset.
+    wire ext_reset_c = (~s_reset_n[1] & ~s_halt_n[1]) | ~pwrup_done | cold_armed;
+    reg  ext_reset = 1'b1;
+    always @(posedge clk) ext_reset <= ext_reset_c;
 
     // Open-drain, and strictly independent: we never drive /HALT because of
     // a RESET instruction, and never drive /RESET because of a halt.
@@ -1525,10 +1531,15 @@ module base64_tg68_top #(
     wire       postable = POST_CHIP && !core_as_n && !core_rw && core_chip_r && !int_win_r;
     wire       wb_acc   = postable && (!core_uds_n || !core_lds_n) && !rt_dtack_lo && !wb_full;
     // TG68: above 12x one master clock is under 11 ns (8.81 ns at 16x), so
-    // the address/data hold past AS negation below takes two (spd_hold2)
-    reg        core_as_d3 = 1'b1;
-    always @(posedge clk) core_as_d3 <= core_as_d2;
-    wire       rt_hold_done = spd_hold2 ? core_as_d3 : core_as_d2;
+    // the address/data hold past AS negation below takes two (spd_hold2).
+    // rt_hold_done = spd_hold2 ? AS delayed 3 : AS delayed 2, as ONE
+    // register fed from one stage earlier of the same delay chain (the
+    // same value every clock: spd_hold2 changes only in a speed switch,
+    // with AS high for 16+ clocks). As a mux after the chain, spd_hold2 sat
+    // in the 1T path from the write buffer into the address pin registers
+    // and missed by 0.45 ns.
+    reg        rt_hold_done = 1'b1;
+    always @(posedge clk) rt_hold_done <= spd_hold2 ? core_as_d2 : core_as_n;
 
     wire       wb_pop = !ext_reset && wb_busy && rp_act && rp_hold && tick_rq;
     always @(posedge clk) begin
