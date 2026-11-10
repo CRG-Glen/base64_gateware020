@@ -382,6 +382,24 @@ that gives the "_fast" files.
   cas_lat_r are config (4T, changed only in SW with 64+ clocks after);
   cl3_now stays 1T; fm_cfg_* inside g_fastmem.u_fastmem were missing
   from STATIC (a fake 1T fail).
+  SDRAM CAS change, after two versions failed 1T on the request decode
+  (its own state: 5-bit state; its own IDLE branch, even last): cfg_go
+  raises refresh_due, the refresh (precharge-all) sets cfg_ref, REFRESH
+  ends in S_INIT_MODE, which loads `cl3_nx` (= cfg_cl3 once init_done).
+  IDLE is as in step 12. Timing: seed 12 of 12 passes (+0.24 / +0.45 ns);
+  14x needs 1.14x, 16x 1.30x the worst-case model (step 12 x16: 1.35x).
+  LUTs 51% (step 12 48%); misses are step-12-depth paths routed longer.
+  Kernel change 4 did worse here (seeds 1-4). Not in the build, passed
+  sims, worth trying when a seed search stalls: rt_hold_done as one
+  register fed from one stage earlier (spd_hold2 ? core_as_d2 :
+  core_as_n; the mux missed 0.45 ns into the address pins on a seed) and
+  ext_reset registered (its OR of four registers fans out to most of
+  the design; missed on several seeds).
+  Seed 12's clock paths (typ): 12x mux +5.3 ns (falling 7M sample ~0.5
+  ns from a transition, so calibration should pick rising), 14x +13.4 ns
+  (PLL14's CLKI route is 6.7 ns: pin L1 is next to PLL16 only), 16x +6.9.
+  YoWASP cannot read files under /tmp: worktrees for parallel seed
+  searches go under /home/user.
 - **Cache enable:** both caches follow CACR EI. The data cache must NOT get
   the 68030 CACR bit 8: software tells an 020 from an 030 by setting that bit
   and reading it back, so storing it would make the CPU detect as a 68030 and

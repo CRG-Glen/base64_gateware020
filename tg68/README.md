@@ -10,6 +10,11 @@ and the SD card. An adapter, `tg68_bus.v`, makes TG68K look like fx68k's
 ports and adds the caches and the direct SDRAM path. Changes to the fx68k
 build's own files are few and marked `TG68:`.
 
+> **Step 13 (test build):** the normal bitstream can now switch the whole
+> design between 12x, 14x and 16x while running, from a Shell (`speed 16`),
+> with no board mod; see *Clock speed at run time (step 13)*. Not yet run
+> on hardware.
+>
 > **Status:** steps 1-12 run on an A500+. The latest, step 12 `full`, at
 > the stock 12x clock: 9690 Dhrystones (10.11 MIPS), AIBB MemTest 15.74 MB/s,
 > xSysInfo fast RAM 23.33 MB/s with the caches on; 5177 Dhrystones and
@@ -34,7 +39,8 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
-| `bitstreams/step12_wbuf/` | + 8-entry Chip RAM write buffer: up to 8 Chip RAM writes (4 longwords) are taken at once and written out in order while the CPU carries on. 12x and 16x files | **Latest. Known good on hardware**, 12x (seed 6) and 16x (seed 4), SD card included. Benchmarks as step 11 (they run from fast RAM and the caches); games look smoother, not yet measured |
+| `bitstreams/step13_speed/` | + clock speed switched at run time: `speed 12`, `speed 14` or `speed 16` in a Shell (the `speed` command is in the folder), 12x / 14x / 16x from the FPGA's PLLs, no board mod, power-on default 12x; 7 MHz capture calibration; the 7 MHz aligner's lock fixed. 12x files (switchable) and `_x16` files (board mod, fixed) | **Test build, not yet run on hardware.** 12x seed 12 passes timing at 12x; at 14x / 16x it needs the chip 1.14× / 1.30× faster than the worst-case model (the step 12 `_x16` file that runs on Glen's board: 1.35×) |
+| `bitstreams/step12_wbuf/` | + 8-entry Chip RAM write buffer: up to 8 Chip RAM writes (4 longwords) are taken at once and written out in order while the CPU carries on. 12x and 16x files | **Latest known good on hardware**, 12x (seed 6) and 16x (seed 4), SD card included. Benchmarks as step 11 (they run from fast RAM and the caches); games look smoother, not yet measured |
 | `bitstreams/step11_games/` | + Chip RAM code in the instruction cache (CACR CI/CEI now flush), posted Chip RAM writes, SDRAM bank permutation, pair prefetch, shorter uncached read. 12x and 16x files | **Known good on hardware**, 12x (seed 14) and 16x (seed 1), Kickstart 1.3 and 3.2.3, SD card included. MemTest 15.73 / 8.49 MB/s at 12x (+28% / +29%), 19.97 / 10.39 at 16x (+26% / +25%), games much faster. Code that DMAs itself into Chip RAM without clearing the cache needs the caches off (see step 11) |
 | `bitstreams/step10_ifetch32/` | + instruction prefetch (the next word after an instruction read from SDRAM) and 32-bit instruction-stream pairs (32-bit immediates and absolute-long addresses in one CPU step). 12x and 16x files | **Known good on hardware**, 12x and 16x, SD card included: 9691 / 12936 Dhrystones (12x / 16x, +5% on step 9), caches off 4918 / 5982 (+17% / +15%). Caches-off MemTest 5-7% lower |
 | `bitstreams/exp16x_seed9/` (never released) | The first 16x build (step 9 design): for a board whose ICS570B is rewired to x16 (113.5 MHz). Correct Amiga-side timing (bus cycles, E/CIA), SDRAM CL3, SD clock in spec. See *16x clock*. Superseded by the `_x16` files of steps 10 and 11 | **Worked on Glen's x16 board**, Ripple IDE ROM included: 12311 Dhrystones, MemTest 15.81 MB/s |
@@ -764,6 +770,31 @@ actually provides:
 (`--seeds N` for more) until it gets `RESULT: PASS`, and writes `timing.txt`. Expect the 1T classes to
 pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
+
+Step 13 (run-time clock speed) builds as supplied (not yet on hardware):
+
+| Build | Seed | Worst 1T slack | Worst multicycle slack |
+| --- | --- | --- | --- |
+| full | 12 | +0.24 ns | +0.45 ns |
+
+Seed 12 was the first pass of seeds 1-12 on the final design; the others
+missed by 0.1-4 ns, mostly on clkena -> kernel and on the SDRAM request
+decode. Three earlier versions of the CAS latency change were
+restructured on the way, not seed-hunted: its own state (a fifth state
+bit lengthened the request decode), its own branch in IDLE (even last
+in the chain it merged into the request branch's next-state logic), and
+finally a ride on a refresh, which leaves IDLE as it was in step 12. The
+speed hold was folded into a registered HALTn (a term of its own at
+DECIDE missed by 0.4 ns). Kernel change 4 was tried again (seeds 1-4 of
+the final design, and 1-2 of an earlier one) and did worse than without
+it. The design is 51% LUTs (step 12: 48%); the paths that miss are as
+deep as in step 12, only longer routed. The checker classes the speed
+settings (spd and what is registered from it, clk_sel, the SDRAM read
+timer's CAS latency) as config registers: they change only in a switch,
+with the CPU held and 64+ clocks before anything uses them. Scored as
+the 16x files are: at 14x the build needs the chip 1.14× faster than the
+worst-case model, at 16x 1.30× (`timing_full_at14x.txt`,
+`timing_full_at16x.txt`).
 
 Step 12 (Chip RAM write buffer) builds as supplied (known good on
 hardware, 12x and 16x):
