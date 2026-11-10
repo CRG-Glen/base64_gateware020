@@ -8,7 +8,7 @@ speed 1.1 -- Base64 TG68 system clock (step 13 gateware and later)
   speed 16 FALL     ... or on the falling edge (normally calibrated)
 
 The change happens at once, while running: the gateware waits for the
-buses to go idle, switches, recalibrates its 7 MHz capture (~0.3 ms) and
+buses to go idle, switches, recalibrates its 7 MHz capture (~9 ms) and
 carries on. Asking for the speed already in force just recalibrates.
 The speed stays over a reset; switching the Amiga off and on returns to
 12. So if a speed is too fast for a board, a power cycle undoes it.

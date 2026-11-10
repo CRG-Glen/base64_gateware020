@@ -111,9 +111,9 @@ module base64_tg68_top #(
     // once the real cause is known -- every step doubles the time from power
     // on to a usable machine.
     parameter integer PWRUP_BIT  = 25,   // sim override only
-    // TG68 step 13: 7M edges per capture calibration window (section 3);
-    // the sim shortens it to fit its short power-up hold
-    parameter integer CAL_EDGES  = 2048,
+    // TG68 step 13: 7M edges per speed-switch calibration window (section
+    // 3; the power-up window is set by PWRUP_BIT); the sim shortens it
+    parameter integer CAL_EDGES  = 65536,
     parameter         COLD_RESET = 1'b1, // FPGA drives /RESET+/HALT at
                                          // power-up; see section 1b
     parameter         COLD_RETRY = 1'b1, // reset again if the core double
@@ -592,15 +592,21 @@ module base64_tg68_top #(
     // TG68 step 13: 7M capture calibration. A stream that samples near a 7M
     // transition sees the edge one clock early or late at random; a stable
     // one sees it at the same count of a free-running mod-(ph_top+1)
-    // counter every time. A window watches CAL_N edges of both streams and
-    // counts the edges whose count differs from the previous one; then the
-    // falling stream is used unless it moved more than the rising one (so
-    // it stays the choice wherever it is clean: closest to the old grid).
-    // The speed register can force either. Windows run back to back during
-    // the power-up hold (the last one decides) and once in each speed
-    // switch (the sequencer holds the CPU and keeps the aligner
-    // re-acquiring meanwhile). After a window, cal_jf/cal_jr stay as sticky
-    // flags of any later movement, for the speed register (diagnosis).
+    // counter every time. A window counts, for both streams, the edges whose
+    // count differs from the previous one; then the falling stream is used
+    // unless it moved more than the rising one (so it stays the choice
+    // wherever it is clean: closest to the old grid). The speed register
+    // can force either.
+    //   power-up: one window over the third quarter of the power-up hold
+    //     (~0.33 s, ~2.3M 7M edges; the first half is left to the ICS570B
+    //     to settle), deciding ~0.33 s before the CPU starts
+    //   speed switch: CAL_N edges (65536, ~9 ms) while the sequencer holds
+    //     the CPU and keeps the aligner re-acquiring
+    // Step 13's first build used 2048-edge windows: on hardware at 12x the
+    // falling sample (~0.5 ns from a transition) passed one and moved
+    // later, while the rising one never moved. After a window,
+    // cal_jf/cal_jr stay as sticky flags of any later movement, for the
+    // speed register (diagnosis).
     // ------------------------------------------------------------------
 `ifdef TG68_X16
     // board-mod build: the clock is the pin, the falling sample is centred
@@ -608,50 +614,53 @@ module base64_tg68_top #(
     assign cal_clr  = 1'b0;
     wire   cal_jf = 1'b0, cal_jr = 1'b0;
 `else
-    localparam integer CAL_N = CAL_EDGES;   // 2048: 290 us at 7M
+    localparam integer CAL_N = CAL_EDGES;   // 65536: 9.2 ms at 7M
+    // the power-up window: from half to three quarters of the hold
+    wire        pw_beg = pwrup_cnt[PWRUP_BIT-1];
+    wire        pw_end = pwrup_cnt[PWRUP_BIT-1] & pwrup_cnt[PWRUP_BIT-2];
+    reg         pw_beg_d = 1'b0;
     reg  [4:0]  fr     = 5'd0;
     reg  [4:0]  fr_f   = 5'd0, fr_r = 5'd0;
-    reg  [11:0] cal_n  = 12'd0;
-    reg  [7:0]  jit_f  = 8'd0, jit_r = 8'd0;
+    reg  [16:0] cal_n  = 17'd0;
+    reg  [15:0] jit_f  = 16'd0, jit_r = 16'd0;
     reg         cal_on = 1'b0, cal_sp = 1'b0, cal_pr = 1'b0;
     reg         cal_jf = 1'b0, cal_jr = 1'b0;
     reg         cal_st = 1'b0;          // start a window (registered)
+    wire        cal_end = cal_sp ? (edge_7m_f && cal_n == CAL_N[16:0])
+                                 : (pw_end || pwrup_done);
     always @(posedge clk) begin
-        fr     <= (fr == ph_top) ? 5'd0 : fr + 5'd1;
-        cal_st <= cal_go || (!pwrup_done && !cal_on && !cal_st);
+        fr       <= (fr == ph_top) ? 5'd0 : fr + 5'd1;
+        pw_beg_d <= pw_beg;
+        cal_st   <= cal_go || (pw_beg && !pw_beg_d && !pwrup_done);
         if (edge_7m_f) begin
             fr_f <= fr;
             if (fr != fr_f) begin
-                if (cal_pr && jit_f != 8'hFF) jit_f <= jit_f + 8'd1;
+                if (cal_pr && jit_f != 16'hFFFF) jit_f <= jit_f + 16'd1;
                 if (cal_pr) cal_jf <= 1'b1;
             end
         end
         if (edge_7m_r) begin
             fr_r <= fr;
             if (fr != fr_r) begin
-                if (cal_pr && jit_r != 8'hFF) jit_r <= jit_r + 8'd1;
+                if (cal_pr && jit_r != 16'hFFFF) jit_r <= jit_r + 16'd1;
                 if (cal_pr) cal_jr <= 1'b1;
             end
         end
         if (cal_st) begin
             cal_on <= 1'b1;
             cal_sp <= pwrup_done;           // started by the sequencer
-            cal_n  <= 12'd0;
+            cal_n  <= 17'd0;
             cal_pr <= 1'b0;
-            jit_f  <= 8'd0;  jit_r  <= 8'd0;
-            cal_jf <= 1'b0;  cal_jr <= 1'b0;
-        end else if (cal_on && edge_7m_f) begin
-            cal_n <= cal_n + 12'd1;
-            if (cal_n == 12'd2) cal_pr <= 1'b1;   // both streams seen once
-            if (cal_n == CAL_N[11:0]) begin
+            jit_f  <= 16'd0;  jit_r  <= 16'd0;
+            cal_jf <= 1'b0;   cal_jr <= 1'b0;
+        end else if (cal_on) begin
+            if (edge_7m_f && !cal_n[16]) cal_n <= cal_n + 17'd1;
+            if (edge_7m_f && cal_n == 17'd2) cal_pr <= 1'b1;  // both streams seen once
+            if (cal_end) begin
                 cal_on <= 1'b0;
-                // a power-up window still open when the hold ended is
-                // dropped: changing streams then could move the grid under
-                // the first bus cycles
-                if (cal_sp || !pwrup_done)
-                    smp_r <= (spd_smp == 2'd1) ? 1'b1
-                           : (spd_smp == 2'd2) ? 1'b0
-                           : (jit_f > jit_r);
+                smp_r  <= (spd_smp == 2'd1) ? 1'b1
+                        : (spd_smp == 2'd2) ? 1'b0
+                        : (jit_f > jit_r);
             end
         end
     end

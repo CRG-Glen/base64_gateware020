@@ -29,9 +29,10 @@
 |
 | Why the calibration: the clock reaches the FPGA's flip-flops through the
 | speed multiplexer, whose delay depends on the speed and the build, and can
-| put one of the two samples right on a 7 MHz transition. Each switch (and
-| power-up) watches both for 2048 cycles and keeps the falling-edge one
-| unless it moves more than the rising-edge one. Bits 13-15 show whether
+| put one of the two samples right on a 7 MHz transition. Power-up (for
+| ~0.33 s of the hold) and each switch (65536 cycles, ~9 ms) watch both
+| and keep the falling-edge one unless it moves more than the rising-edge
+| one. Bits 13-15 show whether
 | anything moved later, for testing; RISE / FALL override the choice.
 |
 | The switch itself is done by the gateware: it holds the CPU between bus

@@ -498,7 +498,7 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   LOAD MODE), the clock switches through a glitch-free multiplexer (the
   old clock stops low, the new one starts from low, so no pulse is cut
   short), the 7M aligner re-locks to the new count, and the CPU carries
-  on. It takes about 0.3 ms, nearly all of it the 7 MHz calibration
+  on. It takes about 9 ms, nearly all of it the 7 MHz calibration
   below. Chip DMA, interrupts and the CIAs run on through it; the CPU
   just sees one long bus cycle. A speed whose PLL has not locked is
   refused. Asking for the speed already in force recalibrates.
@@ -513,11 +513,16 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   catch the edge a clock early or late at random. So the 7 MHz clock is
   now sampled on both edges, half a clock apart (one of the two is then
   always at least a quarter period from a transition), and a calibration
-  watches both for 2048 cycles: a sample near a transition sees the edge
-  move, a clean one never does. The falling-edge sample stays in use
-  unless it moved more than the rising-edge one (it is the one closest
-  to the old timing). The calibration runs during the power-up hold and
-  in every speed switch, with the CPU held. `speed` shows which edge is
+  watches both: a sample near a transition sees the edge move, a clean
+  one never does. The falling-edge sample stays in use unless it moved
+  more than the rising-edge one (it is the one closest to the old
+  timing). The calibration runs over the third quarter of the power-up
+  hold (~0.33 s, ~2.3 million 7 MHz cycles) and for 65536 cycles (~9 ms)
+  in every speed switch, with the CPU held. (The first step 13 build
+  watched 2048 cycles. On Glen's A500+ at 12x its falling-edge sample,
+  about 0.5 ns from a transition, passed that and kept moving now and
+  then afterwards, while the rising one, forced with `speed 12 RISE`,
+  never moved through a demo; step 13b's longer windows are for that.) `speed` shows which edge is
   in use and whether either sample, or the phase aligner, has moved
   since; `speed 16 RISE` / `FALL` force the edge, for testing.
   Found on the way: the 7 MHz phase aligner (from the fx68k build) never

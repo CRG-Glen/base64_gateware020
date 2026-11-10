@@ -361,12 +361,17 @@ that gives the "_fast" files.
   differ with the PLL CLKI/CLKFB routes; placement-dependent), which can
   put the falling-edge 7M sample on a transition. So 7M is sampled on
   both edges (`edge_7m_f`, `edge_7m_r`, same flop count: r sees an edge
-  the same clock or one later) and a calibration (section 3, CAL_EDGES
-  2048) counts, per stream, edges whose free-running mod-N count `fr`
-  differs from the previous one; `smp_r <= jit_f > jit_r` (falling kept
-  on a tie: closest to the old grid). Windows back to back during the
-  power-up hold (one still open at pwrup_done is dropped), one per
-  switch. Sim: `VLFLAGS=-DCAL_TEST` (clkgen transport delay 6.073 ns, tb
+  the same clock or one later) and a calibration (section 3) counts, per
+  stream, edges whose free-running mod-N count `fr` differs from the
+  previous one (16-bit, saturating); `smp_r <= jit_f > jit_r` (falling
+  kept on a tie: closest to the old grid). Windows: power-up from
+  pwrup_cnt bit PWRUP_BIT-1 to bits -1 and -2 (third quarter of the
+  hold, ~0.33 s, decides 0.33 s before boot), switch CAL_EDGES = 65536
+  (~9 ms; the sim uses 64). Hardware (first build, 2048-edge windows):
+  12x cold boot $270C (falling kept, then moved; predicted ~0.5 ns from
+  a transition), 14x $070E (clean), 16x $3710 (rising chosen, falling
+  moving), `speed 12 rise` through a demo $370C (rising never moved, no
+  slip). Hence step 13b's longer windows. Sim: `VLFLAGS=-DCAL_TEST` (clkgen transport delay 6.073 ns, tb
   7M jitter 0-0.4 ns) expects rising at 12x, falling at 14x/16x; a
   mutant that always keeps falling fails (aligner slips). Verilator: a
   delayed continuous assign is inertial and swallowed the 14x/16x
