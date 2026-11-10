@@ -182,6 +182,23 @@ module sdram_ctrl #(
     reg       cfg_ref = 1'b0;
     always @(posedge clk)
         cfg_go <= cfg_req && (cfg_cl3 != cl3_now) && !cfg_ref && (state != S_INIT_MODE);
+    // TG68 step 14: IDLE's open-row decision, registered one clock early.
+    // The adapter loads the SDRAM address (saddr_r in fastmem_zii) on the
+    // edge it raises its request and freezes it (dp_hold) on the next,
+    // where the request reaches us; so addr is stable for a clock before
+    // IDLE first sees req. The row registers do not change on any edge
+    // into IDLE (only in reset, in IDLE's own branches, which leave IDLE,
+    // and in S_PRECHG), and ras_timer only counts up, so pre_ras can lag
+    // (a rare row-miss precharge then waits a clock) but never lead. As a
+    // live compare this decision put the request into a 1T path to the
+    // row registers that missed on most seeds once the chip had grown. A
+    // sim-only check below counts any use of a stale value (pre_bad).
+    reg        pre_open = 1'b0, pre_hit = 1'b0, pre_ras = 1'b0;
+    always @(posedge clk) begin
+        pre_open <= row_open[a_bank];
+        pre_hit  <= row_open[a_bank] && (open_row[a_bank] == a_row);
+        pre_ras  <= (ras_timer[a_bank] >= T_RAS[3:0]);
+    end
     reg [3:0]  timer;
     reg        init_done;
     wire      cl3_nx = init_done ? cfg_cl3 : cl3_now;   // S_INIT_MODE's latency
@@ -353,7 +370,7 @@ module sdram_ctrl #(
                     rd2_pend  <= pair && !we;
                     rd2_left  <= pair && !we;
                     // open-row decision
-                    if (row_open[a_bank] && open_row[a_bank] == a_row) begin
+                    if (pre_hit) begin
                         // HIT: row already open. OPT B -- issue the READ in
                         // THIS cycle rather than spending one getting to
                         // S_RW. Writes still route via S_RW because the
@@ -369,9 +386,9 @@ module sdram_ctrl #(
                         end else begin
                             state <= S_RW;
                         end
-                    end else if (row_open[a_bank]) begin
+                    end else if (pre_open) begin
                         // wrong row open: precharge it (respect tRAS), then activate
-                        if (ras_timer[a_bank] >= T_RAS[3:0]) begin
+                        if (pre_ras) begin
                             set_cmd(CMD_PRECHG);
                             sdram_ba <= a_bank;
                             sdram_a[10] <= 1'b0;     // this bank only
@@ -509,5 +526,22 @@ module sdram_ctrl #(
             endcase
         end
     end
+
+`ifndef YOSYS
+    // sim only: every request decision must see the live values (pre_ras
+    // may only lag); the fastmem bench fails if pre_bad is not 0
+    integer pre_bad = 0;
+    always @(posedge clk)
+        if (!reset && state == S_IDLE && timer == 0 && req
+                && !(refresh_due && (!req || ref_urgent))) begin
+            if (pre_open != row_open[a_bank]
+                    || pre_hit != (row_open[a_bank] && (open_row[a_bank] == a_row))
+                    || (pre_ras && !(ras_timer[a_bank] >= T_RAS[3:0]))) begin
+                pre_bad = pre_bad + 1;
+                if (pre_bad <= 5)
+                    $display("%0t: sdram_ctrl: stale open-row decision (bank %0d)", $time, a_bank);
+            end
+        end
+`endif
 
 endmodule

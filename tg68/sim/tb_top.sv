@@ -571,6 +571,7 @@ module tb;
         $display("pair writes: %0d; SDRAM model timing violations: %0d", wr_pairs, u_sdram.n_err);
         if (wr_pairs < 4) begin $display("FAIL: pair writes (32-bit SDRAM) barely used"); errors = errors + 1; end
         if (u_sdram.n_err) begin $display("FAIL: SDRAM model timing violations"); errors = errors + 1; end
+        if (dut.g_sdram.u_sdram.pre_bad) begin $display("FAIL: %0d SDRAM requests used a stale open-row decision", dut.g_sdram.u_sdram.pre_bad); errors = errors + 1; end
         $display("data cache hits: %0d; hits checked against the CPU's writes %0d (stale: %0d); pair hits %0d; shortest direct request->ack %0d clocks",
                  dc_hits, hit_chk, hit_bad, long_hits, dp_min);
         if (long_hits < 4) begin $display("FAIL: pair hits (32-bit data path) barely used"); errors = errors + 1; end
