@@ -61,6 +61,7 @@ module sdram_ctrl #(
     // TG68 step 13: run-time CAS latency. cfg_req with cfg_cl3 (1 = CL3,
     // 0 = CL2) reloads the mode register: taken in IDLE when no request is
     // pending (the speed switch holds the CPU), all banks precharged first.
+    // cfg_req must stay up until cl3_now follows cfg_cl3.
     // cl3_now is the latency in force. Power-on: CAS_LAT.
     input  wire        cfg_req,
     input  wire        cfg_cl3,
@@ -168,6 +169,12 @@ module sdram_ctrl #(
                S_CFG_PRE   = 5'd16;  // TG68 step 13: precharge-all, then LOAD MODE
 
     reg [4:0]  state;
+    // TG68 step 13: a new CAS latency is asked for (registered: see S_IDLE).
+    // Cleared while the mode register is being loaded, so the clock after
+    // it (cl3_now not yet seen) cannot start a second one.
+    reg       cfg_go = 1'b0;
+    always @(posedge clk)
+        cfg_go <= cfg_req && (cfg_cl3 != cl3_now) && (state != S_CFG_PRE);
     reg [3:0]  timer;
     reg        init_done;
     reg [1:0]  cur_bank;
@@ -312,14 +319,6 @@ module sdram_ctrl #(
                         timer <= T_RFC[3:0];
                         state <= S_REFRESH;
                     end
-                end else if (cfg_req && (cfg_cl3 != cl3_now) && !req) begin
-                    // TG68 step 13: new CAS latency. Close every row, then
-                    // reload the mode register (S_CFG_PRE)
-                    set_cmd(CMD_PRECHG);
-                    sdram_a[10] <= 1'b1;             // precharge all
-                    row_open <= 4'b0000;
-                    timer <= T_RP[3:0];
-                    state <= S_CFG_PRE;
                 end else if (req) begin
                     // latch the request. Only the ADDRESS and direction are
                     // captured here. Write DATA is NOT latched - it is sampled
@@ -377,6 +376,18 @@ module sdram_ctrl #(
                         timer <= T_RCD[3:0];
                         state <= S_ACTIVE;
                     end
+                end else if (cfg_go) begin
+                    // TG68 step 13: new CAS latency. Close every row, then
+                    // reload the mode register (S_CFG_PRE). Last in the
+                    // chain and from a register: as the term before the
+                    // request branch (with !req) it sat in the request
+                    // decode and failed 1T by 1 ns. Requests never meet it:
+                    // the speed switch holds the CPU with the port idle.
+                    set_cmd(CMD_PRECHG);
+                    sdram_a[10] <= 1'b1;             // precharge all
+                    row_open <= 4'b0000;
+                    timer <= T_RP[3:0];
+                    state <= S_CFG_PRE;
                 end
             end
             // wait tRP after precharging the wrong row, then activate target
