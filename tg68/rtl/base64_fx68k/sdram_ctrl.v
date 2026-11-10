@@ -150,33 +150,36 @@ module sdram_ctrl #(
     reg [3:0]  ras_timer [0:3];   // per-bank tRAS since activate (saturating)
 
     // ---- FSM ----
-    localparam S_INIT_WAIT = 5'd0,
-               S_INIT_PRE  = 5'd1,
-               S_INIT_REF1 = 5'd2,
-               S_INIT_REF2 = 5'd3,
-               S_INIT_MODE = 5'd4,
-               S_IDLE      = 5'd5,
-               S_PRECHG    = 5'd6,   // close wrong row before activating
-               S_ACTIVE    = 5'd7,   // activate target row
-               S_RW        = 5'd8,   // issue read/write to open row
-               S_RD_WAIT   = 5'd9,
-               S_RD_DONE   = 5'd10,
-               S_WR_DONE   = 5'd11,
-               S_REF_PRE   = 5'd12,  // precharge-all before refresh
-               S_REFRESH   = 5'd13,
-               S_ACK_WAIT  = 5'd14,  // hold after ack until req deasserts
-               S_WR2       = 5'd15,  // TG68: second WRITE of a pair
-               S_CFG_PRE   = 5'd16;  // TG68 step 13: precharge-all, then LOAD MODE
+    localparam S_INIT_WAIT = 4'd0,
+               S_INIT_PRE  = 4'd1,
+               S_INIT_REF1 = 4'd2,
+               S_INIT_REF2 = 4'd3,
+               S_INIT_MODE = 4'd4,
+               S_IDLE      = 4'd5,
+               S_PRECHG    = 4'd6,   // close wrong row before activating
+               S_ACTIVE    = 4'd7,   // activate target row
+               S_RW        = 4'd8,   // issue read/write to open row
+               S_RD_WAIT   = 4'd9,
+               S_RD_DONE   = 4'd10,
+               S_WR_DONE   = 4'd11,
+               S_REF_PRE   = 4'd12,  // precharge-all before refresh
+               S_REFRESH   = 4'd13,
+               S_ACK_WAIT  = 4'd14,  // hold after ack until req deasserts
+               S_WR2       = 4'd15;  // TG68: second WRITE of a pair
+    // (TG68 step 13: a run-time CAS latency change reuses S_INIT_MODE, so
+    // state stays 4 bits: a fifth bit, for a state of its own, lengthened
+    // the request decode in IDLE; it missed 1T on a seed)
 
-    reg [4:0]  state;
+    reg [3:0]  state;
     // TG68 step 13: a new CAS latency is asked for (registered: see S_IDLE).
     // Cleared while the mode register is being loaded, so the clock after
     // it (cl3_now not yet seen) cannot start a second one.
     reg       cfg_go = 1'b0;
     always @(posedge clk)
-        cfg_go <= cfg_req && (cfg_cl3 != cl3_now) && (state != S_CFG_PRE);
+        cfg_go <= cfg_req && (cfg_cl3 != cl3_now) && (state != S_INIT_MODE);
     reg [3:0]  timer;
     reg        init_done;
+    wire      cl3_nx = init_done ? cfg_cl3 : cl3_now;   // S_INIT_MODE's latency
     reg [1:0]  cur_bank;
     reg [12:0] cur_row;
     reg [8:0]  cur_col;
@@ -277,10 +280,14 @@ module sdram_ctrl #(
                 else begin
                     set_cmd(CMD_LOADMODE);
                     sdram_ba <= 2'b00;
-                    // TG68 step 13: the latency in force (cl3_now is not
-                    // reset: the system clock keeps its speed over an Amiga
-                    // reset, and a re-init must match it); MODE_REG at power-on
-                    sdram_a  <= {MODE_REG[12:7], cl3_now ? 3'd3 : 3'd2, MODE_REG[3:0]};
+                    // TG68 step 13: at init, the latency in force (cl3_now
+                    // is not reset: the system clock keeps its speed over an
+                    // Amiga reset, and a re-init must match it; MODE_REG at
+                    // power-on); after init this state is the run-time
+                    // change (IDLE, cfg_go), and loads cfg_cl3
+                    sdram_a  <= {MODE_REG[12:7], cl3_nx ? 3'd3 : 3'd2, MODE_REG[3:0]};
+                    cl3_now   <= cl3_nx;
+                    cas_lat_r <= cl3_nx ? 4'd3 : 4'd2;
                     timer    <= T_MRD[3:0];
                     state    <= S_IDLE;
                     init_done <= 1'b1;
@@ -378,7 +385,7 @@ module sdram_ctrl #(
                     end
                 end else if (cfg_go) begin
                     // TG68 step 13: new CAS latency. Close every row, then
-                    // reload the mode register (S_CFG_PRE). Last in the
+                    // reload the mode register (S_INIT_MODE). Last in the
                     // chain and from a register: as the term before the
                     // request branch (with !req) it sat in the request
                     // decode and failed 1T by 1 ns. Requests never meet it:
@@ -387,7 +394,7 @@ module sdram_ctrl #(
                     sdram_a[10] <= 1'b1;             // precharge all
                     row_open <= 4'b0000;
                     timer <= T_RP[3:0];
-                    state <= S_CFG_PRE;
+                    state <= S_INIT_MODE;
                 end
             end
             // wait tRP after precharging the wrong row, then activate target
@@ -484,19 +491,6 @@ module sdram_ctrl #(
             S_WR_DONE: begin
                 ack   <= 1'b1;
                 state <= S_ACK_WAIT;          // row stays OPEN; wait req low
-            end
-            // TG68 step 13: all banks precharged; load the new CAS latency
-            S_CFG_PRE: begin
-                if (timer != 0) timer <= timer - 1'b1;
-                else begin
-                    set_cmd(CMD_LOADMODE);
-                    sdram_ba  <= 2'b00;
-                    sdram_a   <= {3'b000, 1'b0, 2'b00, cfg_cl3 ? 3'd3 : 3'd2, 1'b0, 3'b000};
-                    cl3_now   <= cfg_cl3;
-                    cas_lat_r <= cfg_cl3 ? 4'd3 : 4'd2;
-                    timer     <= T_MRD[3:0];          // IDLE counts tMRD down
-                    state     <= S_IDLE;
-                end
             end
             // ---------------- REFRESH ----------------
             S_REF_PRE: begin
