@@ -4,11 +4,17 @@
 |   speed 12          85.1 MHz, the ICS570B's own clock (power-on default)
 |   speed 14          99.3 MHz, from the FPGA's PLL
 |   speed 16          113.5 MHz, from the FPGA's PLL
+|   speed 16 RISE     the same, with the 7 MHz sample forced to the rising
+|   speed 16 FALL     or falling clock edge (normally calibrated: see below)
+|
+| Asking for the speed already in force recalibrates the 7 MHz capture.
 |
 | The gateware (step 13) has a speed register in the AutoConfig ROM board
 | (5194/14) at board+$F00A, next to mapROM's control register. A write is
 | taken only when the high byte is $5B:
 |   $5B0C / $5B0E / $5B10   ask for 12x / 14x / 16x (anything else ignored)
+|   +$40 / +$80             force the 7 MHz sample to the rising / falling
+|                           clock edge
 | A read gives
 |   bits 7-0   multiplier in force (12, 14 or 16)
 |   bit  8     14x PLL locked
@@ -16,6 +22,17 @@
 |   bit  10    run-time switching present (0: the fixed-clock board-mod
 |              build, or gateware before step 13, which reads 0 here)
 |   bit  11    a switch is in progress
+|   bit  12    the 7 MHz clock is sampled on the rising edge (else falling)
+|   bit  13    the falling-edge sample has moved since the last calibration
+|   bit  14    the rising-edge sample has moved since then
+|   bit  15    the 7 MHz phase aligner has slipped since then (red LED)
+|
+| Why the calibration: the clock reaches the FPGA's flip-flops through the
+| speed multiplexer, whose delay depends on the speed and the build, and can
+| put one of the two samples right on a 7 MHz transition. Each switch (and
+| power-up) watches both for 2048 cycles and keeps the falling-edge one
+| unless it moves more than the rising-edge one. Bits 13-15 show whether
+| anything moved later, for testing; RISE / FALL override the choice.
 |
 | The switch itself is done by the gateware: it holds the CPU between bus
 | cycles, waits for the buses and the SDRAM to go idle, changes the SDRAM's
@@ -50,6 +67,10 @@
         .equ    B_LOCK16,   9
         .equ    B_SWITCH,   10
         .equ    B_BUSY,     11
+        .equ    B_RISE,     12
+        .equ    B_JITF,     13
+        .equ    B_JITR,     14
+        .equ    B_SLIP,     15
 
 | variable block offsets (a5)
         .equ    v_sys,   0
@@ -124,7 +145,30 @@ _start:
         cmp.w   #16,%d2
         bne     usage
 7:      move.w  %d2,%d6
-        bra   args_done
+        | then RISE or FALL, optional (only the first letter counts)
+        cmp.b   #' ',%d0                    | what ended the number
+        beq.s   8f
+        cmp.b   #9,%d0
+        bne     args_done                   | end of line (or "16x")
+8:      tst.l   %d1
+        beq     args_done
+        move.b  (%a0)+,%d0
+        subq.l  #1,%d1
+        cmp.b   #' ',%d0
+        beq.s   8b
+        cmp.b   #9,%d0
+        beq.s   8b
+        cmp.b   #10,%d0
+        beq     args_done
+        or.b    #0x20,%d0
+        cmp.b   #'r',%d0
+        bne.s   9f
+        or.w    #0x40,%d6
+        bra     args_done
+9:      cmp.b   #'f',%d0
+        bne     usage
+        or.w    #0x80,%d6
+        bra     args_done
 6:      or.b    #0x20,%d0
         cmp.b   #'s',%d0                    | STATUS
         beq   args_done
@@ -157,7 +201,11 @@ args_done:
 .ifdef TESTFIX
         move.w  #0x0010,SPD_REG(%a2)
 .else
+.ifdef TESTJIT
+        move.w  #0xF70C,SPD_REG(%a2)        | rising, both moved, slipped
+.else
         move.w  #0x070C,SPD_REG(%a2)
+.endif
 .endif
 .else
         move.l  %d0,%a6
@@ -199,14 +247,15 @@ args_done:
 4:      tst.w   %d6
         beq     do_report
 
-        | ---- switch ----
+        | ---- switch (or recalibrate) ----
+        move.w  %d6,%d4                     | d4 = what gets written
+        and.w   #0x3F,%d6                   | d6 = the multiplier alone
         moveq   #0,%d0
         move.b  %d5,%d0
         cmp.w   %d6,%d0
         bne.s   5f
-        lea     m_already(%pc),%a0          | nothing to do
+        lea     m_recal(%pc),%a0            | same speed: a recalibration
         bsr     puts
-        bra.s   do_report
 5:      cmp.w   #14,%d6                     | its PLL must be locked
         bne.s   6f
         btst    #B_LOCK14,%d5
@@ -221,13 +270,16 @@ args_done:
         lea     m_nolock16(%pc),%a0
         bsr     puts
         bra     close_exp
-7:      move.w  %d6,%d0
+7:      move.w  %d4,%d0
         or.w    #SPD_KEY,%d0
         move.w  %d0,SPD_REG(%a2)            | the gateware does the rest
 .ifdef TEST
         move.w  %d6,%d0                     | fake board: the answer
         or.w    #0x0700,%d0
-        move.w  %d0,SPD_REG(%a2)
+        btst    #6,%d4
+        beq.s   1f
+        bset    #B_RISE,%d0
+1:      move.w  %d0,SPD_REG(%a2)
 .endif
         | the CPU is held while it switches, so the next read normally sees
         | it done; poll anyway, with a limit
@@ -295,7 +347,26 @@ report:
         bsr     puts
 4:      lea     m_nl(%pc),%a0
         bsr     puts
-2:      lea     m_reg(%pc),%a0
+        lea     m_smp(%pc),%a0
+        bsr     puts
+        lea     m_rise(%pc),%a0
+        btst    #B_RISE,%d5
+        bne.s   5f
+        lea     m_fall(%pc),%a0
+5:      bsr     puts
+        btst    #B_JITF,%d5
+        beq.s   6f
+        lea     m_jitf(%pc),%a0
+        bsr     puts
+6:      btst    #B_JITR,%d5
+        beq.s   2f
+        lea     m_jitr(%pc),%a0
+        bsr     puts
+2:      btst    #B_SLIP,%d5
+        beq.s   7f
+        lea     m_slip(%pc),%a0
+        bsr     puts
+7:      lea     m_reg(%pc),%a0
         bsr     puts
         move.l  %d5,%d0
         bsr     puthex4
@@ -345,13 +416,13 @@ puthex4:
 | ---- text ------------------------------------------------------------------
 dosname:    .asciz  "dos.library"
 expname:    .asciz  "expansion.library"
-verstag:    .asciz  "$VER: speed 1.0 (9.11.2026) Base64"
-m_usage:    .asciz  "Usage: speed          show the clock in force\n       speed 12       85.1 MHz (power-on default)\n       speed 14       99.3 MHz\n       speed 16      113.5 MHz\nThe speed stays over a reset; a power cycle returns to 12.\n"
+verstag:    .asciz  "$VER: speed 1.1 (10.11.2026) Base64"
+m_usage:    .asciz  "Usage: speed               show the clock in force\n       speed 12            85.1 MHz (power-on default)\n       speed 14            99.3 MHz\n       speed 16           113.5 MHz\n       speed <n> RISE|FALL  force the 7 MHz sampling edge\nThe speed stays over a reset; a power cycle returns to 12.\nThe speed in force again: recalibrate the 7 MHz capture.\n"
 m_noexp:    .asciz  "cannot open expansion.library\n"
 m_noboard:  .asciz  "No Base64 AutoConfig ROM board found (5194/14).\n"
 m_nowin:    .asciz  "Board found, but no status window - gateware is too old.\n"
 m_noswitch: .asciz  "This gateware cannot change the clock while running\n(the fixed-clock x16 build, or one older than step 13).\n"
-m_already:  .asciz  "Already at that speed.\n"
+m_recal:    .asciz  "Same speed: recalibrating the 7 MHz capture.\n"
 m_nolock14: .asciz  "The 14x PLL is not locked: speed not changed.\n"
 m_nolock16: .asciz  "The 16x PLL is not locked: speed not changed.\n"
 m_timeout:  .asciz  "The gateware did not finish the switch.\n"
@@ -360,11 +431,17 @@ m_x12:      .asciz  "12x  85.1 MHz\n"
 m_x14:      .asciz  "14x  99.3 MHz\n"
 m_x16:      .asciz  "16x 113.5 MHz\n"
 m_xunk:     .asciz  "unknown\n"
-m_avail:    .asciz  "Available:   "
+m_avail:    .asciz  "Available:    "
 m_a12:      .asciz  " 12"
 m_a14:      .asciz  " 14"
 m_a16:      .asciz  " 16"
-m_reg:      .asciz  "Register:    $"
+m_smp:      .asciz  "7 MHz sample: "
+m_rise:     .asciz  "rising edge\n"
+m_fall:     .asciz  "falling edge\n"
+m_jitf:     .asciz  "  the falling-edge sample has moved since the calibration\n"
+m_jitr:     .asciz  "  the rising-edge sample has moved since the calibration\n"
+m_slip:     .asciz  "  the 7 MHz phase aligner has slipped since then\n"
+m_reg:      .asciz  "Register:     $"
 m_nl:       .asciz  "\n"
         .balign 4
 vars:   .space  40

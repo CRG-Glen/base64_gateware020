@@ -338,25 +338,50 @@ that gives the "_fast" files.
   hardware):** `clkgen.v`: 12x straight from pin L1, 14x (EHXPLLL 6/7/7)
   and 16x (9/12/6) from it, a fabric glitch-free mux (one enable per
   source, two flops on that source's negedge, on only when the others are
-  off) into a DCCA. TG68_X16 builds `clkgen #(.ENABLE(0))` (clk = pin).
+  off) into a DCCA. DCSC was tried (nextpnr places it) but its config
+  text had two drivers on one DCS input: not trusted without hardware.
+  TG68_X16 builds `clkgen #(.ENABLE(0))` (clk = pin).
   `spd` (0/1/2) drives registers that replaced the X16 ifdefs at run time:
   ph_top/ph_half (11/13/15, 6/7/8), ms_top, spd_hold2 (rt_ hold 2 clocks
   above 12x), spd_lox (SD SCLK low +1 at 16x, shifter `lo_extra`).
   sdram_ctrl (`TG68:`): cfg_req/cfg_cl3 -> PRECHARGE ALL, S_CFG_PRE, LOAD
   MODE, `cl3_now`, `cas_lat_r`; init LOAD MODE uses cl3_now (not reset, so
   the speed survives an Amiga reset; only a power cycle gives 12x).
-  turbomem +$F00A (`TG68:`): write $5B0C/$5B0E/$5B10, read {busy, sw_ok,
-  lock16, lock14, mult}; the X16 build reads $0010. Sequencer (top section
-  13): IDLE -> HOLD (`spd_hold` stops tg68_bus starting anything at
-  DECIDE; wait 16 clocks of `sp_quiet` = cyc_idle, wb empty, both AS high)
-  -> CL (to CL3 for 16x) -> SW (clk_sel, spd; 64 clocks) -> LOCK (8 7M
-  edges) -> CL2 (leaving 16x) -> IDLE. LOCK does not wait for ph_locked:
-  the aligner's reload lands a clock after the edge, so ph_locked is 0 in
-  steady state (pre-existing; the reload every edge is a no-op). Also
-  fixed: turbomem's ctrl_wr (MapROM) lacked tm_space (status_hit decodes
-  A15:12 only). `sw/speed/`: SPEED command (68000 asm, vamos-tested with
-  a fake board: `build.sh test`). Sim: pll_model (Verilator), fastmem
-  checks 81D4-81F0, n_switch 3, n_mrs 3 (X16: $0010, 0, 1).
+  turbomem +$F00A (`TG68:`): write $5B0C/$5B0E/$5B10 (+$40 / +$80 force
+  the 7M sample edge rising / falling), read {slip, jit_r, jit_f, rise,
+  busy, sw_ok, lock16, lock14, mult}; the X16 build reads {slip, 0, 16}.
+  Sequencer (top section 13): IDLE -> HOLD (spd_hold, folded into a
+  registered `tg_halt_n` for the adapter's HALTn: a separate term at
+  DECIDE failed 1T by 0.4 ns; wait 16 clocks of `sp_quiet` = cyc_idle,
+  wb empty, both AS high) -> CL (to CL3 for 16x) -> SW (clk_sel, spd,
+  spd_unlock; 64 clocks) -> LOCK (8 7M edges) -> CAL -> SETL (8 edges)
+  -> CL2 (leaving 16x) -> IDLE. Any keyed write runs it (same speed =
+  recalibrate).
+  **The mux delays the clock** (~5.5-6.5 ns modelled at 12x; 14x/16x
+  differ with the PLL CLKI/CLKFB routes; placement-dependent), which can
+  put the falling-edge 7M sample on a transition. So 7M is sampled on
+  both edges (`edge_7m_f`, `edge_7m_r`, same flop count: r sees an edge
+  the same clock or one later) and a calibration (section 3, CAL_EDGES
+  2048) counts, per stream, edges whose free-running mod-N count `fr`
+  differs from the previous one; `smp_r <= jit_f > jit_r` (falling kept
+  on a tie: closest to the old grid). Windows back to back during the
+  power-up hold (one still open at pwrup_done is dropped), one per
+  switch. Sim: `VLFLAGS=-DCAL_TEST` (clkgen transport delay 6.073 ns, tb
+  7M jitter 0-0.4 ns) expects rising at 12x, falling at 14x/16x; a
+  mutant that always keeps falling fails (aligner slips). Verilator: a
+  delayed continuous assign is inertial and swallowed the 14x/16x
+  pulses; use `always @(x) y <= #d x`.
+  Aligner fix: the lock compare is `ph == PHASE_OFS - 1` (it compared
+  with PHASE_OFS, never locked, re-acquired every edge); same grid,
+  SLIP_TOL now works, ph_slip (red LED) cleared by each calibration.
+  Also fixed: turbomem's ctrl_wr (MapROM) lacked tm_space (status_hit
+  decodes A15:12 only). `sw/speed/`: SPEED 1.1 (68000 asm; `build.sh
+  test` builds three vamos fake boards). Sim checks 81D4-81FC, n_switch
+  3, n_mrs 3 (X16: $0010, 0, 1), ph_locked, !ph_slip, smp_r.
+  check_timing: spd/ph_top/ph_half/ms_top/spd_hold2/spd_lox/clk_sel/
+  cas_lat_r are config (4T, changed only in SW with 64+ clocks after);
+  cl3_now stays 1T; fm_cfg_* inside g_fastmem.u_fastmem were missing
+  from STATIC (a fake 1T fail).
 - **Cache enable:** both caches follow CACR EI. The data cache must NOT get
   the 68030 CACR bit 8: software tells an 020 from an 030 by setting that bit
   and reading it back, so storing it would make the CPU detect as a 68030 and

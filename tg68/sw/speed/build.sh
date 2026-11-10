@@ -2,8 +2,9 @@
 # Build the speed executable (Linux; needs GNU binutils for m68k:
 # Debian/Ubuntu package binutils-m68k-linux-gnu). Uses ../maprom/mkhunk.py.
 #   sh build.sh          speed
-#   sh build.sh test     also speed_test / speed_testfix: a fake board in RAM,
-#                        for amitools' vamos (normal / fixed 16x gateware)
+#   sh build.sh test     also speed_test / speed_testfix / speed_testjit: a
+#                        fake board in RAM, for amitools' vamos (normal,
+#                        fixed 16x gateware, a status with every flag set)
 set -e
 cd "$(dirname "$0")"
 one() {   # one <output> [--defsym ...]
@@ -21,4 +22,5 @@ one speed
 if [ "$1" = test ]; then
     one speed_test --defsym TEST=1
     one speed_testfix --defsym TEST=1 --defsym TESTFIX=1
+    one speed_testjit --defsym TEST=1 --defsym TESTJIT=1
 fi

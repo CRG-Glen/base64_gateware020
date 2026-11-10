@@ -21,6 +21,7 @@ sw/maprom/*.bin
 sw/speed/speed
 sw/speed/speed_test
 sw/speed/speed_testfix
+sw/speed/speed_testjit
 sw/speed/*.o
 sw/speed/*.elf
 sw/speed/*.bin

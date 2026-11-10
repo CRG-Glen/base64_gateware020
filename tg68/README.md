@@ -492,9 +492,36 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   LOAD MODE), the clock switches through a glitch-free multiplexer (the
   old clock stops low, the new one starts from low, so no pulse is cut
   short), the 7M aligner re-locks to the new count, and the CPU carries
-  on. It takes a few microseconds. Chip DMA, interrupts and the CIAs run
-  on through it; the CPU just sees one long bus cycle. A speed whose PLL
-  has not locked is refused.
+  on. It takes about 0.3 ms, nearly all of it the 7 MHz calibration
+  below. Chip DMA, interrupts and the CIAs run on through it; the CPU
+  just sees one long bus cycle. A speed whose PLL has not locked is
+  refused. Asking for the speed already in force recalibrates.
+  **7 MHz capture calibration.** The bridge finds the Amiga's 7 MHz phase
+  by sampling its clock on the falling edge of the fast clock, half a
+  period away from the edges, which the ICS570B makes coincide. The speed
+  multiplexer is built in FPGA logic (the chip's own clock selector,
+  DCSC, came out of the open tools with a bitstream that could not be
+  checked without hardware), and it delays the clock by about 5-6 ns at
+  12x, a different amount for each speed and each build. That can put
+  the falling-edge sample right on a 7 MHz transition, where it would
+  catch the edge a clock early or late at random. So the 7 MHz clock is
+  now sampled on both edges, half a clock apart (one of the two is then
+  always at least a quarter period from a transition), and a calibration
+  watches both for 2048 cycles: a sample near a transition sees the edge
+  move, a clean one never does. The falling-edge sample stays in use
+  unless it moved more than the rising-edge one (it is the one closest
+  to the old timing). The calibration runs during the power-up hold and
+  in every speed switch, with the CPU held. `speed` shows which edge is
+  in use and whether either sample, or the phase aligner, has moved
+  since; `speed 16 RISE` / `FALL` force the edge, for testing.
+  Found on the way: the 7 MHz phase aligner (from the fx68k build) never
+  locked. It compared its counter with the value it would have one clock
+  after an aligned edge, so it re-acquired on every edge. That was
+  harmless while the edge never moved, but its tolerance of an odd noisy
+  edge (three disagreements in a row before it re-acquires) never
+  worked. Fixed; the grid is the same. So the red LED's "aligner
+  slipped" now means what it says, and it is cleared by each
+  calibration.
   The speed **stays over a reset**; only a power cycle (the FPGA
   reloading) returns to 12x. So a speed that is too fast for a board is
   undone by switching off and on.
@@ -505,9 +532,15 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   16x is overclocked exactly as the `_x16` build is (see *16x clock*); 14x
   less so. Test: the `fastmem` sim switches to 16x, to 14x and back to
   12x, with memory traffic (pair writes and reads of fast RAM, a Chip RAM
-  write and read, a CIA read) after each switch, and checks the register,
-  that unkeyed or invalid writes are ignored, three clock switches and
-  three SDRAM mode loads. Its SDRAM model returns read data at the CAS
+  write and read, a CIA read) after each switch, then a recalibration
+  with the edge forced, and checks the register, that unkeyed or invalid
+  writes are ignored, three clock switches, three SDRAM mode loads and
+  that the aligner is locked and never slipped. `VLFLAGS=-DCAL_TEST`
+  delays the simulated clock by half a 12x period plus 0.2 ns and
+  jitters the 7 MHz edges by 0-0.4 ns: the calibration must then pick
+  the rising edge at 12x and keep the falling one at 14x and 16x (a
+  version that always keeps the falling edge fails it, with the aligner
+  slipping). Its SDRAM model returns read data at the CAS
   latency of the last LOAD MODE, so a controller expecting another one
   reads wrong data, and it flags a LOAD MODE with any bank open.
   Found on the way: the ROM board decoded its control registers from
