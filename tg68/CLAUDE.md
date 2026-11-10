@@ -334,8 +334,8 @@ that gives the "_fast" files.
   ALU and the data-in/address processes; it cut that class's misses from
   -1.2..-3.8 to 0..-1.5 ns on seeds 1-4 but none passed, so it was
   reverted here. Bring it back when a step's seed search stalls on clkena.
-- **Run-time clock speed (step 13, branch step13-pll-speed, not yet on
-  hardware):** `clkgen.v`: 12x straight from pin L1, 14x (EHXPLLL 6/7/7)
+- **Run-time clock speed (step 13, branch step13-pll-speed; runs on
+  Glen's A500+ at 12x/14x/16x, switching from the CLI):** `clkgen.v`: 12x straight from pin L1, 14x (EHXPLLL 6/7/7)
   and 16x (9/12/6) from it, a fabric glitch-free mux (one enable per
   source, two flops on that source's negedge, on only when the others are
   off) into a DCCA. DCSC was tried (nextpnr places it) but its config
@@ -411,6 +411,26 @@ that gives the "_fast" files.
   (PLL14's CLKI route is 6.7 ns: pin L1 is next to PLL16 only), 16x +6.9.
   YoWASP cannot read files under /tmp: worktrees for parallel seed
   searches go under /home/user.
+- **Timing headroom (step 14, branch step14-timing-headroom from 13b
+  ca3b4d9, not yet on hardware):** 13b passed 0 of 40 seeds (32 main, 8
+  with kernel change 4). Ranking the failing classes over those seeds
+  showed kernel change 4 removed kernel -> logic / read-data latch
+  failures and shrank clkena's, so it is in (cherry-picked c882be7). Then,
+  all without adding a clock (identical bench clock counts):
+  sdram_ctrl `pre_open/pre_hit/pre_ras` (row decision registered a clock
+  early from saddr_r, stable a clock before req; row registers never
+  change on an edge into IDLE; pre_ras may only lag), request branch
+  before refresh in IDLE gated by `ref_blk` (registered refresh_due &&
+  ref_urgent); tg68_bus `cc_want_k/cc_on_k/cc_sel_k` (CCMP compare inputs
+  registered from k_addr beside ic_ok_d); top `tg_br_n` (adapter BRn =
+  s_br_n | wb_busy, registered); calibration counters 8 bits. Sim-only
+  checks `pre_bad` (sdram_ctrl) and `cc_bad` (tg68_bus) fail the benches;
+  mutants pre_open=0 (269) and inverted select caught; cc_on_k without
+  EI is equivalent (CCMP only via k_look). Not simulated: an external bus
+  master (tb ties BR off). Result: seeds 1, 4, 8, 11 of 1-11 pass; seed 8
+  +0.43 / +2.53 ns, 14x 1.11x, 16x 1.27x. Remaining misses mostly clkena
+  -> kernel (next free step: more clkena_lw copies). Not done (costs
+  clocks): eab loaded a clock later (Chip RAM +1 clock).
 - **Cache enable:** both caches follow CACR EI. The data cache must NOT get
   the 68030 CACR bit 8: software tells an 020 from an 030 by setting that bit
   and reading it back, so storing it would make the CPU detect as a 68030 and

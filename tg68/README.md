@@ -10,10 +10,11 @@ and the SD card. An adapter, `tg68_bus.v`, makes TG68K look like fx68k's
 ports and adds the caches and the direct SDRAM path. Changes to the fx68k
 build's own files are few and marked `TG68:`.
 
-> **Step 13 (test build):** the normal bitstream can now switch the whole
-> design between 12x, 14x and 16x while running, from a Shell (`speed 16`),
-> with no board mod; see *Clock speed at run time (step 13)*. Not yet run
-> on hardware.
+> **Step 13:** the normal bitstream can switch the whole design between
+> 12x, 14x and 16x while running, from a Shell (`speed 16`), with no board
+> mod; see *Clock speed at run time (step 13)*. It runs on Glen's A500+ at
+> all three speeds. **Step 14** (test build) gives the timing check room
+> again, at no cost in clocks.
 >
 > **Status:** steps 1-12 run on an A500+. The latest, step 12 `full`, at
 > the stock 12x clock: 9690 Dhrystones (10.11 MIPS), AIBB MemTest 15.74 MB/s,
@@ -39,7 +40,8 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
-| `bitstreams/step13_speed/` | + clock speed switched at run time: `speed 12`, `speed 14` or `speed 16` in a Shell (the `speed` command is in the folder), 12x / 14x / 16x from the FPGA's PLLs, no board mod, power-on default 12x; 7 MHz capture calibration; the 7 MHz aligner's lock fixed. 12x files (switchable) and `_x16` files (board mod, fixed) | **Test build, not yet run on hardware.** 12x seed 12 passes timing at 12x; at 14x / 16x it needs the chip 1.14× / 1.30× faster than the worst-case model (the step 12 `_x16` file that runs on Glen's board: 1.35×) |
+| `bitstreams/step14_headroom/` | + timing headroom: the paths that limited every build since step 7 restructured, at no cost in clocks (identical clock counts in every bench); step 13b's longer 7 MHz calibration (`speed 12 rise` no longer needed). 12x files (switchable) and `_x16` files | **Test build, not yet run on hardware.** 4 of seeds 1-11 pass at 12x (step 13b: 0 of 40); seed 8: +0.43 ns 1T, +2.53 ns multicycle; 14x / 16x need 1.11× / 1.27× the worst-case model |
+| `bitstreams/step13_speed/` | + clock speed switched at run time: `speed 12`, `speed 14` or `speed 16` in a Shell (the `speed` command is in the folder), 12x / 14x / 16x from the FPGA's PLLs, no board mod, power-on default 12x; 7 MHz capture calibration; the 7 MHz aligner's lock fixed. 12x files (switchable) and `_x16` files (board mod, fixed) | **Runs on hardware at 12x, 14x and 16x** (switching from the CLI). 12x seed 12 passes timing; at 14x / 16x it needs the chip 1.14× / 1.30× faster than the worst-case model. At 12x its calibration can keep a falling-edge 7 MHz sample that later moves (`$270C`); `speed 12 rise` after a cold boot avoids it (fixed in step 14) |
 | `bitstreams/step12_wbuf/` | + 8-entry Chip RAM write buffer: up to 8 Chip RAM writes (4 longwords) are taken at once and written out in order while the CPU carries on. 12x and 16x files | **Latest known good on hardware**, 12x (seed 6) and 16x (seed 4), SD card included. Benchmarks as step 11 (they run from fast RAM and the caches); games look smoother, not yet measured |
 | `bitstreams/step11_games/` | + Chip RAM code in the instruction cache (CACR CI/CEI now flush), posted Chip RAM writes, SDRAM bank permutation, pair prefetch, shorter uncached read. 12x and 16x files | **Known good on hardware**, 12x (seed 14) and 16x (seed 1), Kickstart 1.3 and 3.2.3, SD card included. MemTest 15.73 / 8.49 MB/s at 12x (+28% / +29%), 19.97 / 10.39 at 16x (+26% / +25%), games much faster. Code that DMAs itself into Chip RAM without clearing the cache needs the caches off (see step 11) |
 | `bitstreams/step10_ifetch32/` | + instruction prefetch (the next word after an instruction read from SDRAM) and 32-bit instruction-stream pairs (32-bit immediates and absolute-long addresses in one CPU step). 12x and 16x files | **Known good on hardware**, 12x and 16x, SD card included: 9691 / 12936 Dhrystones (12x / 16x, +5% on step 9), caches off 4918 / 5982 (+17% / +15%). Caches-off MemTest 5-7% lower |
@@ -469,6 +471,28 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   fast RAM copy bench never waits for the SDRAM port, and a pure write
   burst waits 3% of the time, so a queue there could gain at most a few
   percent.
+* **Timing headroom (step 14).** From step 7 on only about one placement
+  seed in 8-16 passed the timing check at 12x, and step 13's extra logic
+  (51% of the LUTs, up from 48%) made it worse: the step 13b build
+  passed on none of 40 seeds. The paths that missed were old ones,
+  routed longer on a fuller chip. Step 14 restructures them so that each
+  does less work in its one clock, without adding a clock anywhere:
+  * Kernel change 4 (from step 12, never shipped): the kernel's
+    clkena_lw is two registers with half the loads each.
+  * SDRAM: the open-row decision (row open, row hit, tRAS met) is
+    registered a clock before the request reaches the controller (the
+    address is already stable then), and a request is tested before a
+    non-urgent refresh instead of through the refresh decision.
+  * Cache hits: the wanted tag, the cache-on term and the word select are
+    registered at DECIDE, so CCMP only compares tags.
+  * The adapter's BRn (bus request, with the write buffer's busy flag) is
+    a register, as HALTn became in step 13; the reset, the address hold
+    after AS and the cache flush trigger likewise (step 13b).
+  Every bench gives the same clock counts as before. Each precomputed
+  value has a simulation-only check that it equals the live one whenever
+  it is used (`pre_bad`, `cc_bad`); broken versions are caught. 4 of
+  seeds 1-11 now pass at 12x. Not covered by the test benches: another
+  bus master on the Amiga (BR), as from a DMA card.
 * **Clock speed at run time (step 13).** The normal (12x) bitstream can
   now run the whole design at 12x, 14x or 16x the Amiga's 7.09 MHz,
   switched while the machine runs, with no board mod and no reflash. Type
@@ -776,7 +800,19 @@ actually provides:
 pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
 
-Step 13 (run-time clock speed) builds as supplied (not yet on hardware):
+Step 14 (timing headroom, with step 13b's longer calibration) builds as
+supplied (not yet on hardware):
+
+| Build | Seed | Worst 1T slack | Worst multicycle slack |
+| --- | --- | --- | --- |
+| full | 8 | +0.43 ns | +2.53 ns |
+
+Seeds 1, 4, 8 and 11 of 1-11 pass (step 13b: none of 40). At 14x the
+build needs the chip 1.11× faster than the worst-case model, at 16x
+1.27×.
+
+Step 13 (run-time clock speed) builds as supplied (runs on hardware at
+all three speeds):
 
 | Build | Seed | Worst 1T slack | Worst multicycle slack |
 | --- | --- | --- | --- |
