@@ -86,6 +86,16 @@ end else begin : g_pll
     assign cur = e16 ? 2'd2 : e14 ? 2'd1 : 2'd0;
 `ifdef YOSYS
     DCCA u_gbuf (.CLKI(mux), .CE(1'b1), .CLKO(clk));
+`elsif CAL_DRIFT
+    // sim (tb_top.sv CAL_DRIFT): no delay at first, then 0.25 ns from
+    // 300 us on, which moves the rising-edge 7M sample into the tb's
+    // 0.05-0.45 ns 7M jitter: the stream in use (rising, at 12x) starts to
+    // move and the top level must swap to the falling one by itself
+    reg  clk_d = 1'b0;
+    real dly   = 0.0;
+    initial begin #300000; dly = 0.25; end
+    always @(mux) clk_d <= #(dly) mux;
+    assign clk = clk_d;
 `elsif CAL_TEST
     // sim (tb_top.sv CAL_TEST): an insertion delay of half a 12x period plus
     // 0.2 ns, so at 12x the falling-edge 7M sample lands inside the tb's

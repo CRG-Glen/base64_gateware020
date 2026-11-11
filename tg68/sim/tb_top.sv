@@ -32,6 +32,14 @@ module tb;
         #($urandom_range(0, 400) * 0.001);
         clk7 = clk7_0;
     end
+`elsif CAL_DRIFT
+    // step 14: 7M edges 0.05-0.45 ns late; clkgen.v delays the clock by
+    // 0.25 ns from 300 us on (drift onto the rising-edge sample)
+    reg clk7 = 0;
+    always @(clk7_0) begin
+        #($urandom_range(50, 450) * 0.001);
+        clk7 = clk7_0;
+    end
 `else
     wire clk7 = clk7_0;
 `endif
@@ -391,6 +399,13 @@ module tb;
     function [31:0] rd32(input [23:0] ad);
         rd32 = {ram[ad[12:1]], ram[ad[12:1]+1]};
     endfunction
+    // the same, comparing only the bits set in mask
+    task checkm(input [23:0] ad, input [31:0] exp, input [31:0] mask, input [8*24-1:0] what);
+        if ((rd32(ad) & mask) !== (exp & mask)) begin
+            $display("FAIL %-24s @%h = %h, expected %h (mask %h)", what, ad, rd32(ad), exp, mask);
+            errors = errors + 1;
+        end else $display("ok   %-24s @%h = %h", what, ad, rd32(ad));
+    endtask
     task check(input [23:0] ad, input [31:0] exp, input [8*24-1:0] what);
         if (rd32(ad) !== exp) begin
             $display("FAIL %-24s @%h = %h, expected %h", what, ad, rd32(ad), exp);
@@ -504,7 +519,24 @@ module tb;
         if (n_switch != 0) begin $display("FAIL: the clock switched in the fixed 16x build"); errors = errors + 1; end
         if (u_sdram.n_mrs != 1) begin $display("FAIL: expected 1 SDRAM mode load"); errors = errors + 1; end
 `else
-`ifdef CAL_TEST
+`ifdef CAL_DRIFT
+        // step 14: rising chosen at power-up (12x, both clean), then the
+        // clock drifts onto it at 300 us: the top level must swap to the
+        // falling stream by itself (n_swap). Later calibrations at every
+        // speed find the rising one moving and keep the falling one. Bit 15
+        // (aligner slip) is not compared: the forced-rising test at 81F4
+        // runs on the drifting stream on purpose.
+        $display("automatic 7M stream swaps: %0d", dut.n_swap);
+        if (dut.n_swap < 1) begin $display("FAIL: the drifting 7M stream was never swapped out"); errors = errors + 1; end
+        checkm(24'h81D4, 32'h0000470C, 32'h00007FFF, "speed: 12x after the drift");
+        checkm(24'h81D8, 32'h00004710, 32'h00007FFF, "speed: 16x, falling stream");
+        checkm(24'h81E0, 32'h0000470E, 32'h00007FFF, "speed: 14x, falling stream");
+        checkm(24'h81E8, 32'h0000470C, 32'h00007FFF, "speed: back to 12x, falling");
+        checkm(24'h81F0, 32'h0000470C, 32'h00007FFF, "speed: unkeyed / invalid ignored");
+        checkm(24'h81F4, 32'h0000570C, 32'h00007FFF, "speed: 12x, rising forced");
+        checkm(24'h81F8, 32'h0000570C, 32'h00007FFF, "speed: invalid select ignored");
+        if (dut.smp_r !== 1'b0) begin $display("FAIL: the drifting stream is still in use"); errors = errors + 1; end
+`elsif CAL_TEST
         // at 12x the falling sample sits in the 7M jitter: the power-up
         // calibration and each one at 12x must pick the rising stream (bit
         // 12) and report the falling one moving (bit 13); at 14x and 16x
@@ -517,15 +549,19 @@ module tb;
         check(24'h81F4, 32'h0000370C, "speed: 12x, rising forced");
         check(24'h81F8, 32'h0000370C, "speed: invalid sample select ignored");
         if (dut.smp_r !== 1'b1) begin $display("FAIL: the calibration left the jittery stream in use"); errors = errors + 1; end
+        if (dut.n_swap != 0) begin $display("FAIL: %0d 7M stream swaps (the stream in use is clean)", dut.n_swap); errors = errors + 1; end
 `else
-        check(24'h81D4, 32'h0000070C, "speed: 12x at power-on, PLLs locked");
+        // step 14: at 12x the rising stream unless it moved more (both are
+        // clean here); at 14x and 16x the falling one; no swap ever
+        check(24'h81D4, 32'h0000170C, "speed: 12x at power-on, rising");
         check(24'h81D8, 32'h00000710, "speed: 16x");
         check(24'h81E0, 32'h0000070E, "speed: 14x");
-        check(24'h81E8, 32'h0000070C, "speed: back to 12x");
-        check(24'h81F0, 32'h0000070C, "speed: unkeyed / invalid writes ignored");
+        check(24'h81E8, 32'h0000170C, "speed: back to 12x, rising");
+        check(24'h81F0, 32'h0000170C, "speed: unkeyed / invalid writes ignored");
         check(24'h81F4, 32'h0000170C, "speed: 12x, rising 7M stream forced");
         check(24'h81F8, 32'h0000170C, "speed: invalid sample select ignored");
-        if (dut.smp_r !== 1'b0) begin $display("FAIL: the calibration left the falling stream"); errors = errors + 1; end
+        if (dut.smp_r !== 1'b1) begin $display("FAIL: the calibration left the rising stream at 12x"); errors = errors + 1; end
+        if (dut.n_swap != 0) begin $display("FAIL: %0d 7M stream swaps with nothing drifting", dut.n_swap); errors = errors + 1; end
 `endif
         check(24'h81DC, 32'hACF1E135, "speed: memory traffic at 16x");
         check(24'h81E4, 32'hACF1E135, "speed: memory traffic at 14x");

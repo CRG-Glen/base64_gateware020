@@ -342,6 +342,10 @@ module base64_tg68_top #(
     reg  [1:0]  spd = 2'd0;
     reg         spd_unlock = 1'b0;   // keep the 7M aligner re-acquiring (switch)
     reg         cal_go     = 1'b0;   // sequencer: calibrate the 7M capture
+    reg         swap_go    = 1'b0;   // step 14: sequencer: use the other 7M stream
+    wire        swap_req;            // step 14: the stream in use drifts (below)
+    wire [7:0]  n_swap;              // step 14: automatic stream swaps so far
+    localparam integer AUTO_N = 4;   // moves of the stream in use that trigger a swap
     wire        cal_busy, cal_clr;
     wire [1:0]  spd_smp;             // speed register: 0 auto, 1 rise, 2 fall
     reg         spd_hold   = 1'b0;   // hold the CPU's bus cycles (switching)
@@ -613,6 +617,8 @@ module base64_tg68_top #(
     assign cal_busy = 1'b0;
     assign cal_clr  = 1'b0;
     wire   cal_jf = 1'b0, cal_jr = 1'b0;
+    assign swap_req = 1'b0;
+    assign n_swap   = 8'd0;
 `else
     localparam integer CAL_N = CAL_EDGES;   // 65536: 9.2 ms at 7M
     // the power-up window: from half to three quarters of the hold
@@ -626,6 +632,7 @@ module base64_tg68_top #(
     reg         cal_on = 1'b0, cal_sp = 1'b0, cal_pr = 1'b0;
     reg         cal_jf = 1'b0, cal_jr = 1'b0;
     reg         cal_st = 1'b0;          // start a window (registered)
+    reg  [7:0]  n_swap_r = 8'd0;        // step 14: automatic swaps since power-up
     wire        cal_end = cal_sp ? (edge_7m_f && cal_n == CAL_N[16:0])
                                  : (pw_end || pwrup_done);
     always @(posedge clk) begin
@@ -646,6 +653,15 @@ module base64_tg68_top #(
                 if (cal_pr) cal_jr <= 1'b1;
             end
         end
+        // step 14: the sequencer swaps streams (CPU held, aligner
+        // re-acquiring) when the one in use has drifted onto a 7M edge; the
+        // movement counts and flags restart for the new choice
+        if (swap_go) begin
+            smp_r  <= !smp_r;
+            jit_f  <= 8'd0;   jit_r  <= 8'd0;
+            cal_jf <= 1'b0;   cal_jr <= 1'b0;
+            if (n_swap_r != 8'hFF) n_swap_r <= n_swap_r + 8'd1;
+        end
         if (cal_st) begin
             cal_on <= 1'b1;
             cal_sp <= pwrup_done;           // started by the sequencer
@@ -658,14 +674,28 @@ module base64_tg68_top #(
             if (edge_7m_f && cal_n == 17'd2) cal_pr <= 1'b1;  // both streams seen once
             if (cal_end) begin
                 cal_on <= 1'b0;
+                // step 14: at 12x the rising sample unless it moved more:
+                // the speed mux delays the 12x clock by ~5-6 ns on every
+                // build, about half a period, which puts the falling sample
+                // next to a 7M edge (on hardware it passed the power-up
+                // window and drifted later, $270C; rising forced never
+                // moved). 14x/16x: the falling one unless it moved more.
                 smp_r  <= (spd_smp == 2'd1) ? 1'b1
                         : (spd_smp == 2'd2) ? 1'b0
+                        : (spd == 2'd0) ? !(jit_r > jit_f)
                         : (jit_f > jit_r);
             end
         end
     end
     assign cal_busy = cal_on || cal_st;
     assign cal_clr  = cal_st;
+    assign n_swap   = n_swap_r;
+    // step 14: the stream in use has moved AUTO_N times since the last
+    // calibration or swap and the other has not moved at all (drift, e.g.
+    // as the FPGA warms up; not forced from the speed register)
+    assign swap_req = pwrup_done && !cal_busy && cal_pr && (spd_smp == 2'd0)
+                   && (smp_r ? (jit_r >= AUTO_N[7:0] && jit_f == 8'd0)
+                             : (jit_f >= AUTO_N[7:0] && jit_r == 8'd0));
 `endif
 
     // The two 7M half-clock ticks, and the early tick used to lead the ack.
@@ -1744,6 +1774,7 @@ module base64_tg68_top #(
     reg  [2:0] sp     = SP_IDLE;
     reg  [1:0] sp_tgt = 2'd0;
     reg  [7:0] sp_cnt = 8'd0;
+    reg        sp_swp = 1'b0;           // step 14: this run swaps 7M streams only
 `ifdef TG68_X16
     assign spd_stat = {ph_slip, 7'd0, 8'd16};   // fixed 16x, no switching
 `else
@@ -1758,7 +1789,8 @@ module base64_tg68_top #(
                        pll_lock16, pll_lock14,
                        (spd == 2'd2) ? 8'd16 : (spd == 2'd1) ? 8'd14 : 8'd12};
     always @(posedge clk) begin
-        cal_go <= 1'b0;
+        cal_go  <= 1'b0;
+        swap_go <= 1'b0;
         case (sp)
         SP_IDLE: begin
             spd_hold   <= 1'b0;
@@ -1766,6 +1798,17 @@ module base64_tg68_top #(
             sp_cnt     <= 8'd0;
             if (spd_wr && sp_ok) begin
                 sp_tgt   <= spd_val;
+                sp_swp   <= 1'b0;
+                spd_hold <= 1'b1;
+                sp       <= SP_HOLD;
+            end else if (swap_req) begin
+                // step 14: the 7M stream in use drifts: the same run with
+                // the clock left as it is, swapping streams in LOCK
+                // instead of calibrating (a fresh window would likely see
+                // neither move, a slow drift, and choose the drifting one
+                // again)
+                sp_tgt   <= spd;
+                sp_swp   <= 1'b1;
                 spd_hold <= 1'b1;
                 sp       <= SP_HOLD;
             end
@@ -1800,7 +1843,8 @@ module base64_tg68_top #(
             if (edge_7m_f) sp_cnt <= sp_cnt + 8'd1;
             if (sp_cnt == 8'd8) begin
                 sp_cnt <= 8'd0;
-                cal_go <= 1'b1;
+                if (sp_swp) swap_go <= 1'b1;   // step 14: no calibration
+                else        cal_go  <= 1'b1;
                 sp     <= SP_CAL;
             end
         end
@@ -2037,6 +2081,7 @@ module base64_tg68_top #(
         .spd_val    (spd_val),
         .spd_smp    (spd_smp),
         .spd_stat   (spd_stat),
+        .spd_stat2  ({8'd0, n_swap}),     // step 14: +$F00C
         .clk        (clk),
         .reset      (slave_reset),
         .cfgin_n    (ac_chain_n),

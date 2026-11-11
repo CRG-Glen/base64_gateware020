@@ -178,7 +178,8 @@ module turbomem_zii #(
     output reg         spd_wr = 1'b0,   // one-clock pulse: a keyed write
     output reg  [1:0]  spd_val = 2'd0,  // 0 12x, 1 14x, 2 16x
     output reg  [1:0]  spd_smp = 2'd0,  // 7M sampling: 0 auto, 1 rise, 2 fall
-    input  wire [15:0] spd_stat         // what +$F00A reads
+    input  wire [15:0] spd_stat,        // what +$F00A reads
+    input  wire [15:0] spd_stat2        // TG68 step 14: what +$F00C reads
 );
 
 localparam integer ROM_WORDS = (1 << ROM_AWID);
@@ -354,7 +355,9 @@ always @(posedge clk) rom_q <= rom[a[ROM_AWID:1]];
 //           falling clock edge instead of the calibration's choice. Reads
 //           {slip, jit_r, jit_f, rise, busy, sw_ok, lock16, lock14,
 //           multiplier} (the top level's spd_stat)
-//   +$F00C..            reserved, read as zero
+//   +$F00C  speed status 2 (step 14), read-only: automatic 7M sample
+//           swaps since power-up (low byte; the top level's spd_stat2)
+//   +$F00E..            reserved, read as zero
 //
 // The mapROM control register needs a key. A stray write of 0 is harmless,
 // but a stray write with bit 1 set would switch Kickstart fetches over to an
@@ -382,7 +385,8 @@ always @(posedge clk) begin
     status_sel <= status_hit;
     if (a[3])
         status_q <= (a[2:1] == 2'd0) ? {14'd0, mr_ctrl}
-                  : (a[2:1] == 2'd1) ? spd_stat : 16'h0000;   // TG68: speed
+                  : (a[2:1] == 2'd1) ? spd_stat                 // TG68: speed
+                  : (a[2:1] == 2'd2) ? spd_stat2 : 16'h0000;   // TG68 step 14
     else
         status_q <= status_i[{a[2:1], 4'b0000} +: 16];
 end
