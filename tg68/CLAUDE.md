@@ -23,9 +23,10 @@ MapROM.
 ```
 rtl/base64_tg68/   top level (base64_tg68_top.sv) and the bus adapter tg68_bus.v
 rtl/tg68/          TG68K.C VHDL: m1nl's fork (github.com/m1nl/TG68K.C, a8e6f38,
-                   32-bit data path) with THREE marked changes (l1 <= long_ack;
+                   32-bit data path) with FIVE marked changes (l1 <= long_ack;
                    clkena_lw from the clkena_lw_in port; CACR CI/CEI held
-                   one step, step 11; see README), + the
+                   one step, step 11; changes 4 and 5, clkena_lw copies,
+                   step 14; see README), + the
                    tg68_020.vhd wrapper;
                    tg68_020_b0.v is the GHDL-converted netlist actually built
                    (regenerate: YOSYS=yowasp-yosys sh scripts/gen_tg68.sh, needs
@@ -450,6 +451,22 @@ that gives the "_fast" files.
   Gary's DTACK is caught a 7M cycle sooner; CAL_TEST gives the same, so
   not a zero-delay artefact); data and bus checks pass. Ask Glen for
   xSysInfo Chip RAM at 12x with the rising vs falling sample.
+  **Kernel change 4 was never in a build until 9934739**: yosys merged
+  k_clkena_lw2 into k_clkena_lw ((* keep *) on a reg keeps the wire, not
+  the flop; even setattr keep on the $dff cell did not stop opt_merge).
+  Flops with different power-on values or polarity are not merged (tested
+  on a toy design; a primitive TRELLIS_FF with (* keep *) also survives).
+  So the copy is k_clkena_lw2_n (inverted, power-on 1). With that, seed 8
+  of 5-8 passed (+0.14 ns 1T, 14x 1.14x, 16x 1.30x); the remaining clkena
+  misses were all k_clkena_lw -> EA_data process -> ea_data (n9819_q),
+  and copy 2 reached its loads through an inverter LUT (the kernel is
+  synthesized with keep_hierarchy, so the inversion could not fold).
+  Kernel change 5 (2b5a57b): ClkenaLW_Ext=3, ports clkena_lw2n_in (low
+  active, inverted in the kernel) and clkena_lw3_in (EA_data/data_write
+  process); adapter regs k_clkena_lw (0), k_clkena_lw2_n (1, inverted),
+  k_clkena_lw3 (power-on 1: only that process, whose Reset branch wins;
+  Reset is async-forced while nReset is low). Check a new copy really
+  exists: grep the synthesized json for cpu.k_clkena_lw*_TRELLIS_FF_Q.
 - **Cache enable:** both caches follow CACR EI. The data cache must NOT get
   the 68030 CACR bit 8: software tells an 020 from an 030 by setting that bit
   and reading it back, so storing it would make the CPU detect as a 68030 and

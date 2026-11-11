@@ -1108,7 +1108,7 @@ committed netlist byte for byte). Its arguments select variants: barrel
 shifter, no bitfields, iterative multiply.
 
 From step 7 the VHDL is m1nl's fork of TG68K.C
-(<https://github.com/m1nl/TG68K.C>, commit `a8e6f38`), with three marked
+(<https://github.com/m1nl/TG68K.C>, commit `a8e6f38`), with five marked
 changes (below): upstream
 TG68K.C (our kernel was identical to its base) plus a cheaper rotate unit and
 the 32-bit data path (`long_cand`/`long_ack`, `data_in_hi`,
@@ -1153,6 +1153,25 @@ one `clkena` step after the MOVEC that sets them, then cleared (they still
 read back as 0, as on a real 68020). The adapter flushes both caches when
 it sees either, which is how Exec's CacheClearU reaches the caches now that
 the instruction cache holds Chip RAM code.
+
+4. (step 12, in builds from step 14) `ClkenaLW_Ext` 2 and an input
+`clkena_lw2_in`: the ALU and the data-in and address processes take their
+`clkena_lw` from a second register, so each drives about half of the loads.
+It only works since step 14: yosys merges registers it can prove identical,
+and `(* keep *)` on the copy kept the wire, not the register, so every build
+before had a single register (the routed designs had no copy). The copy is
+now stored inverted, which yosys keeps separate.
+
+5. (step 14) `ClkenaLW_Ext` 3 and inputs `clkena_lw2n_in` (change 4's copy,
+low active: inverted inside the kernel, where the inversion folds into the
+loads; inverted outside it cost a LUT in front of every load) and
+`clkena_lw3_in`, a third copy for the EA_data/data_write process, whose
+paths from `clkena_lw` into `ea_data` were the remaining clkena misses. The
+adapter's three registers differ in polarity or power-on value so yosys
+cannot merge them; copy 3 powers on at 1, harmless because that process's
+Reset branch comes first and Reset is forced while `nReset` is low at
+power-on. Both test benches assert every copy equals `k_clkena_lw` (copy 3
+from the first clock edge).
 
 GHDL turns a handful of VHDL `case ... when others => null` statements into
 latches that yosys rejects. `fix_latches.py` neutralises exactly those.
