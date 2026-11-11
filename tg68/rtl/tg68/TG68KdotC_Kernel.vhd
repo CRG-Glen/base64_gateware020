@@ -120,7 +120,9 @@ entity TG68KdotC_Kernel is
 		-- Base64: 1 = clkena_lw comes in on clkena_lw_in, registered by the
 		-- bus side (see the clkena_lw assignment below); 2 = as 1, and the
 		-- ALU, data-in and address processes take theirs from a second,
-		-- identical register on clkena_lw2_in (change 4: half the fanout each)
+		-- identical register on clkena_lw2_in (change 4: half the fanout each);
+		-- 3 = change 5: that copy comes in inverted on clkena_lw2n_in, and the
+		-- EA_data/data_write process takes a third copy on clkena_lw3_in
 		ClkenaLW_Ext : integer := 0
 		);
 	port(clk						: in std_logic;
@@ -128,6 +130,8 @@ entity TG68KdotC_Kernel is
 		clkena_in				: in std_logic:='1';
 		clkena_lw_in			: in std_logic:='0';	-- Base64, with ClkenaLW_Ext=1
 		clkena_lw2_in			: in std_logic:='0';	-- Base64, with ClkenaLW_Ext=2
+		clkena_lw2n_in			: in std_logic:='1';	-- Base64, with ClkenaLW_Ext=3 (low active)
+		clkena_lw3_in			: in std_logic:='0';	-- Base64, with ClkenaLW_Ext=3
 		data_in					: in std_logic_vector(15 downto 0);
 		IPL						: in std_logic_vector(2 downto 0):="111";
 		IPL_autovector			: in std_logic:='0';
@@ -169,6 +173,7 @@ architecture logic of TG68KdotC_Kernel is
 	signal Reset				: std_logic;
 	signal clkena_lw			: std_logic;
 	signal clkena_lw2			: std_logic;	-- Base64 change 4
+	signal clkena_lw3			: std_logic;	-- Base64 change 5
 	signal TG68_PC				: std_logic_vector(31 downto 0);
 	signal tmp_TG68_PC		: std_logic_vector(31 downto 0);
 	signal TG68_PC_add		: std_logic_vector(31 downto 0);
@@ -577,7 +582,18 @@ ALU: TG68K_ALU
 	-- for the ALU and the data-in and address processes, so each register
 	-- drives about half of clkena_lw's ~330 loads (step 12: the single one
 	-- missed 1T by 1.2-3.8 ns on every seed)
-	clkena_lw2 <= clkena_lw2_in WHEN ClkenaLW_Ext=2 ELSE clkena_lw;
+	clkena_lw2 <= NOT clkena_lw2n_in WHEN ClkenaLW_Ext=3 ELSE
+	              clkena_lw2_in WHEN ClkenaLW_Ext=2 ELSE clkena_lw;
+	-- Base64 change 5 (ClkenaLW_Ext=3): the bus side's three copies must be
+	-- different registers to yosys or it merges them into one (it did with
+	-- change 4's two identical ones: every build had a single register for
+	-- all the loads). So copy 2 is low active (inverted here, where the
+	-- inversion folds into the loads' LUTs) and copy 3 powers on at 1, which
+	-- is harmless: it enables only the EA_data/data_write process below,
+	-- whose Reset branch (Reset is forced while nReset is low, and the bus
+	-- side holds nReset low at power-on) comes first. Copy 3 takes that
+	-- process off clkena_lw, whose paths into ea_data missed 1T on seeds.
+	clkena_lw3 <= clkena_lw3_in WHEN ClkenaLW_Ext=3 ELSE clkena_lw;
 	clr_berr <= '1' WHEN setopcode='1' AND trap_berr='1' ELSE '0';
 	
 	PROCESS (clk, nReset)
@@ -890,7 +906,7 @@ PROCESS (clk)
 				use_direct_data <= '0';
 				Z_error <= '0';
 				writePCnext <= '0';
-			ELSIF clkena_lw='1' THEN
+			ELSIF clkena_lw3='1' THEN	-- Base64 change 5
 				useStackframe2<='0';
 				direct_data <= '0';
 				IF exec(hold_OP2)='1' THEN

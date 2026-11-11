@@ -53,6 +53,7 @@ module tb;
     // k_long_ack and k_din_sel feed the kernel and are classed adapter ->
     // kernel (2 clocks) by check_timing.py: neither may change in the clock
     // just before the kernel samples (the clkena clock).
+    reg clw3_armed = 1'b0;   // kernel change 5 check (below)
     integer ks_cyc = 0, ks_chg = -10, ks_bad = 0; reg ks_la = 0, ks_ds = 0, ks_hs = 0, ks_dd = 0;
     integer rd_pairs = 0;                // pair reads from the SDRAM (step 9)
     integer n_clw = 0;                   // steps with clkena_lw (kernel change 2)
@@ -70,6 +71,13 @@ module tb;
             $display("FAIL dec_r out of step with q (q=%0d dec_r=%b)", dut.q, dut.dec_r);
             ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
         end
+        // k_clkena_lw3 too (kernel change 5), from the first edge on (it
+        // powers on at 1 so that yosys keeps it a separate register)
+        if (clw3_armed && dut.k_clkena_lw3 !== dut.k_clkena_lw) begin
+            $display("FAIL k_clkena_lw3 %b, k_clkena_lw %b", dut.k_clkena_lw3, dut.k_clkena_lw);
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
+        clw3_armed = 1'b1;
         // k_clkena_lw2 is an identical copy of k_clkena_lw (kernel change 4)
         if (dut.k_clkena_lw2 !== dut.k_clkena_lw) begin
             $display("FAIL k_clkena_lw2 %b, k_clkena_lw %b", dut.k_clkena_lw2, dut.k_clkena_lw);

@@ -157,7 +157,15 @@ module tg68_bus #(
     // power-on value is not merged; inverted, it still means "off" at
     // power-on, and the inversion is free (LUT inputs, CE polarity).
     (* keep *) reg k_clkena_lw2_n = 1'b1;
-    wire        k_clkena_lw2 = !k_clkena_lw2_n;
+    wire        k_clkena_lw2 = !k_clkena_lw2_n;   // (for the test benches)
+    // kernel change 5: k_clkena_lw2_n goes to the kernel's low-active port
+    // (the inversion folds into the loads there; inverted out here it cost
+    // a LUT in front of every load), and a third copy, k_clkena_lw3, takes
+    // the kernel's EA_data/data_write process off k_clkena_lw. It powers on
+    // at 1 so yosys cannot merge it with k_clkena_lw (same function, a
+    // different power-on value); that first clock is harmless, see the
+    // kernel.
+    (* keep *) reg k_clkena_lw3 = 1'b1;
     wire        k_longword;
     reg         k_nreset = 1'b0;
     reg  [15:0] k_din    = 16'hFFFF;
@@ -218,7 +226,9 @@ module tg68_bus #(
         .nreset     (k_nreset),
         .clkena_in  (k_clkena),
         .clkena_lw_in (k_clkena_lw),
-        .clkena_lw2_in (k_clkena_lw2),
+        .clkena_lw2_in (k_clkena_lw2),   // (unused with CLKLW=3)
+        .clkena_lw2n_in (k_clkena_lw2_n),
+        .clkena_lw3_in (k_clkena_lw3),
         .data_in    (k_dat),
         .data_in_hi (k_din_hmux),
         .long_ack   (k_long_ack),
@@ -702,7 +712,7 @@ module tg68_bus #(
     always @(posedge clk) begin
         k_clkena <= 1'b0;
         k_step   <= 1'b0;
-        k_clkena_lw <= 1'b0; k_clkena_lw2_n <= 1'b1;
+        k_clkena_lw <= 1'b0; k_clkena_lw2_n <= 1'b1; k_clkena_lw3 <= 1'b0;
         ic_we    <= 1'b0;
         dc_we    <= 1'b0;
         cyc_start <= 1'b0;
@@ -765,7 +775,7 @@ module tg68_bus #(
             if (cnt >= STEP - 1) begin
                 k_clkena <= 1'b1;
                 k_step   <= 1'b1;
-                k_clkena_lw <= !k_longword || k_long_ack; k_clkena_lw2_n <= !(!k_longword || k_long_ack);
+                k_clkena_lw <= !k_longword || k_long_ack; k_clkena_lw2_n <= !(!k_longword || k_long_ack); k_clkena_lw3 <= !k_longword || k_long_ack;
                 cnt      <= 6'd0;
                 k_ipl    <= {IPL2n, IPL1n, IPL0n};
             end
@@ -1187,7 +1197,7 @@ module tg68_bus #(
         begin
             k_clkena <= 1'b1;
             k_step   <= 1'b1;
-            k_clkena_lw <= !k_longword || k_long_ack; k_clkena_lw2_n <= !(!k_longword || k_long_ack);
+            k_clkena_lw <= !k_longword || k_long_ack; k_clkena_lw2_n <= !(!k_longword || k_long_ack); k_clkena_lw3 <= !k_longword || k_long_ack;
             cnt      <= 6'd0;
             k_ipl    <= {IPL2n, IPL1n, IPL0n};
             k_berr   <= 1'b0;     // the kernel samples the old value here
