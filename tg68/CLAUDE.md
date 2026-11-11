@@ -554,6 +554,15 @@ that gives the "_fast" files.
 ## Ideas not yet done (Glen decides the order)
 
 - Chip RAM write buffer: step 12 (above). Run-time 12x/14x/16x: step 13.
+- 18x (Glen's request, after step 14 is tested; experimental, never a
+  release): a PLL's outputs all divide one VCO (400-800 MHz), so 16x+18x
+  cannot share one (1021 MHz). Plan: PLL A 14x+16x from VCO 794.5 MHz
+  (CLKI_DIV 6, CLKFB_DIV 7, CLKOP_DIV 8 = 99.3, CLKOS_DIV 7 = 113.5),
+  PLL B 18x (VCO 766, /6 = 127.7); 4-input mux; run-time settings for 18x
+  (ph_top 17, ph_half 9, ms_top, rt_ hold, SD SCLK stretch); SDRAM CL3 is
+  in spec (tRFC 8 clocks = 62.6 ns >= 60, tRAS 6 = 47 ns >= 42). Timing:
+  ~1.43x the worst-case model (16x: 1.27x); likely +8-10% over 16x if the
+  chip copes. 20x: ~1.59x, kernel step would need STEP=5 (no gain).
 - Fast RAM write queue: measured in step 12 and left out pending Glen's
   decision (the copy bench never waits for the SDRAM port; write bursts
   wait 3%, so it can gain a few percent at most).
