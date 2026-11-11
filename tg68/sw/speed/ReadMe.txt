@@ -1,4 +1,4 @@
-speed 1.1 -- Base64 TG68 system clock (step 13 gateware and later)
+speed 1.2 -- Base64 TG68 system clock (step 13 gateware and later)
 
   speed             show the clock in force
   speed 12          85.1 MHz, the board's own clock (power-on default)
@@ -15,7 +15,8 @@ The speed stays over a reset; switching the Amiga off and on returns to
 
 "speed" also reports which clock edge samples the 7 MHz clock and
 whether either sample, or the phase aligner, has moved since the
-calibration (for testing; nothing should move).
+calibration, and (step 14 gateware) how often the board has switched to
+the other sample on its own because the one in use drifted.
 
 Needs the ICS570B clock chip strapped for 12x (stock). The x16 board-mod
 bitstreams (_x16) have a fixed clock and report "cannot change".

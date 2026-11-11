@@ -412,7 +412,8 @@ that gives the "_fast" files.
   YoWASP cannot read files under /tmp: worktrees for parallel seed
   searches go under /home/user.
 - **Timing headroom (step 14, branch step14-timing-headroom from 13b
-  ca3b4d9, not yet on hardware):** 13b passed 0 of 40 seeds (32 main, 8
+  ca3b4d9; seed 8 build runs on Glen's A500+ at 12x/14x/16x, benchmarks
+  as step 13):** 13b passed 0 of 40 seeds (32 main, 8
   with kernel change 4). Ranking the failing classes over those seeds
   showed kernel change 4 removed kernel -> logic / read-data latch
   failures and shrank clkena's, so it is in (cherry-picked c882be7). Then,
@@ -431,6 +432,24 @@ that gives the "_fast" files.
   +0.43 / +2.53 ns, 14x 1.11x, 16x 1.27x; --x16 seed 9 of 1-12, 1.30x. Remaining misses mostly clkena
   -> kernel (next free step: more clkena_lw copies). Not done (costs
   clocks): eab loaded a clock later (Chip RAM +1 clock).
+  Hardware (seed 8): 12x cold boot $070C (falling chosen), later $270C
+  (falling moved, rising still); 14x $070E then $470E (rising moved,
+  unused); 16x $4710. So (commit 2a7db3f): at 12x `smp_r <= !(jit_r >
+  jit_f)` (the mux delays the 12x clock ~T/2 on every seed, so falling
+  sits by a 7M edge and drifts as the chip warms); 14x/16x unchanged.
+  And `swap_req` (stream in use moved AUTO_N = 4 times, the other 0,
+  not forced, pwrup_done, !cal_busy) starts the sequencer with `sp_swp`
+  (sp_tgt = spd, no clock change): LOCK sends `swap_go` instead of
+  cal_go (no window: a slow drift would pass one and pick the drifting
+  stream again); the calibration block flips smp_r and clears the
+  counts; `n_swap` at +$F00C (SPEED 1.2 prints it). Sim CAL_DRIFT
+  (clkgen delay 0 -> 0.25 ns at 300 us, tb 7M jitter 0.05-0.45 ns): one
+  swap, falling at every speed after; no-swap mutant fails; normal and
+  CAL_TEST runs assert n_swap == 0. bench chip at 12x 442 -> 369 us with
+  rising (the grid sits a clock later against s_dtack_n, so the tb
+  Gary's DTACK is caught a 7M cycle sooner; CAL_TEST gives the same, so
+  not a zero-delay artefact); data and bus checks pass. Ask Glen for
+  xSysInfo Chip RAM at 12x with the rising vs falling sample.
 - **Cache enable:** both caches follow CACR EI. The data cache must NOT get
   the 68030 CACR bit 8: software tells an 020 from an 030 by setting that bit
   and reading it back, so storing it would make the CPU detect as a 68030 and
@@ -496,6 +515,8 @@ that gives the "_fast" files.
 | step 11 at 16x (race fix, seed 1) | 12784 / 5992 | 19.97 / 10.39 |
 | step 12 (write buffer, 12x seed 6) | 9690 / 5177 | 15.74 / 8.14 |
 | step 12 at 16x (seed 4) | 12907 / 5992 | 19.97 / 10.39 |
+| step 14 at 12x (seed 8, `speed`) | 9695 / 5205 | 15.74 / 8.31 |
+| step 14 at 16x (seed 8, `speed 16`, no board mod) | 12929 / 6441 | 19.97 / 10.53 |
 
 - AIBB MemTest did not move from step 6 to step 7 (pairs only come from
   cache hits; MemTest's reads miss and its writes are 16-bit). Step 8's
@@ -530,6 +551,11 @@ that gives the "_fast" files.
   MB/s; 16x xSysInfo 22042 / 11994, 29.18 / 26.20, SD 2.2. Games look
   faster, unmeasured; Glen may start a Frontier timedemo tool as a
   separate project (WHDLoad slave hook on the buffer swap + VBL count).
+- Step 14 (seed 8, the switchable build): xSysInfo 12x 16247 / 8698
+  Dhrystones, 9.24 / 4.95 MIPS, fast RAM 23.32 / 21.12 MB/s, SD 2.0 MB/s;
+  16x (`speed 16`) 21317 / 11621, 12.13 / 6.61 MIPS, 29.17 / 26.18, SD
+  2.2. Same as steps 12-13 at the same clock (step 14 changed margins
+  only); 16x via the PLL matches the x16 board mod.
 - SD card (sfsd.device 2.4): 2.18 MB/s in SysInfo on steps 4 to 9
   (2184533 bytes/s each time); fx68k gets 1.76 MB/s.
 - xSysInfo (Glen's test suite from step 8): 15711 Dhrystones, 8.94 MIPS,

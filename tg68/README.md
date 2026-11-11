@@ -40,7 +40,7 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
-| `bitstreams/step14_headroom/` | + timing headroom: the paths that limited every build since step 7 restructured, at no cost in clocks (identical clock counts in every bench); step 13b's longer 7 MHz calibration (`speed 12 rise` no longer needed). 12x files (switchable) and `_x16` files | **Test build, not yet run on hardware.** 4 of seeds 1-11 pass at 12x (step 13b: 0 of 40); seed 8: +0.43 ns 1T, +2.53 ns multicycle; 14x / 16x need 1.11× / 1.27× the worst-case model |
+| `bitstreams/step14_headroom/` | + timing headroom: the paths that limited every build since step 7 restructured, at no cost in clocks (identical clock counts in every bench); step 13b's longer 7 MHz calibration (`speed 12 rise` no longer needed). 12x files (switchable) and `_x16` files | **Runs on hardware at 12x, 14x and 16x** (first build: seed 8, +0.43 / +2.53 ns, 14x / 16x need 1.11× / 1.27× the worst-case model): benchmarks as step 13. The 7 MHz capture fix (rising sample at 12x, automatic switch on drift) is a rebuild, not yet on hardware |
 | `bitstreams/step13_speed/` | + clock speed switched at run time: `speed 12`, `speed 14` or `speed 16` in a Shell (the `speed` command is in the folder), 12x / 14x / 16x from the FPGA's PLLs, no board mod, power-on default 12x; 7 MHz capture calibration; the 7 MHz aligner's lock fixed. 12x files (switchable) and `_x16` files (board mod, fixed) | **Runs on hardware at 12x, 14x and 16x** (switching from the CLI). 12x seed 12 passes timing; at 14x / 16x it needs the chip 1.14× / 1.30× faster than the worst-case model. At 12x its calibration can keep a falling-edge 7 MHz sample that later moves (`$270C`); `speed 12 rise` after a cold boot avoids it (fixed in step 14) |
 | `bitstreams/step12_wbuf/` | + 8-entry Chip RAM write buffer: up to 8 Chip RAM writes (4 longwords) are taken at once and written out in order while the CPU carries on. 12x and 16x files | **Latest known good on hardware**, 12x (seed 6) and 16x (seed 4), SD card included. Benchmarks as step 11 (they run from fast RAM and the caches); games look smoother, not yet measured |
 | `bitstreams/step11_games/` | + Chip RAM code in the instruction cache (CACR CI/CEI now flush), posted Chip RAM writes, SDRAM bank permutation, pair prefetch, shorter uncached read. 12x and 16x files | **Known good on hardware**, 12x (seed 14) and 16x (seed 1), Kickstart 1.3 and 3.2.3, SD card included. MemTest 15.73 / 8.49 MB/s at 12x (+28% / +29%), 19.97 / 10.39 at 16x (+26% / +25%), games much faster. Code that DMAs itself into Chip RAM without clearing the cache needs the caches off (see step 11) |
@@ -488,6 +488,23 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   * The adapter's BRn (bus request, with the write buffer's busy flag) is
     a register, as HALTn became in step 13; the reset, the address hold
     after AS and the cache flush trigger likewise (step 13b).
+  The 7 MHz capture got two changes from the first step 14 build on the
+  A500+: at a cold boot at 12x it kept the falling-edge sample, which
+  passed the 0.33 s power-up window and then moved now and then
+  (`$270C`: the speed multiplexer delays the 12x clock by about half a
+  period on every build, which puts that sample next to a 7 MHz edge,
+  and it drifts as the chip warms). So at 12x the calibration now keeps
+  the rising-edge sample unless it moved more (14x and 16x keep the
+  falling one, as before), and whenever the sample in use moves four
+  times while the other never has, the board switches to the other on
+  its own, with the CPU held for a few microseconds and no clock change.
+  `speed` reports how often that has happened (board+$F00C). In
+  simulation the clock delay is stepped mid-run onto the sample in use:
+  the board switches once and carries on (a version that never switches
+  fails). The simulated Chip RAM bench is a 7 MHz cycle per access faster
+  with the rising sample (the bus grid sits a clock later against the
+  DTACK synchronizer); every data and bus check passes, and the real
+  effect, if any, will show in xSysInfo's Chip RAM figure.
   Every bench gives the same clock counts as before. Each precomputed
   value has a simulation-only check that it equals the live one whenever
   it is used (`pre_bad`, `cc_bad`); broken versions are caught. 4 of

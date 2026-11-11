@@ -26,6 +26,8 @@
 |   bit  13    the falling-edge sample has moved since the last calibration
 |   bit  14    the rising-edge sample has moved since then
 |   bit  15    the 7 MHz phase aligner has slipped since then (red LED)
+| and board+$F00C (step 14 gateware) the number of times the board has
+| switched to the other sample on its own because the one in use drifted.
 |
 | Why the calibration: the clock reaches the FPGA's flip-flops through the
 | speed multiplexer, whose delay depends on the speed and the build, and can
@@ -204,6 +206,7 @@ args_done:
 .else
 .ifdef TESTJIT
         move.w  #0xF70C,SPD_REG(%a2)        | rising, both moved, slipped
+        move.w  #0x0003,SPD_REG+2(%a2)      | three automatic swaps
 .else
         move.w  #0x070C,SPD_REG(%a2)
 .endif
@@ -367,7 +370,18 @@ report:
         beq.s   7f
         lea     m_slip(%pc),%a0
         bsr     puts
-7:      lea     m_reg(%pc),%a0
+7:      btst    #B_SWITCH,%d5               | step 14: automatic sample swaps
+        beq.s   8f
+        moveq   #0,%d0
+        move.w  SPD_REG+2(%a2),%d0          | +$F00C (reads 0 on older gateware)
+        and.w   #0xFF,%d0
+        beq.s   8f
+        lea     m_swap1(%pc),%a0
+        bsr     puts
+        bsr     puthex2
+        lea     m_swap2(%pc),%a0
+        bsr     puts
+8:      lea     m_reg(%pc),%a0
         bsr     puts
         move.l  %d5,%d0
         bsr     puthex4
@@ -393,11 +407,18 @@ puts:
 2:      movem.l (%sp)+,%d0-%d3/%a0-%a1/%a6
         rts
 
+| puthex2: d0 low byte -> 2 hex digits. Keeps all registers.
+puthex2:
+        movem.l %d0-%d2/%a0,-(%sp)
+        ror.l   #8,%d0
+        moveq   #1,%d2
+        bra.s   puthexn
 | puthex4: d0 low word -> 4 hex digits. Keeps all registers.
 puthex4:
         movem.l %d0-%d2/%a0,-(%sp)
         swap    %d0
         moveq   #3,%d2
+puthexn:
         lea     v_buf(%a5),%a0
 1:      rol.l   #4,%d0
         moveq   #15,%d1
@@ -417,7 +438,7 @@ puthex4:
 | ---- text ------------------------------------------------------------------
 dosname:    .asciz  "dos.library"
 expname:    .asciz  "expansion.library"
-verstag:    .asciz  "$VER: speed 1.1 (10.11.2026) Base64"
+verstag:    .asciz  "$VER: speed 1.2 (11.11.2026) Base64"
 m_usage:    .asciz  "Usage: speed               show the clock in force\n       speed 12            85.1 MHz (power-on default)\n       speed 14            99.3 MHz\n       speed 16           113.5 MHz\n       speed <n> RISE|FALL  force the 7 MHz sampling edge\nThe speed stays over a reset; a power cycle returns to 12.\nThe speed in force again: recalibrate the 7 MHz capture.\n"
 m_noexp:    .asciz  "cannot open expansion.library\n"
 m_noboard:  .asciz  "No Base64 AutoConfig ROM board found (5194/14).\n"
@@ -442,6 +463,8 @@ m_fall:     .asciz  "falling edge\n"
 m_jitf:     .asciz  "  the falling-edge sample has moved since the calibration\n"
 m_jitr:     .asciz  "  the rising-edge sample has moved since the calibration\n"
 m_slip:     .asciz  "  the 7 MHz phase aligner has slipped since then\n"
+m_swap1:    .asciz  "  switched to the other sample on its own (drift): $"
+m_swap2:    .asciz  " times since power-on\n"
 m_reg:      .asciz  "Register:     $"
 m_nl:       .asciz  "\n"
         .balign 4
