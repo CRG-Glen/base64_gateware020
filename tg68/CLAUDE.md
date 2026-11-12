@@ -52,6 +52,7 @@ Upstream (jbilander's files outside `tg68/`) is not modified by this work.
 python3 scripts/build.py full --seeds 12      # Windows: build.bat full (only full is released/timed since step 6)
 sh sim/run.sh bus | top | fastmem              # the three regression benches
 sh sim/run.sh bench copy|read|scatter|sd       # throughput and SD loopback
+sh sim/run.sh bench c                          # compiled C (needs gcc-m68k-linux-gnu)
 python3 scripts/check_timing.py build/full/base64_tg68.sdf --paths 4
 sh sw/maprom/build.sh                           # needs binutils-m68k-linux-gnu
 ```
@@ -142,6 +143,7 @@ that gives the "_fast" files.
   the 46.5 ns allowed by STEP=4, so STEP=3 is out of reach.
 - **Sequencer states (tg68_bus.v):** SETTLE -> DECIDE, then:
   - an internal step;
+  - a predicted fetch (step 15), stepped at once like an internal step;
   - a prefetch-buffer hit -> FINISH;
   - a cache lookup -> CCMP (hit steps the kernel there; miss -> DWAIT,
     CFREE or SETUP);
@@ -475,6 +477,39 @@ that gives the "_fast" files.
   bitstreams/step14b_cal): 12x seeds 5 and 8 of 1-8 pass (seed 5 +0.36 /
   +3.28 ns, 14x 1.12x, 16x 1.28x); --x16 seed 3 of 1-4, 1.29x. Not yet
   on hardware.
+- **Fetch predictor (step 15, branch step15-fetch-predictor; not yet on
+  hardware):** a sequential instruction-cache hit in 4 clocks, not 5.
+  `fp_a` = next fetch address, loaded on every DECIDE clock of a fetch
+  (`dec_r && k_bs==00 && !k_skip`: k_addr + 1 word, + 2 for a pair
+  candidate); `fp_rsel_n` (k_step inverted, own register) switches `ic_ra`
+  to fp_a for the clock after a step; E2: `k_din_fp`, `fp_tq`,
+  `k_din_psel`; E3: `fp_v` (tag match, no `fp_kill`); DECIDE: `fp_hit0`
+  (fp_v, ic_on, fetch, k_addr == `fp_ac`, not a pair candidate) then
+  `bus_free` -> step(). `fp_ac` = copy of fp_a for that compare only, a 2T
+  source in check_timing (fp_v is cleared on the edge it loads; tb
+  assertion; different power-on values keep yosys from merging the two).
+  `fp_bad` (ic_we at fp_a's entry) sets fp_kill from the step to E3 and
+  clears fp_v after. DECIDE's pf-hit and cycle-start branches clear
+  k_din_psel (they may hand the kernel k_din). Nothing of the predictor
+  loads in step() (it did: the CCMP-hit step missed 1T on every seed).
+  Also: `cnt_ok` (cnt >= STEP-1 as a register), `k_ipl` loaded on k_step,
+  `WR4` (posted non-pair write steps at DECIDE; works, +1%, off: puts
+  k_fast in the step decision), `S15_DEFAULT` (VLFLAGS=-DS15_DEFAULT=0 =
+  step 14 behaviour). Sim: `bench c` (sim/bench_c.c, gcc -O2 -m68020,
+  needs gcc-m68k-linux-gnu) 73680 -> 65640 clocks (+12.2%; 62% of steps
+  are fetches, 89% of single fetches sequential), copy +5.5%, read +8.5%,
+  scatter +9%, wrfast +10%, readoff/chip 0. Tests: `fp_chk_bad`, shadow
+  check and stability check on every predicted fetch, smc0-3 (0x8210-
+  0x822C; same results with the predictor off); mutants caught except the
+  fp_bad -> fp_v clear after E3 (unreachable in the benches). Timing:
+  seed 8 of 1-9 passes (+0.60 / +0.40 ns, 14x 1.14x, 16x 1.31x); misses
+  are kernel -> logic 0.9-1.7 ns on four seeds (k_addr feeds a second
+  31-bit compare ahead of DECIDE's chain; next thing to restructure:
+  split DECIDE into fetch and data branches so only fetches see fp_hit0),
+  clkena -> kernel, cache RAM outputs. Tried: a carry-chain tag compare
+  (x + all-ones carry out) is slower than `==` (5.6 vs 4.7 ns alone).
+  Not done: prefetch-buffer hits in 4 clocks (caches off: 1.7% in bench
+  coff), dp_req's register clock.
 - **Cache enable:** both caches follow CACR EI. The data cache must NOT get
   the 68030 CACR bit 8: software tells an 020 from an 030 by setting that bit
   and reading it back, so storing it would make the CPU detect as a 68030 and

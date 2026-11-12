@@ -14,7 +14,8 @@ build's own files are few and marked `TG68:`.
 > 12x, 14x and 16x while running, from a Shell (`speed 16`), with no board
 > mod; see *Clock speed at run time (step 13)*. It runs on Glen's A500+ at
 > all three speeds. **Step 14** (test build) gives the timing check room
-> again, at no cost in clocks.
+> again, at no cost in clocks. **Step 15** (test build) predicts the next
+> instruction fetch: about 12% faster on cached code in simulation.
 >
 > **Status:** steps 1-12 run on an A500+. The latest, step 12 `full`, at
 > the stock 12x clock: 9690 Dhrystones (10.11 MIPS), AIBB MemTest 15.74 MB/s,
@@ -40,6 +41,7 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
+| `bitstreams/step15_fpred/` | + fetch predictor: after every CPU step the instruction cache is read at the next fetch address, so a sequential instruction fetch from the cache takes 4 clocks, not 5 (see *Fetch predictor (step 15)*). 12x file (switchable to 14x / 16x with `speed`); no `_x16` file from this step on | Test build, not yet on hardware. Simulation: compiled C from fast RAM +12%, fast RAM benches +5 to +10%; caches off and Chip RAM unchanged. 12x seed 8: +0.60 / +0.40 ns, 14x / 16x need 1.14× / 1.31× the worst-case model; 1 of seeds 1-9 passes |
 | `bitstreams/step14b_cal/` | step 14 rebuilt with kernel change 5 (a third copy of the kernel's long-word clock enable, and change 4's copy now really separate) and the 7 MHz capture fix: at 12x the rising-edge sample is kept, and the board switches sample on its own if the one in use drifts (`speed` 1.2 shows how often). 12x files (switchable) and `_x16` files | Test build, not yet on hardware. 12x seed 5: +0.36 / +3.28 ns, 14x / 16x need 1.12× / 1.28× the worst-case model; seeds 5 and 8 of 1-8 pass |
 | `bitstreams/step14_headroom/` | + timing headroom: the paths that limited every build since step 7 restructured, at no cost in clocks (identical clock counts in every bench); step 13b's longer 7 MHz calibration (`speed 12 rise` no longer needed). 12x files (switchable) and `_x16` files | **Runs on hardware at 12x, 14x and 16x** (first build: seed 8, +0.43 / +2.53 ns, 14x / 16x need 1.11× / 1.27× the worst-case model): benchmarks as step 13. The 7 MHz capture fix (rising sample at 12x, automatic switch on drift) is a rebuild, not yet on hardware |
 | `bitstreams/step13_speed/` | + clock speed switched at run time: `speed 12`, `speed 14` or `speed 16` in a Shell (the `speed` command is in the folder), 12x / 14x / 16x from the FPGA's PLLs, no board mod, power-on default 12x; 7 MHz capture calibration; the 7 MHz aligner's lock fixed. 12x files (switchable) and `_x16` files (board mod, fixed) | **Runs on hardware at 12x, 14x and 16x** (switching from the CLI). 12x seed 12 passes timing; at 14x / 16x it needs the chip 1.14× / 1.30× faster than the worst-case model. At 12x its calibration can keep a falling-edge 7 MHz sample that later moves (`$270C`); `speed 12 rise` after a cold boot avoids it (fixed in step 14) |
@@ -472,6 +474,45 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   fast RAM copy bench never waits for the SDRAM port, and a pure write
   burst waits 3% of the time, so a queue there could gain at most a few
   percent.
+* **Fetch predictor (step 15).** A cache hit costs 5 clocks per CPU step
+  where an internal step costs 4, because the kernel's address is only
+  ready for the cache RAM two clocks after a step. But nine instruction
+  fetches in ten are of the word after the last one fetched, and that
+  address is known at the step. So after every step the instruction
+  cache is read at the predicted next fetch address, from the adapter's
+  own registers, and the word and the result of its tag compare are ready
+  before the kernel's outputs settle. If the kernel then asks for that
+  address, it is stepped at once, as for an internal step: 4 clocks.
+  The prediction is only ever a cache entry whose tag matches, so the CPU
+  gets exactly the word a normal lookup would give; a write to that entry
+  between the read and the step (code that overwrites the next
+  instruction, a cache fill, a flush) drops the prediction and the fetch
+  goes the normal way. A fetch the kernel offers as a 32-bit pair still
+  goes the normal way too (two words in 5 clocks). It only works from the
+  instruction cache: with the caches off, and for code not yet cached,
+  nothing changes.
+  Measured in simulation with a compiled C workload (`sim/bench_c.c`:
+  records, strings, calls, arrays; gcc -O2 -m68020, run from fast RAM): 62%
+  of all CPU steps are instruction fetches and 89% of the single-word
+  fetches are sequential. The timed pass takes 65,640 clocks, down from
+  73,680 (+12%). The fast RAM benches gain 5-10% (their loops run from
+  the cache); caches off and Chip RAM are unchanged.
+  Tests: every predicted fetch is compared with the cache's own read of
+  the kernel's address in the same clock (`fp_chk_bad`) and with the test
+  bench's shadow of the CPU's writes; routines that store over the
+  instruction 0, 1 or 2 words after the store, and with a longword store,
+  give the same results as with the predictor off
+  (`VLFLAGS=-DS15_DEFAULT=0`). Broken versions (no drop on a cache write
+  in each of the clocks before the step, the word from the wrong bank, the
+  select never set, no tag compare, the valid bit kept when the address
+  loads) are caught. One guard is not reachable by a test: a cache write
+  to the predicted entry while its fetch is held in DECIDE.
+  Also in this step: a word or byte write to fast RAM can step the CPU
+  a clock sooner (`WR4`); it works and gains 1% on the C workload, but is
+  off, because it puts the fast RAM address decode into the step decision.
+  The interrupt level is now sampled in the clock after a step, so it is
+  a whole step old when the kernel samples it (an interrupt is taken one
+  CPU step, 47 ns, later).
 * **Timing headroom (step 14).** From step 7 on only about one placement
   seed in 8-16 passed the timing check at 12x, and step 13's extra logic
   (51% of the LUTs, up from 48%) made it worse: the step 13b build
@@ -820,6 +861,30 @@ actually provides:
 (`--seeds N` for more) until it gets `RESULT: PASS`, and writes `timing.txt`. Expect the 1T classes to
 pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
+
+Step 15 (fetch predictor) builds as supplied (not yet on hardware):
+
+| Build | Seed | Worst 1T slack | Worst multicycle slack |
+| --- | --- | --- | --- |
+| full | 8 | +0.60 ns | +0.40 ns |
+
+Seed 8 is the only pass of seeds 1-9. The first two versions passed on
+none of five seeds and were restructured, not seed-hunted: the predicted
+address was loaded by the step decision (0.9-1.4 ns over; it now loads
+on every DECIDE clock of a fetch, with a copy for the address compare
+that the checker gives two clocks, since the valid bit is cleared on the
+edge it loads); the valid and kill bits were cleared by the step decision
+(0.4-1.4 ns over on the cache-hit step; they are now cleared by
+registers only); and the bus-free test entered the decision twice
+(0.4-0.9 ns). What still misses on the other seeds is spread: kernel ->
+logic by 0.9-1.7 ns on four of them (the kernel's address now feeds a
+second 31-bit compare ahead of DECIDE's decision; 34.1 ns of 34.9 on
+seed 8, where step 14b had 31.6), clkena -> kernel, and the cache RAM
+outputs. At 14x the build needs the chip 1.14× faster than the
+worst-case model, at 16x 1.31× (step 14b: 1.12× / 1.28×; step 13, which
+runs at all three: 1.14× / 1.30×). A carry-chain tag compare was tried
+for the cache-hit step and is slower than the plain one (5.6 ns against
+4.7 ns, routed alone).
 
 Step 14b (kernel change 5, 7 MHz capture fix) builds as supplied (not
 yet on hardware):
