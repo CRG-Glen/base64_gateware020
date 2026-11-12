@@ -40,6 +40,7 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
+| `bitstreams/step14b_cal/` | step 14 rebuilt with kernel change 5 (a third copy of the kernel's long-word clock enable, and change 4's copy now really separate) and the 7 MHz capture fix: at 12x the rising-edge sample is kept, and the board switches sample on its own if the one in use drifts (`speed` 1.2 shows how often). 12x files (switchable) and `_x16` files | Test build, not yet on hardware. 12x seed 5: +0.36 / +3.28 ns, 14x / 16x need 1.12× / 1.28× the worst-case model; seeds 5 and 8 of 1-8 pass |
 | `bitstreams/step14_headroom/` | + timing headroom: the paths that limited every build since step 7 restructured, at no cost in clocks (identical clock counts in every bench); step 13b's longer 7 MHz calibration (`speed 12 rise` no longer needed). 12x files (switchable) and `_x16` files | **Runs on hardware at 12x, 14x and 16x** (first build: seed 8, +0.43 / +2.53 ns, 14x / 16x need 1.11× / 1.27× the worst-case model): benchmarks as step 13. The 7 MHz capture fix (rising sample at 12x, automatic switch on drift) is a rebuild, not yet on hardware |
 | `bitstreams/step13_speed/` | + clock speed switched at run time: `speed 12`, `speed 14` or `speed 16` in a Shell (the `speed` command is in the folder), 12x / 14x / 16x from the FPGA's PLLs, no board mod, power-on default 12x; 7 MHz capture calibration; the 7 MHz aligner's lock fixed. 12x files (switchable) and `_x16` files (board mod, fixed) | **Runs on hardware at 12x, 14x and 16x** (switching from the CLI). 12x seed 12 passes timing; at 14x / 16x it needs the chip 1.14× / 1.30× faster than the worst-case model. At 12x its calibration can keep a falling-edge 7 MHz sample that later moves (`$270C`); `speed 12 rise` after a cold boot avoids it (fixed in step 14) |
 | `bitstreams/step12_wbuf/` | + 8-entry Chip RAM write buffer: up to 8 Chip RAM writes (4 longwords) are taken at once and written out in order while the CPU carries on. 12x and 16x files | **Latest known good on hardware**, 12x (seed 6) and 16x (seed 4), SD card included. Benchmarks as step 11 (they run from fast RAM and the caches); games look smoother, not yet measured |
@@ -816,6 +817,19 @@ actually provides:
 (`--seeds N` for more) until it gets `RESULT: PASS`, and writes `timing.txt`. Expect the 1T classes to
 pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
+
+Step 14b (kernel change 5, 7 MHz capture fix) builds as supplied (not
+yet on hardware):
+
+| Build | Seed | Worst 1T slack | Worst multicycle slack |
+| --- | --- | --- | --- |
+| full | 5 | +0.36 ns | +3.28 ns |
+
+Seeds 5 and 8 of 1-8 pass (seed 8: +0.21 / +2.53 ns); the others miss by
+0.1-0.9 ns, spread over adapter ctrl -> logic, logic -> logic and
+clkena -> kernel (only seed 1). At 14x the build needs the chip 1.12×
+faster than the worst-case model, at 16x 1.28×. The `_x16` file is seed 3
+of seeds 1-4: 1.29×.
 
 Step 14 (timing headroom, with step 13b's longer calibration) builds as
 supplied (not yet on hardware):

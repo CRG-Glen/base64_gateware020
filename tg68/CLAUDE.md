@@ -467,6 +467,10 @@ that gives the "_fast" files.
   k_clkena_lw3 (power-on 1: only that process, whose Reset branch wins;
   Reset is async-forced while nReset is low). Check a new copy really
   exists: grep the synthesized json for cpu.k_clkena_lw*_TRELLIS_FF_Q.
+  Step 14b (2b5a57b + the capture fix, branch step14-timing-headroom,
+  bitstreams/step14b_cal): 12x seeds 5 and 8 of 1-8 pass (seed 5 +0.36 /
+  +3.28 ns, 14x 1.12x, 16x 1.28x); --x16 seed 3 of 1-4, 1.29x. Not yet
+  on hardware.
 - **Cache enable:** both caches follow CACR EI. The data cache must NOT get
   the 68030 CACR bit 8: software tells an 020 from an 030 by setting that bit
   and reading it back, so storing it would make the CPU detect as a 68030 and
