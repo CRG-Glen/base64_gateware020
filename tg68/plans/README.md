@@ -15,14 +15,15 @@ when to stop and report. Results go in the plan's own log section.
 | 14b capture fix, kernel change 5 | same branch, `bitstreams/step14b_cal/` | **Waiting for Glen's test** |
 | 15 fetch predictor | `step15-fetch-predictor`, `bitstreams/step15_fpred/` | **Waiting for Glen's test** |
 
-The branches stack (13 -> 14 -> 15). New work branches from
-`step15-fetch-predictor`. Nothing is merged or released until Glen says.
+The branches stack (13 -> 14 -> 15 -> tooling-build-seeds). New work
+branches from `tooling-build-seeds`. Nothing is merged or released until Glen says.
 
 ## Queue, in order
 
-1. **`tooling-build-seeds.md`** (ready to build, no hardware risk).
-   build.py keeps every seed's files and runs seeds in parallel. Do this
-   first: step 15b needs nine-seed runs and they are tedious by hand.
+1. ~~`tooling-build-seeds.md`~~ **done** on branch `tooling-build-seeds`
+   (from `step15-fetch-predictor`): `build.py full --seed 1 --seeds 9`
+   now runs 4 seeds at a time and prints a table. Build step 15b from
+   this branch.
 2. **`step15b-predictor-timing.md`** (ready to build). Get step 15's
    kernel -> logic margin back and more seeds passing, with no change in
    behaviour. Three small changes, measured one at a time.

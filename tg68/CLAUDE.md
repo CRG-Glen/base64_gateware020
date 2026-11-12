@@ -80,7 +80,8 @@ sudo bash tg68/scripts/setup_cloud.sh          # if verilator / yowasp-yosys / m
 sh sim/run.sh bus | top | fastmem              # the three regression benches
 sh sim/run.sh bench c|copy|read|scatter|readoff|chip|wrfast|wrmix|sd
 VLFLAGS=-DS15_DEFAULT=0 sh sim/run.sh ...      # the same with step 15 switched off
-python3 scripts/build.py full --seed 8 --seeds 1
+python3 scripts/build.py full --seed 1 --seeds 8   # 4 seeds at a time, build/full/seed<N>/, table in seeds.txt
+python3 scripts/build.py full --skip-synth --seed 9 --seeds 8   # more seeds, same netlist
 python3 scripts/check_timing.py build/full/base64_tg68.sdf --paths 4 [--freq 99.32|113.51]
 ```
 
@@ -184,11 +185,8 @@ flatten. nextpnr: `--placer static --router router2`.
   86 MHz gave byte-identical routed designs). Only the netlist and the
   seed matter. A second clock buffer for the kernel was tried and dropped
   (branch `exp-kernel-clock-buffer`).
-- **YoWASP cannot read files under /tmp**: worktrees and build folders for
-  parallel seeds go under /home/user.
-- **build.py keeps only the last seed's files.** To compare seeds, run
-  nextpnr and check_timing yourself into one folder per seed (see
-  `plans/tooling-build-seeds.md`).
+- **YoWASP cannot read files under /tmp**: worktrees and build folders go
+  under /home/user.
 - Do not run two sims at once in the same `sim/` folder (shared obj_dir).
   Use a git worktree for a build while you edit and simulate.
 - `syn_useioff` cannot go on registers that are also read internally;
@@ -210,7 +208,8 @@ flatten. nextpnr: `--placer static --router router2`.
   predictor, about +12% on cached code in simulation): test bitstreams
   delivered, **waiting for Glen's hardware test**.
 - Branches stack: `step13-pll-speed` -> `step14-timing-headroom` ->
-  `step15-fetch-predictor`. New work starts from the newest one.
+  `step15-fetch-predictor` -> `tooling-build-seeds`. New work starts from
+  the newest one.
 
 ## Licensing (unresolved; check before publishing anything new)
 

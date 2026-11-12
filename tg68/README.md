@@ -803,18 +803,26 @@ Glen's board at x16.
 2. From this folder:
 
    ```
-   build.bat full
-   build.bat full --seed 9  (start the seed search somewhere else)
-   build.bat full --x16     (for a board rewired to x16, see 16x clock)
+   build.bat full                     (seeds 1-8)
+   build.bat full --seed 9 --seeds 8  (seeds 9-16)
+   build.bat full --skip-synth        (place and route again, same netlist)
    ```
+
+   Seeds run `--jobs` at a time (default: up to 4, one per CPU core; each
+   needs about 1.5 GB of memory), each in `build\full\seed<N>\`. At the
+   end `build.py` prints a table of every seed's worst slacks (also in
+   `build\full\seeds.txt`) and packs the passing seed with the most
+   margin. `--first-pass` stops starting new seeds once one has passed.
 
    On Linux/macOS: `python3 scripts/build.py full` with oss-cad-suite's
    `bin` on your PATH, or with the `yowasp-yosys` and
    `yowasp-nextpnr-ecp5` pip packages installed (`build.py` falls back to
    them when plain `yosys` / `nextpnr-ecp5` are missing). A build takes a
    few minutes per seed.
-3. The bitstream lands in `build\full\base64_tg68_full.bit`
-   (`build\full_x16\` for `--x16`). Step 11 `full` uses ~12k of the
+3. The bitstreams land in `build\full\`: `base64_tg68_full.bit` (plain)
+   and `base64_tg68_full_fast.bit` (compressed, loads faster; both work),
+   with the best seed's timing reports at 12x, 14x and 16x in its
+   `seed<N>` folder. If no seed passes, nothing is packed. Step 11 `full` uses ~12k of the
    FPGA's 24k LUTs and 35 of its 56 block RAMs. Expect to try several
    seeds (`--seeds 16`): the timing margins are thin, and only a seed that
    passes `check_timing.py` outright should be used (step 11's seed 1

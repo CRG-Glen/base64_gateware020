@@ -1,6 +1,6 @@
 # Tooling: build.py keeps every seed and runs seeds in parallel
 
-Status: ready to build. Branch: `tooling-build-seeds`, from
+Status: **done** (branch `tooling-build-seeds`). Ready to build: was. Branch: `tooling-build-seeds`, from
 `step15-fetch-predictor`. No RTL change, no hardware risk.
 
 ## Goal
@@ -87,4 +87,31 @@ that itself.
 
 ## Log
 
-(build model: record what you did and the check results here)
+- build.py: `--jobs` (default min(4, CPUs)), `--first-pass`, `--keep-sdf`;
+  each seed in `build/<cfg>/seed<N>/` (config, nextpnr.log, nextpnr.out =
+  nextpnr's stdout, report.json, timing.txt with `--paths 6`); threads
+  running subprocesses (no fork, so Windows works); table printed and
+  written to `seeds.txt`; best = PASS seed with the largest worst-1T
+  slack, scored at 14x/16x into `timing_at14x.txt` / `timing_at16x.txt`
+  in its seed folder, packed plain (honours ECPPACK_OPTS) and `_fast`
+  into `build/<cfg>/`; no pass = nothing packed, exit 2. The `--x16` path
+  keeps the old serial loop in `build/<cfg>_x16/` (refactored to share the
+  nextpnr command; not re-run: frozen and no longer shipped).
+- Checks, all passed:
+  - `--skip-synth --seed 5 --seeds 4 --jobs 4` on the 3c13c05 netlist:
+    seeds 5/6/7 FAIL (-0.45/-1.73, -1.37/-0.18, -0.62/+1.06), seed 8 PASS
+    (+0.60/+0.40), ratios 1.142 / 1.305: the same as the serial runs in
+    `step15b-predictor-timing.md`'s baseline, so parallel = serial.
+    Plain and `_fast` byte-identical to `bitstreams/step15_fpred/`.
+  - Full synthesis + seed 8, at 3c13c05 and at the branch head (b384161,
+    a comment edit in tg68_bus.v): both byte-identical to
+    `step15_fpred` (so line numbers in comments do not change the
+    result).
+  - `--first-pass --jobs 1 --seed 7 --seeds 3`: seeds 7 and 8 run, 9 not
+    started; seed 8 packed.
+  - `--seed 5 --seeds 1` (no pass): exit 2, no .bit written.
+  - Only the best seed keeps its .sdf (failed seeds' folders ~6 MB).
+- Docs: README "Building it yourself", build.bat's header, CLAUDE.md's
+  Commands; the "build.py keeps only the last seed" gotcha removed.
+- Note: a seed folder from an earlier run stays until that seed is run
+  again; `seeds.txt` lists only the run that wrote it.
