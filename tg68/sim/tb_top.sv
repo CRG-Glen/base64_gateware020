@@ -163,11 +163,26 @@ module tb;
     // just before the kernel samples (the clkena clock).
     reg clw3_armed = 1'b0;   // kernel change 5 check (below)
     integer ks_cyc = 0, ks_chg = -10, ks_bad = 0; reg ks_la = 0, ks_ds = 0, ks_hs = 0, ks_dd = 0;
+    reg ks_ps = 0; reg [15:0] ks_fp = 0; integer ks_fchg = -10; reg fpp = 0; integer fp_chk = 0;   // step 15: fetch predictor
     integer rd_pairs = 0;                // pair reads from the SDRAM (step 9)
     integer n_clw = 0;                   // steps with clkena_lw (kernel change 2)
     always @(posedge dut.clk) begin
         ks_cyc = ks_cyc + 1;
-        if (dut.cpu.k_long_ack !== ks_la || dut.cpu.k_din_sel !== ks_ds || dut.cpu.k_din_hsel !== ks_hs || dut.cpu.k_din_dsel !== ks_dd) ks_chg = ks_cyc;
+        if (dut.cpu.k_long_ack !== ks_la || dut.cpu.k_din_sel !== ks_ds || dut.cpu.k_din_hsel !== ks_hs || dut.cpu.k_din_dsel !== ks_dd || dut.cpu.k_din_psel !== ks_ps) ks_chg = ks_cyc;
+        // step 15: the predicted word must be 2 clocks old when the kernel
+        // samples it, and equal to what the CPU last wrote there
+        if (dut.cpu.k_din_fp !== ks_fp) ks_fchg = ks_cyc;
+        ks_ps = dut.cpu.k_din_psel; ks_fp = dut.cpu.k_din_fp;
+        if (dut.cpu.k_clkena && fpp) begin
+            fp_chk = fp_chk + 1;
+            if (ks_cyc - ks_fchg < 2 || dut.cpu.k_dat !== dut.cpu.k_din_fp) begin
+                $display("FAIL predicted fetch: word changed %0d clocks before the kernel sampled it, data_in %h, predicted %h", ks_cyc - ks_fchg, dut.cpu.k_dat, dut.cpu.k_din_fp);
+                ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+            end
+            chk_word(dut.cpu.k_addr[31:1], dut.cpu.k_dat);
+            if (dut.cpu.k_addr[31:1] >= 31'h4000 && dut.cpu.k_addr[31:1] < 31'h5000) chip_ihit = chip_ihit + 1;
+        end
+        fpp = (dut.cpu.q == 4'd1) && !dut.cpu.internal_step && dut.cpu.fp_hit && !dut.cpu.extReset;
         ks_la = dut.cpu.k_long_ack; ks_ds = dut.cpu.k_din_sel; ks_hs = dut.cpu.k_din_hsel; ks_dd = dut.cpu.k_din_dsel;
         // The kernel's l1 <= long_ack (Base64 change, was long_ack AND cand)
         // relies on this: long_ack only ever answers an offered pair.
@@ -399,6 +414,40 @@ module tb;
         if (dut.cpu.q == 9 && dut.cpu.dp_ack) n_dir = n_dir + 1;
         if (dut.cpu.q == 4 && (!dut.core_dtack_n)) n_bus = n_bus + 1;
     end
+    // step 15: what each kernel step was and how long it took (gap = clocks
+    // from the previous step). The kernel's outputs still show the cycle
+    // being ended in the clock k_clkena is high.
+    integer gap = 0, sk_f = 0, sk_f5 = 0, sk_f5seq = 0, sk_f4 = 0, sk_fpair = 0, sk_w = 0, sk_w5 = 0, sk_w4 = 0, sk_wpair = 0,
+            sk_r = 0, sk_r5 = 0, sk_rpair = 0, sk_i = 0, sk_i4 = 0;
+    reg [31:1] f_next = 0;
+    wire sk_fetch = (dut.cpu.k_bs == 2'b00) && !dut.cpu.k_skip;
+    always @(posedge clk12) begin
+        gap <= dut.cpu.k_clkena ? 1 : gap + 1;
+        if (dut.cpu.k_clkena && sk_fetch)
+            f_next <= dut.cpu.k_addr[31:1] + (dut.cpu.k_long_ack ? 31'd2 : 31'd1);
+        if (dut.cpu.k_clkena && t0 > 0 && t1 == 0) begin
+            if (sk_fetch) begin
+                sk_f = sk_f + 1;
+                if (dut.cpu.k_long_ack) sk_fpair = sk_fpair + 1;
+                else if (gap == 5) begin
+                    sk_f5 = sk_f5 + 1;
+                    if (dut.cpu.k_addr[31:1] == f_next) sk_f5seq = sk_f5seq + 1;
+                end else if (gap == 4) sk_f4 = sk_f4 + 1;
+            end else if (dut.cpu.k_bs == 2'b11) begin
+                sk_w = sk_w + 1;
+                if (dut.cpu.k_long_ack) sk_wpair = sk_wpair + 1;
+                else if (gap == 5) sk_w5 = sk_w5 + 1;
+                else if (gap == 4) sk_w4 = sk_w4 + 1;
+            end else if (dut.cpu.k_bs == 2'b10) begin
+                sk_r = sk_r + 1;
+                if (dut.cpu.k_long_ack) sk_rpair = sk_rpair + 1;
+                else if (gap == 5) sk_r5 = sk_r5 + 1;
+            end else begin
+                sk_i = sk_i + 1;
+                if (gap == 4) sk_i4 = sk_i4 + 1;
+            end
+        end
+    end
     always @(negedge dut.core_dtack_n) if (t0 > 0 && t1 == 0) begin t_dt = $realtime; sum_as2dt = sum_as2dt + (t_dt - t_as); n_fm = n_fm + 1;
         if (dut.core_a[31:24] == 8'h08) begin
         if (dut.core_rw) begin n_rd = n_rd + 1; s_rd = s_rd + (t_dt - t_as); end else begin n_wr = n_wr + 1; s_wr = s_wr + (t_dt - t_as); end end end
@@ -451,6 +500,8 @@ module tb;
         $display("cache hits checked against the CPU's writes (whole run) %0d, stale %0d; pair hits %0d; pair writes %0d; pair reads %0d; SDRAM violations %0d; clkena_lw steps %0d", hit_chk, hit_bad, long_hits, wr_pairs, rd_pairs, u_sdram.n_err, n_clw);
         if (u_sdram.n_err) errors = errors + 1;
         if (hit_bad) errors = errors + 1;
+        $display("steps by kind: fetch %0d (pairs %0d, single in 4 clocks %0d, in 5 clocks %0d of which sequential %0d); write %0d (pairs %0d, single in 4 %0d, in 5 %0d); read %0d (pairs %0d, single in 5 %0d); internal %0d (in 4 clocks %0d)",
+                 sk_f, sk_fpair, sk_f4, sk_f5, sk_f5seq, sk_w, sk_wpair, sk_w4, sk_w5, sk_r, sk_rpair, sk_r5, sk_i, sk_i4);
         $display("1 KB: %0.1f us -> %0.2f MB/s; %0d CPU bus cycles", (t1-t0)/1000.0, 1024.0/((t1-t0)/1000.0), n_fm);
         $display("stall clocks: fast write waits for the port %0d, read waits (CFREE) %0d, chip write waits %0d", st_fw, st_fr, st_cw);
         $display("per cycle, in 11.75 ns clocks: AS->DTACK %0.1f, DTACK->AS up %0.1f, AS up->next AS %0.1f",
@@ -465,6 +516,9 @@ module tb;
         check(24'h8114, 32'h00000000, "SPI loopback mismatches");
         check(24'h8118, 32'h00000102, "SPI loopback first word");
         check(24'h811C, 32'h000000F1, "SPI loopback bytes");
+`elsif BENCH_C
+        check(24'h8100, 32'h05364511, "C workload checksum, pass 1");
+        check(24'h8104, 32'h61FEF797, "C workload checksum, pass 2");
 `elsif BENCH_COPY
         check(24'h8100, 32'h000000FF, "first copied long");
         check(24'h8104, 32'h00000000, "last copied long");
@@ -479,6 +533,8 @@ module tb;
         check(24'h8100, 32'h00007F80, "sum");
 `endif
         check(24'h8FF0, 32'h600DC0DE, "done marker");
+        if (dut.cpu.fp_chk_bad) begin $display("FAIL: %0d predicted fetches differed from the cache's own lookup", dut.cpu.fp_chk_bad); errors = errors + 1; end
+        $display("predicted fetches %0d (checked at the kernel's sample clock: %0d)", dut.cpu.fp_hits, fp_chk);
         if (dut.cpu.cc_bad) begin $display("FAIL: %0d CCMP compares used registered inputs that differ from a_r", dut.cpu.cc_bad); errors = errors + 1; end
         if (errors) $display("FAILED"); else $display("PASS");
         $finish;
@@ -636,6 +692,8 @@ module tb;
         if (iacks != 1) begin $display("FAIL IACK count %0d", iacks); errors = errors + 1; end
         if (unmapped)   begin $display("FAIL %0d unmapped accesses reached the MB", unmapped); errors = errors + 1; end
         if (led_r)      begin $display("FAIL red LED (stall)"); errors = errors + 1; end
+        if (dut.cpu.fp_chk_bad) begin $display("FAIL: %0d predicted fetches differed from the cache's own lookup", dut.cpu.fp_chk_bad); errors = errors + 1; end
+        $display("predicted fetches %0d (checked at the kernel's sample clock: %0d)", dut.cpu.fp_hits, fp_chk);
         if (dut.cpu.cc_bad) begin $display("FAIL: %0d CCMP compares used registered inputs that differ from a_r", dut.cpu.cc_bad); errors = errors + 1; end
         if (errors) $display("FAILED, %0d errors", errors); else $display("PASS");
         $finish;
