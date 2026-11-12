@@ -50,6 +50,31 @@ step (the kernel's own paths need about 40 of the 46.5 ns).
    first. The plan must work out the mux for four sources, the PLL
    attributes, the calibration's behaviour at 18x and the sim model.
 
+## Timing margin (measured on step 15b's 18 seeds; after step 16)
+
+What misses besides clkena -> kernel, for whoever plans the step after
+16. Re-measure on step 16's seeds first: the picture moves.
+
+1. **SDRAM controller, `sdram_ctrl.v`:** `timer` / `dp_req` -> `ref_blk`
+   -> `pre_ras` -> `state` -> `ras_timer` -> `open_row`, 8 LUT levels
+   inside one module; -1.82 ns on seed 13, near zero on 1 and 17. Step
+   14's `pre_*` registers and `ref_blk` are on it.
+2. **Bridge, top level:** `rp_act` / `tick_rq` -> `rt_rw` -> the data
+   pins' output registers (-1.02 ns on seed 5), and `ASn` ->
+   `core_chip_r` -> `rt_rw` -> the same (-0.29 on seed 6).
+3. **Cache-hit step:** `cc_want_k` / `ic_qt_*` -> tag compare -> `q`,
+   `k_din_sel` (-0.92 ns on seed 11; within 0.3 ns of the limit on
+   seeds 1, 8, 12, 14, 16). The oldest tight path in the design; a
+   carry-chain compare was tried and is slower.
+4. **Predictor read address into the instruction cache RAMs**
+   (`fp_rsel_n` / `fp_a` -> `ic_ra` -> the RAMs' read/write collision
+   logic): step 16 takes the data cache off this path; if the
+   instruction cache's half still misses, look at what yosys builds for
+   the collision (the `*_DOB*_TRELLIS_FF` cells) before changing it.
+5. **Seed 18 of step 15b** (+0.35 / +2.53 ns) was never scored at 14x /
+   16x; only worth doing if Glen wants a 15b file with more 16x margin
+   before step 16 exists.
+
 ## Housekeeping
 
 - **Merge and release steps 13 to 15** once Glen has run them and asks.

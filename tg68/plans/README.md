@@ -34,7 +34,13 @@ hardware results, the timing picture after step 15b, Glen's direction
    see its log). Waiting for Glen's test. Get step 15's
    kernel -> logic margin back and more seeds passing, with no change in
    behaviour. Three small changes, measured one at a time.
-3. Anything in **`backlog.md`** needs a plan written first (by the
+3. **`step16-clkena-copies.md`** (ready to build). Timing margin only, no
+   change in behaviour: the kernel's clock-enable copies become active
+   high (no inverter in front of the ALU), a fourth copy takes half of
+   the busiest one's loads, and the data cache stops sharing the
+   predictor's read address. Needs GHDL (`setup_cloud.sh` installs it):
+   the kernel netlist is regenerated.
+4. Anything in **`backlog.md`** needs a plan written first (by the
    planning model, with Glen choosing the order).
 
 ## Open questions for Glen (from the step 15 test)
