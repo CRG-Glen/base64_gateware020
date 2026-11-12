@@ -964,11 +964,6 @@ module tg68_bus #(
                 cyc_fetch <= (k_bs == 2'b00);
                 rp_go     <= k_nwr && k_rpair && k_fast;
                 rp_al     <= k_nwr && k_ralg && k_fast;
-                // step 15b: read only in CCMP and CFREE, by the cycle this
-                // DECIDE starts, so the last DECIDE clock's value is the one
-                // that counts (as a cycle-start load it waited for the whole
-                // step decision). Sim check: dpf_bad.
-                dp_fast   <= k_fast;
                 if (!dp_busy) begin
                     dp_we    <= ~k_nwr;
                     dp_wdata <= k_dout;
@@ -1369,12 +1364,10 @@ module tg68_bus #(
     task cyc_begin;
         begin
             a_r       <= k_addr[31:1];
-`ifndef YOSYS
-            dp_fast_ref <= k_fast;       // sim only: where dp_fast loaded up to step 15
-`endif
             fc_r      <= k_fc;
             eRWn      <= k_nwr;          // RW valid before AS, like S1
             tmr       <= 6'd0;
+            dp_fast   <= k_fast;
             cyc_start <= 1'b1;
             dec_r     <= 1'b0;
             dp_spec   <= 1'b0;
@@ -1406,15 +1399,6 @@ module tg68_bus #(
     end
 
 `ifndef YOSYS
-    // step 15b, sim only: dp_fast now loads on every DECIDE clock; in CCMP
-    // and CFREE it must equal the value loaded at the cycle start, as before
-    reg     dp_fast_ref = 1'b0;
-    integer dpf_bad = 0;
-    always @(posedge clk)
-        if (!extReset && (q == Q_CCMP || q == Q_CFREE) && dp_fast !== dp_fast_ref) begin
-            dpf_bad = dpf_bad + 1;
-            if (dpf_bad <= 5) $display("%0t: tg68_bus: dp_fast %b differs from the cycle start's %b", $time, dp_fast, dp_fast_ref);
-        end
     // step 15, sim only: on a predicted fetch, the RAMs' own read of the
     // kernel's address (on the edge into DECIDE, as for a normal lookup)
     // must show a matching tag and the same word, in a cacheable window

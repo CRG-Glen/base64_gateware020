@@ -551,7 +551,6 @@ module tb;
         check(24'h8FF0, 32'h600DC0DE, "done marker");
         if (dut.cpu.fp_chk_bad) begin $display("FAIL: %0d predicted fetches differed from the cache's own lookup", dut.cpu.fp_chk_bad); errors = errors + 1; end
         $display("predicted fetches %0d (checked at the kernel's sample clock: %0d)", dut.cpu.fp_hits, fp_chk);
-        if (dut.cpu.dpf_bad) begin $display("FAIL: %0d CCMP/CFREE clocks with dp_fast differing from the cycle start", dut.cpu.dpf_bad); errors = errors + 1; end
         if (dut.cpu.cc_bad) begin $display("FAIL: %0d CCMP compares used registered inputs that differ from a_r", dut.cpu.cc_bad); errors = errors + 1; end
         if (errors) $display("FAILED"); else $display("PASS");
         $finish;
@@ -724,7 +723,6 @@ module tb;
         if (led_r)      begin $display("FAIL red LED (stall)"); errors = errors + 1; end
         if (dut.cpu.fp_chk_bad) begin $display("FAIL: %0d predicted fetches differed from the cache's own lookup", dut.cpu.fp_chk_bad); errors = errors + 1; end
         $display("predicted fetches %0d (checked at the kernel's sample clock: %0d)", dut.cpu.fp_hits, fp_chk);
-        if (dut.cpu.dpf_bad) begin $display("FAIL: %0d CCMP/CFREE clocks with dp_fast differing from the cycle start", dut.cpu.dpf_bad); errors = errors + 1; end
         if (dut.cpu.cc_bad) begin $display("FAIL: %0d CCMP compares used registered inputs that differ from a_r", dut.cpu.cc_bad); errors = errors + 1; end
         if (errors) $display("FAILED, %0d errors", errors); else $display("PASS");
         $finish;
