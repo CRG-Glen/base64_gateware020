@@ -18,10 +18,12 @@
 -- 2 = also clkena_lw2_in, an identical register for half the loads (change 4).
 -- 3 = change 5: that copy low active on clkena_lw2n_in, and a third copy on
 -- clkena_lw3_in for the EA_data/data_write process (see the kernel).
+-- 4 = change 6: copy 2 active high on clkena_lw2_in, and a fourth copy on
+-- clkena_lw4_in for the first clkena_lw block of the opcode/PC process.
 library ieee; use ieee.std_logic_1164.all; use ieee.numeric_std.all;
 entity tg68_020 is
   generic (BARREL : integer := 0; BITFIELD : integer := 1; MULHW : integer := 1;
-           DP32 : integer := 7; CLKLW : integer := 3);
+           DP32 : integer := 7; CLKLW : integer := 4);
   port (
     clk        : in  std_logic;
     nreset     : in  std_logic;
@@ -30,6 +32,7 @@ entity tg68_020 is
     clkena_lw2_in : in std_logic;                     -- with CLKLW=2 (change 4)
     clkena_lw2n_in : in std_logic;                    -- with CLKLW=3 (change 5), low active
     clkena_lw3_in : in std_logic;                     -- with CLKLW=3 (change 5)
+    clkena_lw4_in : in std_logic;                     -- with CLKLW=4 (change 6)
     data_in    : in  std_logic_vector(15 downto 0);
     data_in_hi : in  std_logic_vector(15 downto 0);   -- wide read, word at addr+0
     long_ack   : in  std_logic;                       -- accept this aligned pair
@@ -61,6 +64,7 @@ begin
     port map (clk => clk, nReset => nreset, clkena_in => clkena_in,
               clkena_lw_in => clkena_lw_in, clkena_lw2_in => clkena_lw2_in,
               clkena_lw2n_in => clkena_lw2n_in, clkena_lw3_in => clkena_lw3_in,
+              clkena_lw4_in => clkena_lw4_in,
               data_in => data_in, data_in_hi => data_in_hi, long_ack => long_ack,
               IPL => ipl, IPL_autovector => '0',
               berr => berr, CPU => "11",

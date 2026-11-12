@@ -161,7 +161,6 @@ module tb;
     // k_long_ack and k_din_sel feed the kernel and are classed adapter ->
     // kernel (2 clocks) by check_timing.py: neither may change in the clock
     // just before the kernel samples (the clkena clock).
-    reg clw3_armed = 1'b0;   // kernel change 5 check (below)
     integer ks_cyc = 0, ks_chg = -10, ks_bad = 0; reg ks_la = 0, ks_ds = 0, ks_hs = 0, ks_dd = 0;
     reg [31:1] ks_fac = 0; reg ks_ps = 0; reg [15:0] ks_fp = 0; integer ks_fchg = -10; reg fpp = 0; integer fp_chk = 0;   // step 15: fetch predictor
     integer rd_pairs = 0;                // pair reads from the SDRAM (step 9)
@@ -215,16 +214,12 @@ module tb;
             $display("FAIL tick_rq %b, tick_r %b", dut.tick_rq, dut.tick_r);
             ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
         end
-        // k_clkena_lw3 too (kernel change 5), from the first edge on (it
-        // powers on at 1 so that yosys keeps it a separate register)
-        if (clw3_armed && dut.cpu.k_clkena_lw3 !== dut.cpu.k_clkena_lw) begin
-            $display("FAIL k_clkena_lw3 %b, k_clkena_lw %b", dut.cpu.k_clkena_lw3, dut.cpu.k_clkena_lw);
-            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
-        end
-        clw3_armed = 1'b1;
-        // k_clkena_lw2 is an identical copy of k_clkena_lw (kernel change 4)
-        if (dut.cpu.k_clkena_lw2 !== dut.cpu.k_clkena_lw) begin
-            $display("FAIL k_clkena_lw2 %b, k_clkena_lw %b", dut.cpu.k_clkena_lw2, dut.cpu.k_clkena_lw);
+        // k_clkena_lw2/3/4 are copies of k_clkena_lw (kernel changes 4-6;
+        // step 16: each has its own output as a term of its input, which
+        // must never make it differ), checked on every clock from the first
+        if (dut.cpu.k_clkena_lw2 !== dut.cpu.k_clkena_lw || dut.cpu.k_clkena_lw3 !== dut.cpu.k_clkena_lw
+            || dut.cpu.k_clkena_lw4 !== dut.cpu.k_clkena_lw) begin
+            $display("FAIL clkena_lw copies %b %b %b, k_clkena_lw %b", dut.cpu.k_clkena_lw2, dut.cpu.k_clkena_lw3, dut.cpu.k_clkena_lw4, dut.cpu.k_clkena_lw);
             ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
         end
         // k_step is the adapter's copy of k_clkena: always equal

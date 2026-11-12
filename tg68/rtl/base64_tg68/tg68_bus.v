@@ -158,24 +158,26 @@ module tg68_bus #(
     // takes a LUT and a high-fanout hop off every clkena -> kernel path
     // (kernel change 2, see TG68KdotC_Kernel.vhd).
     reg         k_clkena_lw = 1'b0;
-    // kernel change 4 (step 12): a copy for the ALU and the kernel's
-    // data-in and address registers, so each drives about half of the
-    // loads. Step 14: stored INVERTED, with power-on value 1. As a plain
-    // copy, (* keep *) or not, yosys merged it into k_clkena_lw: every
-    // build had one register for all ~1150 loads (seen in the routed
-    // design, where k_clkena_lw2 did not exist). A flop with a different
-    // power-on value is not merged; inverted, it still means "off" at
-    // power-on, and the inversion is free (LUT inputs, CE polarity).
-    (* keep *) reg k_clkena_lw2_n = 1'b1;
-    wire        k_clkena_lw2 = !k_clkena_lw2_n;   // (for the test benches)
-    // kernel change 5: k_clkena_lw2_n goes to the kernel's low-active port
-    // (the inversion folds into the loads there; inverted out here it cost
-    // a LUT in front of every load), and a third copy, k_clkena_lw3, takes
-    // the kernel's EA_data/data_write process off k_clkena_lw. It powers on
-    // at 1 so yosys cannot merge it with k_clkena_lw (same function, a
-    // different power-on value); that first clock is harmless, see the
-    // kernel.
-    (* keep *) reg k_clkena_lw3 = 1'b1;
+    // Copies of k_clkena_lw, each for part of the kernel, so no one
+    // register drives all ~1150 loads (kernel changes 4, 5 and 6, see
+    // TG68KdotC_Kernel.vhd): copy 2 the ALU, data_read and the MEM_IO
+    // process; copy 3 the EA_data/data_write process; copy 4 the first
+    // clkena_lw block of the opcode/PC process (step 16).
+    // yosys merges registers it can prove identical, (* keep *) or not (it
+    // did with change 4's plain copy: every build had one register). Step
+    // 14 kept the copies apart by storing copy 2 inverted and powering copy
+    // 3 on at 1, but the inversion then cost a LUT in front of each of the
+    // ALU's ~130 loads (the kernel and the ALU are kept-hierarchy modules,
+    // so it could not fold). Step 16: each copy has its own output as a term
+    // of its input, k_clkena_lwN <= X && !k_clkena_lwN. The term is always
+    // true where it matters: a copy is high only in the clock right after a
+    // step edge, and steps are >= STEP clocks apart (in reset too), so a
+    // copy is never high on the edge of the next step. So every copy equals
+    // k_clkena_lw in every clock (both test benches assert it), all are
+    // active high with power-on value 0, and no two have the same input.
+    (* keep *) reg k_clkena_lw2 = 1'b0;
+    (* keep *) reg k_clkena_lw3 = 1'b0;
+    (* keep *) reg k_clkena_lw4 = 1'b0;
     wire        k_longword;
     reg         k_nreset = 1'b0;
     reg  [15:0] k_din    = 16'hFFFF;
@@ -244,9 +246,10 @@ module tg68_bus #(
         .nreset     (k_nreset),
         .clkena_in  (k_clkena),
         .clkena_lw_in (k_clkena_lw),
-        .clkena_lw2_in (k_clkena_lw2),   // (unused with CLKLW=3)
-        .clkena_lw2n_in (k_clkena_lw2_n),
+        .clkena_lw2_in (k_clkena_lw2),
+        .clkena_lw2n_in (1'b1),          // (unused with CLKLW=4)
         .clkena_lw3_in (k_clkena_lw3),
+        .clkena_lw4_in (k_clkena_lw4),
         .data_in    (k_dat),
         .data_in_hi (k_din_hmux),
         .long_ack   (k_long_ack),
@@ -471,6 +474,13 @@ module tg68_bus #(
     reg  [IC_AW-1:0] dc_wa;
     reg  [15:0]      dc_wd;
     reg  [TAGW-1:0]  dc_wt;
+    // step 16: the data cache reads the kernel's address only. ic_ra, with
+    // the fetch predictor's multiplexer, feeds the instruction cache: the
+    // predictor never reads the data cache, and the data cache's output is
+    // used only from the read on the edge into DECIDE, when ic_ra is the
+    // kernel's address anyway. (Through ic_ra, fp_rsel_n reached the data
+    // cache RAMs' read/write collision logic and missed 1T on a seed.)
+    wire [IC_AW-2:0] dc_ra = k_addr[IC_AW:2];
     generate if (DCACHE != 0) begin : g_dcache
         (* ram_style = "block" *) reg [15:0]     dc_data_e [0:IC_NB-1];
         (* ram_style = "block" *) reg [15:0]     dc_data_o [0:IC_NB-1];
@@ -484,8 +494,8 @@ module tg68_bus #(
             dc_tag_e[i]  = {TAGW{1'b0}}; dc_tag_o[i] = {TAGW{1'b0}};
         end
         always @(posedge clk) begin
-            dq_e <= dc_data_e[ic_ra]; dq_o <= dc_data_o[ic_ra];
-            tq_e <= dc_tag_e[ic_ra];  tq_o <= dc_tag_o[ic_ra];
+            dq_e <= dc_data_e[dc_ra]; dq_o <= dc_data_o[dc_ra];
+            tq_e <= dc_tag_e[dc_ra];  tq_o <= dc_tag_o[dc_ra];
             if (dc_we && !dc_wa[0]) begin
                 dc_data_e[dc_wa[IC_AW-1:1]] <= dc_wd;
                 dc_tag_e[dc_wa[IC_AW-1:1]]  <= dc_wt;
@@ -628,7 +638,7 @@ module tg68_bus #(
     // (tb-asserted: fp_ac never changes on the edge into a clock with fp_v
     // set). fp_a itself feeds the RAM address a clock after it loads (a
     // predicted fetch steps on the loading edge). The copies have different
-    // power-on values so that yosys keeps them apart (see k_clkena_lw2_n).
+    // power-on values so that yosys keeps them apart (see k_clkena_lw2).
     // Sim-only check: fp_chk_bad (below).
     reg  [TAGW-1:0] fp_tq;
     reg         fp_s1 = 1'b0, fp_s2 = 1'b0;   // k_step, one and two clocks on
@@ -799,7 +809,7 @@ module tg68_bus #(
     always @(posedge clk) begin
         k_clkena <= 1'b0;
         k_step   <= 1'b0;
-        k_clkena_lw <= 1'b0; k_clkena_lw2_n <= 1'b1; k_clkena_lw3 <= 1'b0;
+        k_clkena_lw <= 1'b0; k_clkena_lw2 <= 1'b0; k_clkena_lw3 <= 1'b0; k_clkena_lw4 <= 1'b0;
         fp_rsel_n <= 1'b1;
         ic_we    <= 1'b0;
         dc_we    <= 1'b0;
@@ -898,7 +908,10 @@ module tg68_bus #(
             if (cnt >= STEP - 1) begin
                 k_clkena <= 1'b1;
                 k_step   <= 1'b1; fp_rsel_n <= 1'b0;
-                k_clkena_lw <= !k_longword || k_long_ack; k_clkena_lw2_n <= !(!k_longword || k_long_ack); k_clkena_lw3 <= !k_longword || k_long_ack;
+                k_clkena_lw <= !k_longword || k_long_ack;
+                k_clkena_lw2 <= (!k_longword || k_long_ack) && !k_clkena_lw2;
+                k_clkena_lw3 <= (!k_longword || k_long_ack) && !k_clkena_lw3;
+                k_clkena_lw4 <= (!k_longword || k_long_ack) && !k_clkena_lw4;
                 cnt      <= 6'd0;
             end
         end else begin
@@ -1381,7 +1394,10 @@ module tg68_bus #(
         begin
             k_clkena <= 1'b1;
             k_step   <= 1'b1; fp_rsel_n <= 1'b0;
-            k_clkena_lw <= !k_longword || k_long_ack; k_clkena_lw2_n <= !(!k_longword || k_long_ack); k_clkena_lw3 <= !k_longword || k_long_ack;
+            k_clkena_lw <= !k_longword || k_long_ack;
+                k_clkena_lw2 <= (!k_longword || k_long_ack) && !k_clkena_lw2;
+                k_clkena_lw3 <= (!k_longword || k_long_ack) && !k_clkena_lw3;
+                k_clkena_lw4 <= (!k_longword || k_long_ack) && !k_clkena_lw4;
             cnt      <= 6'd0;
             k_berr   <= 1'b0;     // the kernel samples the old value here
             q        <= Q_SETTLE;
