@@ -597,8 +597,7 @@ module tg68_bus #(
     // step. So after every kernel step the instruction cache is read at the
     // predicted next fetch address fp_a (the last fetch + 1 word, + 2 after
     // a pair), from the adapter's own registers:
-    //   DECIDE         fp_a <= this fetch's address + 1 word (+ 2 if the
-    //                  kernel offers a pair), on every DECIDE clock of a
+    //   DECIDE         fp_a <= this fetch's address + 1 word, on every DECIDE clock of a
     //                  fetch, whatever DECIDE decides: its enable is dec_r
     //                  and the kernel's bus state, not the step decision
     //                  (as fp_a's enable that decision missed 1T by 1.4 ns)
@@ -617,8 +616,11 @@ module tg68_bus #(
     // invalidate, the flush sweep) drops the prediction: fp_kill from the
     // read on, fp_v after. The flush also turns ic_on off at once.
     // Anything else DECIDE does with a bus or data cycle drops fp_v and the
-    // select; the next step reads the same fp_a again. A fetch the kernel
-    // offers as a pair is left to the normal lookup (2 words in 5 clocks).
+    // select; the next step reads the same fp_a again. A predicted fetch is
+    // always a single word, also when the kernel offers a pair (step 15b:
+    // the pair test, on the kernel's latest output long_cand, sat in front
+    // of every register DECIDE loads); pairs still come from the normal
+    // lookup when there is no prediction.
     // fp_ac is a second copy of fp_a for the address compare in fp_hit
     // alone. fp_v is cleared on the edge the two load and is set again no
     // sooner than 3 clocks later (E3 of the next step), so fp_ac has two
@@ -632,7 +634,6 @@ module tg68_bus #(
     reg         fp_s1 = 1'b0, fp_s2 = 1'b0;   // k_step, one and two clocks on
     reg         fp_v = 1'b0, fp_kill = 1'b0;
     wire        fp_bad  = ic_we && (ic_wa == fp_a[IC_AW:1]);
-    wire        k_pcand = (DP32_ACK != 0) && k_long_cand && !k_addr[1];
     (* keep *) reg [31:1] fp_ac = 31'h7FFFFFFF;
     // fp_hit0: the fetch is the predicted one. A new cycle of any kind
     // also needs the bus free (HALT holds fetches as before); DECIDE tests
@@ -640,7 +641,7 @@ module tg68_bus #(
     // registers enter the decision once (through fp_hit and again through
     // "not fp_hit" they missed 1T by 0.4-0.9 ns on four seeds of five).
     wire        fp_hit0 = (FPRED != 0) && fp_v && ic_on && (k_bs == 2'b00) && !k_skip
-                          && (k_addr[31:1] == fp_ac) && !k_pcand;
+                          && (k_addr[31:1] == fp_ac);
     wire        fp_hit  = fp_hit0 && BGn && BGACKn && BRn && HALTn;
 
     // ------------------------------------------------------------------
@@ -863,8 +864,8 @@ module tg68_bus #(
         // the next fetch address, from every DECIDE clock of a fetch (the
         // kernel's outputs are final there); fp_v goes with it
         if (dec_r && k_bs == 2'b00 && !k_skip) begin
-            fp_a  <= k_addr[31:1] + (k_pcand ? 31'd2 : 31'd1);
-            fp_ac <= k_addr[31:1] + (k_pcand ? 31'd2 : 31'd1);
+            fp_a  <= k_addr[31:1] + 31'd1;
+            fp_ac <= k_addr[31:1] + 31'd1;
             fp_v  <= 1'b0;
         end
 

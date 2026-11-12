@@ -489,8 +489,9 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   gets exactly the word a normal lookup would give; a write to that entry
   between the read and the step (code that overwrites the next
   instruction, a cache fill, a flush) drops the prediction and the fetch
-  goes the normal way. A fetch the kernel offers as a 32-bit pair still
-  goes the normal way too (two words in 5 clocks). It only works from the
+  goes the normal way. A predicted fetch is always one word, also when
+  the kernel offers a 32-bit pair (step 15b; a pair still comes from the
+  normal lookup, two words in 5 clocks, when there is no prediction). It only works from the
   instruction cache: with the caches off, and for code not yet cached,
   nothing changes.
   Measured in simulation with a compiled C workload (`sim/bench_c.c`:
