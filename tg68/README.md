@@ -581,7 +581,9 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   The 14x and 16x speeds are made from the board's 12x clock, so **the
   ICS570B must be strapped for x12** (stock). On a board modded for x16,
   use the `_x16` files as before: they have a fixed clock and `speed`
-  says so.
+  says so. Step 14b is the last step with `_x16` files; from then on
+  there is one bitstream for every speed, so put the ICS570B back to x12
+  and use `speed 16`.
   16x is overclocked exactly as the `_x16` build is (see *16x clock*); 14x
   less so. Test: the `fastmem` sim switches to 16x, to 14x and back to
   12x, with memory traffic (pair writes and reads of fast RAM, a Chip RAM
@@ -669,7 +671,8 @@ either way.
 
 ## 16x clock (board mod, optional)
 
-From step 10 every release has `_x16` files as well as the normal ones.
+Steps 10 to 14b have `_x16` files as well as the normal ones (later steps
+do not: the normal bitstream runs at 16x with `speed 16`, no board mod).
 They are for a Base64 whose clock multiplier has been rewired from x12 to
 x16, and are overclocked (see below). On Glen's board a jumper on the
 ICS570B's pin 6 (grounded or not) switches between x12 and x16; flash the

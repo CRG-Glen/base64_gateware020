@@ -97,13 +97,17 @@ that gives the "_fast" files.
 5. Changes to rtl/base64_fx68k files are marked `TG68:` with the reason.
 6. Update README.md (status, table, feature text, timing table) along with
    the code.
-7. **Keep both clocks working (Glen's decision after the 16x test).** The
-   16x build needs a board mod (ICS570B rewired to x16), so every change
-   must work in both the 12x and 16x (`TG68_X16`) builds. Run the sims at
-   both (`VLFLAGS=-DTG68_X16` for 16x), sign off 12x with check_timing as
-   usual, score the 16x build at 113.6 MHz (worst delay/budget ratio; it
-   cannot pass the worst-case model), and give Glen test bitstreams for
-   both. Anything clock-dependent goes under `ifdef TG68_X16`.
+7. **One build, every speed (Glen's decision after step 14b).** The 12x
+   build switches to 14x and 16x at run time (`speed`), so the `--x16`
+   board-mod build is no longer built, simulated or shipped. Its
+   `ifdef TG68_X16` code stays in the tree, frozen at step 14b, so older
+   steps can still be rebuilt; new code need not support it. Anything
+   clock-dependent goes into the run-time speed settings (`spd` and the
+   registers loaded from it), not an ifdef. The normal sims already switch
+   to 14x and 16x and back. Sign off 12x with check_timing as usual, and
+   score the same build at 14x (99.32 MHz) and 16x (113.51 MHz) by the
+   worst delay/budget ratio (`timing_full_at14x.txt`,
+   `timing_full_at16x.txt`; they cannot pass the worst-case model).
 
 ## Working in Claude Code
 
