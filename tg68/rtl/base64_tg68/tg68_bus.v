@@ -1011,9 +1011,10 @@ module tg68_bus #(
                     dp_spec  <= 1'b0;
                     // step 15: a bus or data cycle may hand the kernel k_din:
                     // the predictor's select goes here, >= 2 clocks before
-                    // its step; the step after it reads the prediction again (a write that steps on this edge keeps it:
-                    // nothing may change in the clock before a step, and a
-                    // write takes no data)
+                    // its step; the step after it reads the prediction
+                    // again. (A WR4 write that steps on this edge keeps the
+                    // select: nothing may change in the clock before a
+                    // step, and a write takes no data.)
                     if (!((WR4 != 0) && !k_look && k_fast && !k_nwr && !k_wpair && cnt_ok))
                         k_din_psel <= 1'b0;
                     // The cache RAMs read on this edge used k_addr already.
