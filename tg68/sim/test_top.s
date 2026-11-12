@@ -211,6 +211,10 @@ cpsmc:  move.l  (%a0)+,(%a1)+
         bsr     smcrun
         lea     0x08007000+(smc2-smc0),%a2
         bsr     smcrun
+        | the same with a longword store (a pair write): its second word
+        | is the instruction; d5's high word is the nop before it
+        lea     0x08007000+(smc3-smc0),%a2
+        bsr     smcrun
         | a pair whose second word is NOT cached must not be taken as a pair
         move.l  #0x31323334,0x08000D00  | both words cached
         move.b  #0x99,0x08000D03    | byte write: the second word's entry is dropped
@@ -404,10 +408,10 @@ spdchk: moveq   #0,%d4
         .endif
         .ifdef FASTMEM
 | step 15: run the routine at a2 as described above; results to (a3)+
-smcrun: move.w  #0x7805,%d5         | moveq #5,%d4: no change
+smcrun: move.l  #0x4E717805,%d5     | (nop,) moveq #5,%d4: no change
         jsr     (%a2)
         jsr     (%a2)
-        move.w  #0x7802,%d5         | moveq #2,%d4
+        move.l  #0x4E717802,%d5     | (nop,) moveq #2,%d4
         jsr     (%a2)
         move.l  %d4,(%a3)+          | 2 or 5
         jsr     (%a2)
@@ -433,6 +437,13 @@ smc2:   lea     1f(%pc),%a0
         nop
         nop
 1:      moveq   #5,%d4
+        rts
+        .balign 4
+smc3:   lea     1f(%pc),%a0         | +0  (1f = +8, long-aligned)
+        moveq   #0,%d4              | +4
+        move.l  %d5,(%a0)           | +6  pair write to +8/+10
+1:      nop                         | +8
+        moveq   #5,%d4              | +10
         rts
         .balign 4
 smcend: nop

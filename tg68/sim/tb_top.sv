@@ -658,6 +658,8 @@ module tb;
         check(24'h821C, 32'h00000002, "smc +1: the run after");
         check(24'h8220, 32'h00000002, "smc +2: the storing run");
         check(24'h8224, 32'h00000002, "smc +2: the run after");
+        check(24'h8228, 32'h00000002, "smc pair: the storing run");
+        check(24'h822C, 32'h00000002, "smc pair: the run after");
         if (dut.ph_slip) begin $display("FAIL: the 7M aligner slipped"); errors = errors + 1; end
         if (!dut.ph_locked) begin $display("FAIL: the 7M aligner is not locked"); errors = errors + 1; end
         $display("clock switches: %0d; SDRAM mode loads: %0d", n_switch, u_sdram.n_mrs);
