@@ -1,6 +1,6 @@
 # Tooling: build.py keeps every seed and runs seeds in parallel
 
-Status: **done** (branch `tooling-build-seeds`). Ready to build: was. Branch: `tooling-build-seeds`, from
+Status: **done** (branch `tooling-build-seeds`). Branch: `tooling-build-seeds`, from
 `step15-fetch-predictor`. No RTL change, no hardware risk.
 
 ## Goal
