@@ -34,7 +34,9 @@ hardware results, the timing picture after step 15b, Glen's direction
    see its log). Waiting for Glen's test. Get step 15's
    kernel -> logic margin back and more seeds passing, with no change in
    behaviour. Three small changes, measured one at a time.
-3. **`step16-clkena-copies.md`** (ready to build). Timing margin only, no
+3. ~~`step16-clkena-copies.md`~~ **built, not shipped**: no seed passes
+   (15b: 5 of 18). Findings in its log, for the planner. Step 15b stays
+   current. Was: Timing margin only, no
    change in behaviour: the kernel's clock-enable copies become active
    high (no inverter in front of the ALU), a fourth copy takes half of
    the busiest one's loads, and the data cache stops sharing the

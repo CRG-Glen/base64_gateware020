@@ -1,6 +1,6 @@
 # Step 16: clock-enable copies without the inverter, a fourth copy, and the data cache's own read address
 
-Status: ready to build. Branch: `step16-clkena-copies`, from
+Status: **built, not shipped: stopped** (fallback 3, no seed passes). See the log. Step 15b stays the current build. Branch: `step16-clkena-copies`, from
 `step15b-predictor-timing`. **No change in behaviour**: every bench clock
 count and every sim output line stays as in step 15b. The gain is timing
 margin only (Glen's priority: margin over speed).
@@ -258,3 +258,50 @@ build A alone (revert B) on seeds 1-9 to see which change did it.
   | 7 | -1.65 / -2.16 | 16 | -2.70 / -2.79 |
   | 8 | -2.32 / +0.47 | 17 | -1.10 / -0.98 |
   | 9 | -3.14 / -1.92 | 18 | -2.17 / -3.38 |
+
+- Worse than the baseline, so A alone (B reverted in the worktree only)
+  on seeds 1-9: **0 pass** as well. Loads as above (lw 52, lw2 125, lw3
+  7, lw4 147). Per seed, worst 1T / multicycle, then clkena -> kernel,
+  kernel -> logic, adapter ctrl -> logic slacks:
+
+  | Seed | 1T / multi | clkena | kernel -> logic | adapter ctrl |
+  | --- | --- | --- | --- | --- |
+  | 1 | -1.04 / +1.82 | +0.48 | +1.82 | -0.25 |
+  | 2 | -1.08 / -0.32 | -0.71 | -0.32 | -1.08 |
+  | 3 | -2.11 / +2.38 | -2.11 | +2.38 | -1.32 |
+  | 4 | -1.64 / -2.49 | -1.64 | -1.13 | -0.02 |
+  | 5 | -0.77 / +1.19 | +1.16 | +1.19 | -0.77 |
+  | 6 | -0.30 / -0.21 | -0.30 | +0.44 | +0.22 |
+  | 7 | -1.13 / +1.67 | -1.13 | +1.67 | -0.42 |
+  | 8 | -0.71 / +1.90 | +1.86 | +3.50 | -0.71 |
+  | 9 | -0.31 / +2.60 | +0.30 | +2.60 | -0.31 |
+
+## Findings (build model; for the planner)
+
+1. **Neither change is a gain as built.** 15b: 5 of 18 pass. A+B: 0 of
+   18. A alone: 0 of 9.
+2. **A (active-high copies + copy 4, rebalanced)** removes the ALU
+   inverter (verified: no `alu_clkena_lw` LUTs; copy 2 drives 115
+   enables directly) and cuts the busiest copy from 199 to 149 loads,
+   but clkena -> kernel is no better (negative on 5 of 9, to -2.11; 15b
+   on seeds 1-9: 5 of 9, to -0.82) and adapter ctrl -> logic is worse
+   (negative on 7 of 9, to -1.32). The rebalancing overshot: copy 4 has
+   147 loads, `k_clkena_lw` 52. The plan allowed one rebalancing; a
+   split nearer 100 / 100 (the exec block on its own copy, or only part
+   of it) was not tried.
+3. **B (`dc_ra`) is what wrecks kernel -> logic.** With B, kernel ->
+   logic is negative on 12 of 18 seeds, to -4.61 ns; without it (A
+   alone) on 2 of 9, to -1.13. The failing paths run `regfile ->
+   addr_out -> longword -> cnt` and `addr_out -> k_clkena_lw*`: the
+   kernel's address. A likely reason (not proven): B gives the data
+   cache's RAMs the kernel's address directly, so `k_addr[12:2]` now
+   drives a second set of RAM address pins (before, one multiplexer
+   output drove both caches), adding load and distance to the kernel's
+   address net, which feeds the step decision. B fixed its own target
+   (no `fp_rsel_n` -> data cache path in the reports) at that price.
+   Do not repeat B in this form.
+4. With B, clkena -> kernel nearly met its aim (3 of 18 negative, worst
+   -0.71 ns): the copies may have helped there, with placement moved by
+   B. With 0 passes this cannot be separated from placement noise.
+5. Step 16's commits stay on the branch for the record. Nothing was
+   packaged. The source on `step16-clkena-copies` is A+B.

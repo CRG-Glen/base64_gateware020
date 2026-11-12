@@ -210,7 +210,8 @@ flatten. nextpnr: `--placer static --router router2`.
 - Branches stack: `step13-pll-speed` -> `step14-timing-headroom` ->
   `step15-fetch-predictor` -> `tooling-build-seeds` ->
   `step15b-predictor-timing` (runs on hardware; SysInfo 3.4% below 15,
-  open). New work starts from the newest one.
+  open). `step16-clkena-copies` was built and dropped (0 seeds pass; its
+  plan log has why). New work starts from `step15b-predictor-timing`.
 
 ## Licensing (unresolved; check before publishing anything new)
 
