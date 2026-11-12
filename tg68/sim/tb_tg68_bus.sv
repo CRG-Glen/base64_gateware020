@@ -16,7 +16,7 @@ module tb;
     reg  [2:0]  ipl_n = 3'b111;
 
     tg68_bus dut (
-        .clk(clk), .enPhi1(1'b0), .enPhi2(1'b0), .HALTn(1'b1),
+        .clk(clk), .clk_k(clk), .enPhi1(1'b0), .enPhi2(1'b0), .HALTn(1'b1),
         .extReset(ext_reset), .pwrUp(1'b0), .cyc_idle(),
         .oRESETn(oRESETn), .oHALTEDn(oHALTEDn), .E(), .VPAn(1'b1), .VMAn(),
         .ASn(ASn), .eRWn(eRWn), .LDSn(LDSn), .UDSn(UDSn),

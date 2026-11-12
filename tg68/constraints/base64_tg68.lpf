@@ -332,3 +332,8 @@ IOBUF PORT "led_b" IO_TYPE=LVCMOS33;
 ## DO NOT add one from rAbd_t2. enT2 -> enT3 is adjacent phase slots,
 ## one master clock, genuinely single-cycle.
 FREQUENCY PORT "clk_12x" 86.0 MHz;
+# EXPERIMENT (kernel clock buffer): the design's clock after the speed mux,
+# and the kernel's own buffer of the same clock at its real rate, one step
+# per STEP = 4 clocks
+FREQUENCY NET "clk" 86.0 MHz;
+FREQUENCY NET "clk_k" 21.5 MHz;

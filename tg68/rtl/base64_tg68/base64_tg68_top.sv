@@ -298,13 +298,14 @@ module base64_tg68_top #(
     wire       pll_lock14, pll_lock16;
     wire [1:0] clk_cur;
     wire       clk;
+    wire       clk_k;      // EXPERIMENT: the kernel's own clock buffer (same clock)
     clkgen #(
 `ifdef TG68_X16
         .ENABLE(0)
 `else
         .ENABLE(1)
 `endif
-    ) u_clkgen (.clk_in(clk_12x), .sel(clk_sel), .clk(clk),
+    ) u_clkgen (.clk_in(clk_12x), .sel(clk_sel), .clk(clk), .clk_k(clk_k),
                 .lock14(pll_lock14), .lock16(pll_lock16), .cur(clk_cur));
 
     // Master clocks per emulated CPU clock period, and the phi2 offset.
@@ -1011,6 +1012,7 @@ module base64_tg68_top #(
     tg68_bus #(.STEP(TG_STEP), .SETTLE(TG_SETTLE), .DIN_SETUP(TG_DIN),
                .ADDR_SETUP(TG_ASU)) cpu (
         .clk      (clk),
+        .clk_k    (clk_k),
         .enPhi1   (en_phi1),
         .enPhi2   (en_phi2),
         .HALTn    (tg_halt_n),

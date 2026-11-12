@@ -71,6 +71,7 @@ module tg68_bus #(
     parameter integer BARREL     = 0   // documentation only: which netlist
 )(
     input  wire        clk,
+    input  wire        clk_k,      // EXPERIMENT: the same clock, the kernel's own buffer
     input  wire        enPhi1,     // unused, kept for drop-in compatibility
     input  wire        enPhi2,     // unused
     input  wire        HALTn,      // external HALT: holds off new cycles
@@ -222,7 +223,11 @@ module tg68_bus #(
                                    // (EI also enables the data cache)
 
     tg68_020 core (
+`ifdef YOSYS
+        .clk        (clk_k),
+`else
         .clk        (clk),
+`endif
         .nreset     (k_nreset),
         .clkena_in  (k_clkena),
         .clkena_lw_in (k_clkena_lw),

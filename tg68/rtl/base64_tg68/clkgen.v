@@ -28,12 +28,17 @@ module clkgen #(
     input  wire       clk_in,     // 12x from the ICS570B (pin L1)
     input  wire [1:0] sel,        // 0 12x, 1 14x, 2 16x
     output wire       clk,        // the system clock
+    // EXPERIMENT (kernel clock buffer): the same clock on a second global
+    // buffer, for the TG68 kernel only, so nextpnr can be given the
+    // kernel's real budget (STEP clocks) on its own clock net
+    output wire       clk_k,
     output wire       lock14,
     output wire       lock16,
     output wire [1:0] cur         // the source running now (0 1 2)
 );
 generate if (ENABLE == 0) begin : g_fixed
     assign clk = clk_in;
+    assign clk_k = clk_in;
     assign lock14 = 1'b0;
     assign lock16 = 1'b0;
     assign cur = 2'd0;
@@ -86,6 +91,7 @@ end else begin : g_pll
     assign cur = e16 ? 2'd2 : e14 ? 2'd1 : 2'd0;
 `ifdef YOSYS
     DCCA u_gbuf (.CLKI(mux), .CE(1'b1), .CLKO(clk));
+    (* keep *) DCCA u_gbuf_k (.CLKI(mux), .CE(1'b1), .CLKO(clk_k));
 `elsif CAL_DRIFT
     // sim (tb_top.sv CAL_DRIFT): no delay at first, then 0.25 ns from
     // 300 us on, which moves the rising-edge 7M sample into the tb's
@@ -107,6 +113,9 @@ end else begin : g_pll
     assign clk = clk_d;
 `else
     assign clk = mux;
+`endif
+`ifndef YOSYS
+    assign clk_k = clk;
 `endif
 end endgenerate
 endmodule
