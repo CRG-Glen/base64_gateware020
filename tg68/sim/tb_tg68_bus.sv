@@ -55,7 +55,7 @@ module tb;
     // just before the kernel samples (the clkena clock).
     reg clw3_armed = 1'b0;   // kernel change 5 check (below)
     integer ks_cyc = 0, ks_chg = -10, ks_bad = 0; reg ks_la = 0, ks_ds = 0, ks_hs = 0, ks_dd = 0;
-    reg ks_ps = 0; reg [15:0] ks_fp = 0; integer ks_fchg = -10; reg fpp = 0; integer fp_chk = 0;   // step 15: fetch predictor
+    reg [31:1] ks_fac = 0; reg ks_ps = 0; reg [15:0] ks_fp = 0; integer ks_fchg = -10; reg fpp = 0; integer fp_chk = 0;   // step 15: fetch predictor
     integer rd_pairs = 0;                // pair reads from the SDRAM (step 9)
     integer n_clw = 0;                   // steps with clkena_lw (kernel change 2)
     always @(posedge clk) begin
@@ -73,6 +73,13 @@ module tb;
             end
             chk_word(dut.k_addr[31:1], dut.k_dat);
         end
+        // fp_ac (the compare copy of the predicted address) is classed a
+        // 2-clock source: it must never have just changed while fp_v is set
+        if (dut.fp_ac !== ks_fac && dut.fp_v) begin
+            $display("FAIL fp_ac changed on the edge into a clock with fp_v set");
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
+        ks_fac = dut.fp_ac;
         fpp = (dut.q == 4'd1) && !dut.internal_step && dut.fp_hit && !dut.extReset;
         ks_la = dut.k_long_ack; ks_ds = dut.k_din_sel; ks_hs = dut.k_din_hsel; ks_dd = dut.k_din_dsel;
         // The kernel's l1 <= long_ack (Base64 change, was long_ack AND cand)

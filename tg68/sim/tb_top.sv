@@ -163,7 +163,7 @@ module tb;
     // just before the kernel samples (the clkena clock).
     reg clw3_armed = 1'b0;   // kernel change 5 check (below)
     integer ks_cyc = 0, ks_chg = -10, ks_bad = 0; reg ks_la = 0, ks_ds = 0, ks_hs = 0, ks_dd = 0;
-    reg ks_ps = 0; reg [15:0] ks_fp = 0; integer ks_fchg = -10; reg fpp = 0; integer fp_chk = 0;   // step 15: fetch predictor
+    reg [31:1] ks_fac = 0; reg ks_ps = 0; reg [15:0] ks_fp = 0; integer ks_fchg = -10; reg fpp = 0; integer fp_chk = 0;   // step 15: fetch predictor
     integer rd_pairs = 0;                // pair reads from the SDRAM (step 9)
     integer n_clw = 0;                   // steps with clkena_lw (kernel change 2)
     always @(posedge dut.clk) begin
@@ -173,6 +173,10 @@ module tb;
         // samples it, and equal to what the CPU last wrote there
         if (dut.cpu.k_din_fp !== ks_fp) ks_fchg = ks_cyc;
         ks_ps = dut.cpu.k_din_psel; ks_fp = dut.cpu.k_din_fp;
+        if (fpp && !dut.cpu.k_clkena) begin
+            $display("FAIL predicted fetch in DECIDE not followed by a kernel step");
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
         if (dut.cpu.k_clkena && fpp) begin
             fp_chk = fp_chk + 1;
             if (ks_cyc - ks_fchg < 2 || dut.cpu.k_dat !== dut.cpu.k_din_fp) begin
@@ -182,6 +186,13 @@ module tb;
             chk_word(dut.cpu.k_addr[31:1], dut.cpu.k_dat);
             if (dut.cpu.k_addr[31:1] >= 31'h4000 && dut.cpu.k_addr[31:1] < 31'h5000) chip_ihit = chip_ihit + 1;
         end
+        // fp_ac (the compare copy of the predicted address) is classed a
+        // 2-clock source: it must never have just changed while fp_v is set
+        if (dut.cpu.fp_ac !== ks_fac && dut.cpu.fp_v) begin
+            $display("FAIL fp_ac changed on the edge into a clock with fp_v set");
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
+        ks_fac = dut.cpu.fp_ac;
         fpp = (dut.cpu.q == 4'd1) && !dut.cpu.internal_step && dut.cpu.fp_hit && !dut.cpu.extReset;
         ks_la = dut.cpu.k_long_ack; ks_ds = dut.cpu.k_din_sel; ks_hs = dut.cpu.k_din_hsel; ks_dd = dut.cpu.k_din_dsel;
         // The kernel's l1 <= long_ack (Base64 change, was long_ack AND cand)
@@ -631,6 +642,17 @@ module tb;
         check(24'h81E4, 32'hACF1E135, "speed: memory traffic at 14x");
         check(24'h81EC, 32'hACF1E135, "speed: memory traffic at 12x");
         check(24'h81FC, 32'hACF1E135, "speed: memory traffic after a recalibration");
+        // step 15: code that overwrites the instruction 0, 1 or 2 words
+        // after the store (test_top.s smc0-2). The storing run's result
+        // is what the kernel's own prefetch gives (the same with the
+        // predictor off, VLFLAGS=-DS15_DEFAULT=0); the run after it must
+        // see the new instruction.
+        check(24'h8210, 32'h00000005, "smc +0: the storing run");
+        check(24'h8214, 32'h00000002, "smc +0: the run after");
+        check(24'h8218, 32'h00000002, "smc +1: the storing run");
+        check(24'h821C, 32'h00000002, "smc +1: the run after");
+        check(24'h8220, 32'h00000002, "smc +2: the storing run");
+        check(24'h8224, 32'h00000002, "smc +2: the run after");
         if (dut.ph_slip) begin $display("FAIL: the 7M aligner slipped"); errors = errors + 1; end
         if (!dut.ph_locked) begin $display("FAIL: the 7M aligner is not locked"); errors = errors + 1; end
         $display("clock switches: %0d; SDRAM mode loads: %0d", n_switch, u_sdram.n_mrs);

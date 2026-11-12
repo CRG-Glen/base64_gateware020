@@ -191,6 +191,26 @@ cp32:   move.l  (%a0)+,(%a1)+
         jsr     0x08000E00          | fills the instruction cache
         jsr     0x08000E00          | from the caches: imm32, abs.L and the long read as pairs
         move.l  %d6,0x8194          | 8194 0x89ABCDEF + 0x01010101 = 0x8AACCEF0
+        | -- fetch predictor (step 15): code that overwrites an instruction
+        | just ahead of itself. smc0/1/2 store d5 over a moveq 0, 1 or 2
+        | words after the store. Each is run twice unchanged (5, from the
+        | cache and the predictor), then with moveq #2: that run gives 2 or 5
+        | (the CPU may have fetched the old word already, as on a real
+        | 68020; the tb expects what the unpredicted design does), and the
+        | run after it must give 2: nothing may come from a stale cache
+        | entry or a stale prediction.
+        lea     smc0,%a0
+        movea.l #0x08007000,%a1
+        moveq   #(smcend-smc0)/4,%d0
+cpsmc:  move.l  (%a0)+,(%a1)+
+        dbra    %d0,cpsmc
+        lea     0x8210,%a3
+        lea     0x08007000,%a2
+        bsr     smcrun
+        lea     0x08007000+(smc1-smc0),%a2
+        bsr     smcrun
+        lea     0x08007000+(smc2-smc0),%a2
+        bsr     smcrun
         | a pair whose second word is NOT cached must not be taken as a pair
         move.l  #0x31323334,0x08000D00  | both words cached
         move.b  #0x99,0x08000D03    | byte write: the second word's entry is dropped
@@ -381,6 +401,41 @@ spdchk: moveq   #0,%d4
         moveq   #1,%d4
         movec   %d4,%cacr
         rts
+        .endif
+        .ifdef FASTMEM
+| step 15: run the routine at a2 as described above; results to (a3)+
+smcrun: move.w  #0x7805,%d5         | moveq #5,%d4: no change
+        jsr     (%a2)
+        jsr     (%a2)
+        move.w  #0x7802,%d5         | moveq #2,%d4
+        jsr     (%a2)
+        move.l  %d4,(%a3)+          | 2 or 5
+        jsr     (%a2)
+        move.l  %d4,(%a3)+          | 2
+        rts
+        .balign 4
+smc0:   lea     1f(%pc),%a0
+        moveq   #0,%d4
+        move.w  %d5,(%a0)
+1:      moveq   #5,%d4
+        rts
+        .balign 4
+smc1:   lea     1f(%pc),%a0
+        moveq   #0,%d4
+        move.w  %d5,(%a0)
+        nop
+1:      moveq   #5,%d4
+        rts
+        .balign 4
+smc2:   lea     1f(%pc),%a0
+        moveq   #0,%d4
+        move.w  %d5,(%a0)
+        nop
+        nop
+1:      moveq   #5,%d4
+        rts
+        .balign 4
+smcend: nop
         .endif
 chipfn: moveq   #1,%d4              | step 11 test routine, copied to $9800
         rts

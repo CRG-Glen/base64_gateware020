@@ -40,6 +40,11 @@
 // AS-high time between cycles is always >= DIN_SETUP+SETTLE+ADDR_SETUP.
 // ============================================================================
 `default_nettype none
+// step 15 switches' default (sim: VLFLAGS=-DS15_DEFAULT=0 runs the adapter as
+// it was in step 14, for reference results)
+`ifndef S15_DEFAULT
+`define S15_DEFAULT 1
+`endif
 
 module tg68_bus #(
     parameter integer STEP       = 4,  // min clocks between clkena pulses
@@ -69,8 +74,8 @@ module tg68_bus #(
     parameter integer CACR_CLR   = 1,  // CACR CI/CEI flush both caches
     parameter integer RD11       = 1,  // pair prefetch + one-clock-shorter direct read
     // Step 15 switches (1 = on; 0 = as step 14):
-    parameter integer FPRED      = 1,  // FETCH PREDICTOR: a sequential fetch hit in 4 clocks
-    parameter integer WR4        = 1,  // a posted word/byte write steps at DECIDE (4 clocks)
+    parameter integer FPRED      = `S15_DEFAULT,  // FETCH PREDICTOR: a sequential fetch hit in 4 clocks
+    parameter integer WR4        = `S15_DEFAULT,  // a posted word/byte write steps at DECIDE (4 clocks)
     parameter integer BARREL     = 0   // documentation only: which netlist
 )(
     input  wire        clk,
@@ -586,7 +591,12 @@ module tg68_bus #(
     // step. So after every kernel step the instruction cache is read at the
     // predicted next fetch address fp_a (the last fetch + 1 word, + 2 after
     // a pair), from the adapter's own registers:
-    //   step edge E0   fp_a loaded (a fetch step) or kept (any other step)
+    //   DECIDE         fp_a <= this fetch's address + 1 word (+ 2 if the
+    //                  kernel offers a pair), on every DECIDE clock of a
+    //                  fetch, whatever DECIDE decides: its enable is dec_r
+    //                  and the kernel's bus state, not the step decision
+    //                  (as fp_a's enable that decision missed 1T by 1.4 ns)
+    //   step edge E0   (fp_a is at least a clock old, or loads on this edge)
     //   E1             the RAMs read fp_a's row (k_step is high: ic_ra)
     //   E2             word -> k_din_fp, tag -> fp_tq, k_din_psel set
     //   E3             fp_v <= the tag matches (and no write to that entry)
@@ -603,14 +613,23 @@ module tg68_bus #(
     // Anything else DECIDE does with a bus or data cycle drops fp_v and the
     // select; the next step reads the same fp_a again. A fetch the kernel
     // offers as a pair is left to the normal lookup (2 words in 5 clocks).
+    // fp_ac is a second copy of fp_a for the address compare in fp_hit
+    // alone. fp_v is cleared on the edge the two load and is set again no
+    // sooner than 3 clocks later (E3 of the next step), so fp_ac has two
+    // clocks to reach the step decision: check_timing.py classes it so
+    // (tb-asserted: fp_ac never changes on the edge into a clock with fp_v
+    // set). fp_a itself feeds the RAM address a clock after it loads (a
+    // predicted fetch steps on the loading edge). The copies have different
+    // power-on values so that yosys keeps them apart (see k_clkena_lw2_n).
     // Sim-only check: fp_chk_bad (below).
     reg  [TAGW-1:0] fp_tq;
     reg         fp_s1 = 1'b0, fp_s2 = 1'b0;   // k_step, one and two clocks on
     reg         fp_v = 1'b0, fp_kill = 1'b0;
     wire        fp_bad  = ic_we && (ic_wa == fp_a[IC_AW:1]);
     wire        k_pcand = (DP32_ACK != 0) && k_long_cand && !k_addr[1];
+    (* keep *) reg [31:1] fp_ac = 31'h7FFFFFFF;
     wire        fp_hit  = (FPRED != 0) && fp_v && ic_on && (k_bs == 2'b00) && !k_skip
-                          && (k_addr[31:1] == fp_a) && !k_pcand
+                          && (k_addr[31:1] == fp_ac) && !k_pcand
                           && BGn && BGACKn && BRn && HALTn;
 
     // ------------------------------------------------------------------
@@ -809,6 +828,13 @@ module tg68_bus #(
         end
         if (fp_s2) fp_v <= (fp_tq == tag_of(fp_a)) && !fp_kill;
         if (fp_bad) begin fp_kill <= 1'b1; fp_v <= 1'b0; end
+        // the next fetch address, from every DECIDE clock of a fetch (the
+        // kernel's outputs are final there); fp_v goes with it
+        if (dec_r && k_bs == 2'b00 && !k_skip) begin
+            fp_a  <= k_addr[31:1] + (k_pcand ? 31'd2 : 31'd1);
+            fp_ac <= k_addr[31:1] + (k_pcand ? 31'd2 : 31'd1);
+            fp_v  <= 1'b0;
+        end
 
         // ---- bus arbitration (68000 rules, between cycles only) ------
         if (!BGACKn)                BGn <= 1'b1;   // new master has it
@@ -1286,12 +1312,10 @@ module tg68_bus #(
             k_berr   <= 1'b0;     // the kernel samples the old value here
             q        <= Q_SETTLE;
             dec_r    <= 1'b0;
-            // FETCH PREDICTOR: read the cache at the next fetch address
-            // (ic_ra takes fp_a while k_step is high)
+            // FETCH PREDICTOR: the cache is read at fp_a next (ic_ra takes
+            // it while k_step is high)
             fp_v     <= 1'b0;
             fp_kill  <= 1'b0;
-            if (k_bs == 2'b00 && !k_skip)
-                fp_a <= k_addr[31:1] + (k_long_ack ? 31'd2 : 31'd1);
         end
     endtask
 
