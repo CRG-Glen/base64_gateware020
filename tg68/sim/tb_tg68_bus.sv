@@ -303,6 +303,7 @@ module tb;
         if (stalled) begin $display("FAIL stall flag set"); errors = errors + 1; end
         if (dut.fp_chk_bad) begin $display("FAIL: %0d predicted fetches differed from the cache's own lookup", dut.fp_chk_bad); errors = errors + 1; end
         $display("predicted fetches %0d (checked at the kernel's sample clock: %0d)", dut.fp_hits, fp_chk);
+        if (dut.dpf_bad) begin $display("FAIL: %0d CCMP/CFREE clocks with dp_fast differing from the cycle start", dut.dpf_bad); errors = errors + 1; end
         if (dut.cc_bad) begin $display("FAIL: %0d CCMP compares used registered inputs that differ from a_r", dut.cc_bad); errors = errors + 1; end
         if (errors == 0) $display("PASS");
         else             $display("FAILED with %0d errors", errors);
