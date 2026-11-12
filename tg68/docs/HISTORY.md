@@ -420,6 +420,8 @@ style. `README.md` is the user-facing version of the same material.
 | step 12 at 16x (seed 4) | 12907 / 5992 | 19.97 / 10.39 |
 | step 14 at 12x (seed 8, `speed`) | 9695 / 5205 | 15.74 / 8.31 |
 | step 14 at 16x (seed 8, `speed 16`, no board mod) | 12929 / 6441 | 19.97 / 10.53 |
+| step 15 at 12x (fetch predictor, seed 8) | 11179 / 4800 | 16.59 / 8.48 |
+| step 15 at 16x (seed 8, `speed 16`) | 14925 / 6462 | 21.03 / 10.40 |
 
 - AIBB MemTest did not move from step 6 to step 7 (pairs only come from
   cache hits; MemTest's reads miss and its writes are 16-bit). Step 8's
@@ -454,6 +456,21 @@ style. `README.md` is the user-facing version of the same material.
   MB/s; 16x xSysInfo 22042 / 11994, 29.18 / 26.20, SD 2.2. Games look
   faster, unmeasured; Glen may start a Frontier timedemo tool as a
   separate project (WHDLoad slave hook on the buffer swap + VBL count).
+- Step 15 (fetch predictor, seed 8; includes step 14b): SysInfo caches
+  on +15.3% (12x) / +15.4% (16x) on step 14, above the simulation's +12%
+  for compiled C; AIBB MemTest +5.4% / +5.3%. xSysInfo 12x 16888 / 9353
+  Dhrystones, 9.61 / 5.32 MIPS, fast RAM 23.69 / 21.15 MB/s; 16x 24471 /
+  11615, 13.92 / 6.61 MIPS, 29.57 / 26.18; SD 2.0 / 2.2 MB/s. xSysInfo
+  caches on +3.9% at 12x but +14.8% at 16x: noisy, as before. Caches off
+  should not change (the predictor needs the cache; bench readoff gives
+  identical clock counts) and does not at 16x (SysInfo 6462 vs 6441) or
+  in xSysInfo at 12x (9353 vs 8698), but SysInfo 12x caches off read
+  4800 against step 14's 5205: SysInfo's known run-to-run spread, to be
+  re-run before acting on it. Frontier timedemo (Glen's tool, first
+  numbers; caches on): 12x min 9.4 / max 70.7 / average 26.2 fps, 16x
+  11.8 / 73.2 / 30.6 fps. `speed` at 12x: $170C (rising sample in use,
+  nothing moved): step 14b's 12x fix works; at 16x after the tests $4710
+  (falling in use, the unused rising sample moved), as with step 14.
 - Step 14 (seed 8, the switchable build): xSysInfo 12x 16247 / 8698
   Dhrystones, 9.24 / 4.95 MIPS, fast RAM 23.32 / 21.12 MB/s, SD 2.0 MB/s;
   16x (`speed 16`) 21317 / 11621, 12.13 / 6.61 MIPS, 29.17 / 26.18, SD

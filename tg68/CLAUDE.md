@@ -205,8 +205,8 @@ flatten. nextpnr: `--placer static --router router2`.
 - Step 13 (run-time 12x/14x/16x, `speed`) and step 14 (timing headroom):
   run on Glen's A500+ at all three speeds. Not merged.
 - Step 14b (7 MHz capture fix, kernel change 5) and step 15 (fetch
-  predictor, about +12% on cached code in simulation): test bitstreams
-  delivered, **waiting for Glen's hardware test**.
+  predictor): **run on hardware** at 12x and 16x (SysInfo +15% caches
+  on). Not merged.
 - Branches stack: `step13-pll-speed` -> `step14-timing-headroom` ->
   `step15-fetch-predictor` -> `tooling-build-seeds`. New work starts from
   the newest one.

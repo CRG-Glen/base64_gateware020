@@ -14,10 +14,12 @@ build's own files are few and marked `TG68:`.
 > 12x, 14x and 16x while running, from a Shell (`speed 16`), with no board
 > mod; see *Clock speed at run time (step 13)*. It runs on Glen's A500+ at
 > all three speeds. **Step 14** (test build) gives the timing check room
-> again, at no cost in clocks. **Step 15** (test build) predicts the next
-> instruction fetch: about 12% faster on cached code in simulation.
+> again, at no cost in clocks. **Step 15** predicts the next instruction
+> fetch: on the A500+ SysInfo gives 11179 Dhrystones at 12x and 14925 at
+> 16x with the caches on, 15% more than step 14, and Frontier's timedemo
+> averages 26.2 / 30.6 fps.
 >
-> **Status:** steps 1-12 run on an A500+. The latest, step 12 `full`, at
+> **Status:** steps 1-15 run on an A500+ (13-15 not yet released). The latest, step 12 `full`, at
 > the stock 12x clock: 9690 Dhrystones (10.11 MIPS), AIBB MemTest 15.74 MB/s,
 > xSysInfo fast RAM 23.33 MB/s with the caches on; 5177 Dhrystones and
 > 8.14 MB/s with them off. That is about 3.5× the 2783 Dhrystones of the
@@ -41,7 +43,7 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
-| `bitstreams/step15_fpred/` | + fetch predictor: after every CPU step the instruction cache is read at the next fetch address, so a sequential instruction fetch from the cache takes 4 clocks, not 5 (see *Fetch predictor (step 15)*). 12x file (switchable to 14x / 16x with `speed`); no `_x16` file from this step on | Test build, not yet on hardware. Simulation: compiled C from fast RAM +12%, fast RAM benches +5 to +10%; caches off and Chip RAM unchanged. 12x seed 8: +0.60 / +0.40 ns, 14x / 16x need 1.14× / 1.31× the worst-case model; 1 of seeds 1-9 passes |
+| `bitstreams/step15_fpred/` | + fetch predictor: after every CPU step the instruction cache is read at the next fetch address, so a sequential instruction fetch from the cache takes 4 clocks, not 5 (see *Fetch predictor (step 15)*). 12x file (switchable to 14x / 16x with `speed`); no `_x16` file from this step on | **Runs on hardware at 12x and 16x**, SD card included. SysInfo 11179 / 14925 Dhrystones (12x / 16x, caches on; +15% on step 14), AIBB MemTest 16.59 / 21.03 MB/s (+5%), xSysInfo 16888 / 24471; Frontier timedemo average 26.2 / 30.6 fps. Caches off about as step 14. 12x seed 8: +0.60 / +0.40 ns, 14x / 16x need 1.14× / 1.31× the worst-case model; 1 of seeds 1-9 passes |
 | `bitstreams/step14b_cal/` | step 14 rebuilt with kernel change 5 (a third copy of the kernel's long-word clock enable, and change 4's copy now really separate) and the 7 MHz capture fix: at 12x the rising-edge sample is kept, and the board switches sample on its own if the one in use drifts (`speed` 1.2 shows how often). 12x files (switchable) and `_x16` files | Test build, not yet on hardware. 12x seed 5: +0.36 / +3.28 ns, 14x / 16x need 1.12× / 1.28× the worst-case model; seeds 5 and 8 of 1-8 pass |
 | `bitstreams/step14_headroom/` | + timing headroom: the paths that limited every build since step 7 restructured, at no cost in clocks (identical clock counts in every bench); step 13b's longer 7 MHz calibration (`speed 12 rise` no longer needed). 12x files (switchable) and `_x16` files | **Runs on hardware at 12x, 14x and 16x** (first build: seed 8, +0.43 / +2.53 ns, 14x / 16x need 1.11× / 1.27× the worst-case model): benchmarks as step 13. The 7 MHz capture fix (rising sample at 12x, automatic switch on drift) is a rebuild, not yet on hardware |
 | `bitstreams/step13_speed/` | + clock speed switched at run time: `speed 12`, `speed 14` or `speed 16` in a Shell (the `speed` command is in the folder), 12x / 14x / 16x from the FPGA's PLLs, no board mod, power-on default 12x; 7 MHz capture calibration; the 7 MHz aligner's lock fixed. 12x files (switchable) and `_x16` files (board mod, fixed) | **Runs on hardware at 12x, 14x and 16x** (switching from the CLI). 12x seed 12 passes timing; at 14x / 16x it needs the chip 1.14× / 1.30× faster than the worst-case model. At 12x its calibration can keep a falling-edge 7 MHz sample that later moves (`$270C`); `speed 12 rise` after a cold boot avoids it (fixed in step 14) |
