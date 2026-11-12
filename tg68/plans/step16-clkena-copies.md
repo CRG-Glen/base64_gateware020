@@ -226,4 +226,35 @@ build A alone (revert B) on seeds 1-9 to see which change did it.
 
 ## Log
 
-(build model: record the load counts, the seed table and what was kept)
+- `gen_tg68.sh` reproduced the step 15b netlist byte for byte before the
+  edit.
+- A (kernel change 6) and B (`dc_ra`) built as planned (commit 1a: copies
+  active high with the self term, copy 4 on the first clkena_lw block).
+  Sim output identical line for line to 15b, benches unchanged, mutant
+  (copy 4 never set) caught: "FAIL clkena_lw copies 1 1 0".
+- Loads, first version: k_clkena 96, k_clkena_lw 181, lw2 127 (115 FF
+  enables, no inverter: `alu_clkena_lw` LUTs gone), lw3 9, lw4 33. The
+  rebalancing rule applied (lw > 130, lw4 < 70): the `exec <= set` block
+  moved to copy 4 too. Loads then: k_clkena_lw 52, lw2 127, lw3 9, lw4
+  149. (The busiest copy: 199 in 15b, 149 now.) Sims and benches
+  unchanged again.
+- Seeds 1-18, A+B (rebalanced): **0 pass.** clkena -> kernel meets its
+  aim almost: negative on 3 of 18 (seeds 1 -0.27, 7 -0.71, 18 -0.54;
+  15b: 8 of 18, to -1.94). But the step decision got much worse: worst
+  1T -0.06 to -3.14 ns on every seed, kernel -> logic to -4.61 ns
+  (negative on 12 of 18). The failing paths end in `cnt`,
+  `k_clkena_lw*` and `k_din`, through `cnt_ok` / `longword`, i.e. the
+  step decision fanning out to the clock-enable copies; none involve the
+  data cache.
+
+  | Seed | 1T / multicycle | Seed | 1T / multicycle |
+  | --- | --- | --- | --- |
+  | 1 | -1.29 / -0.54 | 10 | -2.49 / -4.61 |
+  | 2 | -1.53 / -2.40 | 11 | -1.18 / +0.83 |
+  | 3 | -0.06 / -0.65 | 12 | -0.16 / +0.10 |
+  | 4 | -2.72 / -3.43 | 13 | -1.77 / -1.14 |
+  | 5 | -0.50 / -1.21 | 14 | -1.34 / -4.25 |
+  | 6 | -2.64 / -1.21 | 15 | -1.48 / +0.09 |
+  | 7 | -1.65 / -2.16 | 16 | -2.70 / -2.79 |
+  | 8 | -2.32 / +0.47 | 17 | -1.10 / -0.98 |
+  | 9 | -3.14 / -1.92 | 18 | -2.17 / -3.38 |
