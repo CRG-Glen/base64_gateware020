@@ -58,6 +58,9 @@ edges = collections.defaultdict(list)    # node -> [(succ, delay)]
 clk2q = {}                               # FF output node -> (inst, delay)
 setup = {}                               # endpoint node -> (inst, setup)
 clkpin_delay = {}                        # inst -> clock arrival at its CLK
+clk_src = {}                             # inst -> the node driving its CLK
+dcca = set()                             # global clock buffer instances
+buf_in = {}                              # clock buffer inst -> (driver, delay to its CLKI)
 
 cell_re = re.compile(r'\(CELL\s*\(CELLTYPE\s+"([^"]*)"\)\s*\(INSTANCE\s*([^)]*)\)(.*?)\n  \)\n', re.S)
 tok = r'((?:\\.|[^\s()\\])+)'
@@ -75,12 +78,16 @@ def cells(txt):
 
 for ctype, inst, body in cells(txt):
     inst = unesc(inst.strip())
+    if ctype == 'DCCA': dcca.add(inst)
     if inst == '':
         for a, b, d in ic_re.findall(body):
             a, b = unesc(a), unesc(b)
             edges[a].append((b, dmax(d)))
             if b.endswith('/CLK'):
                 clkpin_delay[b[:-4]] = dmax(d)
+                clk_src[b[:-4]] = a
+            if b.endswith('/CLKI'):
+                buf_in[b[:-5]] = (a, dmax(d))
         continue
     for m in io_re.finditer(body):
         full, clkp, inp, outp, d = m.groups()
@@ -218,6 +225,27 @@ BUDGET = {('O','O'): 1, ('O','K'): 1, ('C','O'): 1, ('C','K'): 1,
 for _c in 'OCMKASIQ':                     # cache RAM endpoints: as 'logic' ...
     BUDGET[(_c, 'R')] = BUDGET[(_c, 'O')]
 BUDGET[('K', 'R')] = args.settle - 1      # ... except the early read
+
+# ---- clock buffers on one source (the kernel clock buffer experiment) ------
+# Two or more global buffers driven by the same net carry the same clock,
+# but the fabric route to each buffer's input differs: add that insertion
+# delay (relative to the earliest buffer) to the clock arrival of every
+# register behind each buffer, so paths between them see the skew.
+bufs = collections.Counter(src.rsplit('/', 1)[0] for src in clk_src.values())
+by_drv = collections.defaultdict(list)
+for bname in bufs:
+    if bname in buf_in and bname in dcca:
+        by_drv[buf_in[bname][0]].append(bname)
+for drv, group in by_drv.items():
+    if len(group) < 2: continue
+    base = min(buf_in[g][1] for g in group)
+    print('clock buffers on %s: ' % drv.split('.')[-1]
+          + ', '.join('%s +%.2f ns (%d registers)' % (g.split('.')[-1], (buf_in[g][1] - base) / 1000, bufs[g])
+                      for g in sorted(group)))
+    for inst, src in clk_src.items():
+        g = src.rsplit('/', 1)[0]
+        if g in group:
+            clkpin_delay[inst] = clkpin_delay.get(inst, 0.0) + buf_in[g][1] - base
 
 # ---- longest paths, one arrival per start class ------------------------------
 indeg = collections.Counter()
