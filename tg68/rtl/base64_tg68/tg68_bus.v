@@ -984,86 +984,98 @@ module tg68_bus #(
                 oRESETn <= k_nresetout;
                 if (internal_step) begin
                     if (cnt_ok) step();
-                end else if (fp_hit0) begin
-                    // FETCH PREDICTOR: the word is in k_din_fp, selected
-                    // since two clocks after the last step. (If the bus is
-                    // not free this waits; fp_v drops on this edge, and the
-                    // fetch goes on as a normal lookup.)
-                    if (bus_free && cnt_ok) step();
-                end else if (k_pf_ok) begin
-                    // second half of a longword / next sequential word:
-                    // already fetched, no SDRAM access at all
-                    dec_r    <= 1'b0;
-                    // (step 15: this cycle hands the kernel k_din, so the
-                    // predictor's select goes, 2 clocks before the step)
-                    k_din_psel <= 1'b0;
-                    k_din    <= pf_d;
-                    bus_berr <= 1'b0;
-                    tmr      <= 6'd0;
-                    q        <= Q_FINISH;
-                end else if (bus_free && ack_idle && (!dp_busy || (k_look && !pf_wait))) begin
-                    a_r      <= k_addr[31:1];
-                    fc_r     <= k_fc;
-                    eRWn     <= k_nwr;          // RW valid before AS, like S1
-                    tmr      <= 6'd0;
-                    dp_fast   <= k_fast;
-                    cyc_start <= 1'b1;
-                    dec_r     <= 1'b0;
-                    dp_spec  <= 1'b0;
-                    // step 15: a bus or data cycle may hand the kernel k_din:
-                    // the predictor's select goes here, >= 2 clocks before
-                    // its step; the step after it reads the prediction
-                    // again. (A WR4 write that steps on this edge keeps the
-                    // select: nothing may change in the clock before a
-                    // step, and a write takes no data.)
-                    if (!((WR4 != 0) && !k_look && k_fast && !k_nwr && !k_wpair && cnt_ok))
+                end else if (k_bs == 2'b00) begin
+                    // ---- instruction fetch (step 15b: its own branch, so
+                    // the data-cycle registers below never wait for fp_hit0,
+                    // and a fetch carries no data-only terms) ----
+                    if (fp_hit0) begin
+                        // FETCH PREDICTOR: the word is in k_din_fp, selected
+                        // since two clocks after the last step. (If the bus
+                        // is not free this waits; fp_v drops on this edge,
+                        // and the fetch goes on as a normal lookup.)
+                        if (bus_free && cnt_ok) step();
+                    end else if (k_pf_ok) begin
+                        pf_take();
+                    end else if (bus_free && ack_idle && (!dp_busy || (k_look && !pf_wait))) begin
+                        cyc_begin();
+                        // (a fetch is never a write: no WR4 step here)
                         k_din_psel <= 1'b0;
-                    // The cache RAMs read on this edge used k_addr already.
-                    if (k_look) begin
-                        q <= Q_CCMP;             // look in the cache first
-                        // EARLY LOOKUP: the RAMs read this address on the
-                        // edge into DECIDE; k_din_ce/co take the words on this
-                        // edge (see below), CCMP decides
-                        k_din_sel <= 1'b1;
-                        // 32-BIT DATA PATH: take the pair if both words hit
-                        // (CCMP decides; see k_long_ack)
-                        k_long_ack <= (DP32_ACK != 0) && k_long_cand && !k_addr[1];
-                        if (k_bs == 2'b10 && k_fast && !dp_busy) begin
-                            dp_req_i <= 1'b1;    // speculative read
-                            dp_busy  <= 1'b1; dp_kind <= 2'd1;
-                            dp_spec  <= 1'b1;
-                        end
-                    end else if (k_fast && !k_nwr) begin
-                        // posted write: issue it and step on. An aligned
-                        // longword the kernel offers as a pair goes as ONE
-                        // request: the controller writes both words back to
-                        // back (32-BIT SDRAM). k_long_ack is set on this edge
-                        // and the kernel steps at the end of FINISH, so it is
-                        // 2 clocks old when sampled, like a cache pair.
-                        dp_req_i <= 1'b1;
-                        dp_busy  <= 1'b1; dp_kind  <= 2'd2;
-                        k_long_ack <= k_wpair;   // (dp_pair: loaded under dec_r)
-                        // drop the prefetched word if this writes it: compared
-                        // by longword, which covers a pair's second word too
-                        if (pf_valid && k_addr[31:2] == pf_a[31:2])
-                            pf_valid <= 1'b0;
-                        // the caches are updated on the next clock (pw_upd)
-                        pw_upd <= 1'b1;
-                        pw_dc  <= dc_on && !k_nuds && !k_nlds && (k_z2 || k_cpuw);
-                        bus_berr <= 1'b0;
-                        tmr      <= 6'd0;
-                        // step 15: a write that is not a pair needs nothing
-                        // back and leaves k_long_ack alone, so the kernel
-                        // steps now (a pair's k_long_ack must be 2 clocks old)
-                        if ((WR4 != 0) && !k_wpair && cnt_ok) step();
-                        else q   <= Q_FINISH;
-                    end else if (k_fast) begin
-                        dp_req_i <= 1'b1;   // direct read
-                        dp_busy  <= 1'b1; dp_kind  <= 2'd1;
-                        k_long_ack <= k_rpair;   // a pair read (step 9; dp_pair: dec_r)
-                        q        <= Q_DWAIT;
-                    end else
-                        q <= Q_SETUP;
+                        // The cache RAMs read on this edge used k_addr already.
+                        if (k_look) begin
+                            q <= Q_CCMP;             // look in the cache first
+                            // EARLY LOOKUP: the RAMs read this address on the
+                            // edge into DECIDE; k_din_ce/co take the words on
+                            // this edge (see below), CCMP decides
+                            k_din_sel <= 1'b1;
+                            // 32-BIT DATA PATH: take the pair if both words hit
+                            // (CCMP decides; see k_long_ack)
+                            k_long_ack <= (DP32_ACK != 0) && k_long_cand && !k_addr[1];
+                        end else if (k_fast) begin
+                            dp_req_i <= 1'b1;   // direct read
+                            dp_busy  <= 1'b1; dp_kind  <= 2'd1;
+                            k_long_ack <= k_rpair;   // a pair read (step 9; dp_pair: dec_r)
+                            q        <= Q_DWAIT;
+                        end else
+                            q <= Q_SETUP;
+                    end
+                end else begin
+                    // ---- data read or write ----
+                    if (k_pf_ok) begin
+                        pf_take();
+                    end else if (bus_free && ack_idle && (!dp_busy || (k_look && !pf_wait))) begin
+                        cyc_begin();
+                        // step 15: a bus or data cycle may hand the kernel
+                        // k_din: the predictor's select goes here, >= 2
+                        // clocks before its step; the step after it reads
+                        // the prediction again. (A WR4 write that steps on
+                        // this edge keeps the select: nothing may change in
+                        // the clock before a step, and a write takes no data.)
+                        if (!((WR4 != 0) && !k_look && k_fast && !k_nwr && !k_wpair && cnt_ok))
+                            k_din_psel <= 1'b0;
+                        // The cache RAMs read on this edge used k_addr already.
+                        if (k_look) begin
+                            q <= Q_CCMP;             // look in the cache first
+                            k_din_sel <= 1'b1;       // (EARLY LOOKUP, as above)
+                            k_long_ack <= (DP32_ACK != 0) && k_long_cand && !k_addr[1];
+                            if (k_bs == 2'b10 && k_fast && !dp_busy) begin
+                                dp_req_i <= 1'b1;    // speculative read
+                                dp_busy  <= 1'b1; dp_kind <= 2'd1;
+                                dp_spec  <= 1'b1;
+                            end
+                        end else if (k_fast && !k_nwr) begin
+                            // posted write: issue it and step on. An aligned
+                            // longword the kernel offers as a pair goes as ONE
+                            // request: the controller writes both words back
+                            // to back (32-BIT SDRAM). k_long_ack is set on this
+                            // edge and the kernel steps at the end of FINISH,
+                            // so it is 2 clocks old when sampled, like a cache
+                            // pair.
+                            dp_req_i <= 1'b1;
+                            dp_busy  <= 1'b1; dp_kind  <= 2'd2;
+                            k_long_ack <= k_wpair;   // (dp_pair: loaded under dec_r)
+                            // drop the prefetched word if this writes it:
+                            // compared by longword, which covers a pair's
+                            // second word too
+                            if (pf_valid && k_addr[31:2] == pf_a[31:2])
+                                pf_valid <= 1'b0;
+                            // the caches are updated on the next clock (pw_upd)
+                            pw_upd <= 1'b1;
+                            pw_dc  <= dc_on && !k_nuds && !k_nlds && (k_z2 || k_cpuw);
+                            bus_berr <= 1'b0;
+                            tmr      <= 6'd0;
+                            // step 15: a write that is not a pair needs nothing
+                            // back and leaves k_long_ack alone, so the kernel
+                            // steps now (a pair's k_long_ack must be 2 clocks old)
+                            if ((WR4 != 0) && !k_wpair && cnt_ok) step();
+                            else q   <= Q_FINISH;
+                        end else if (k_fast) begin
+                            dp_req_i <= 1'b1;   // direct read
+                            dp_busy  <= 1'b1; dp_kind  <= 2'd1;
+                            k_long_ack <= k_rpair;   // a pair read (step 9; dp_pair: dec_r)
+                            q        <= Q_DWAIT;
+                        end else
+                            q <= Q_SETUP;
+                    end
                 end
             end
             // ----------------------------------------------------------
@@ -1332,6 +1344,35 @@ module tg68_bus #(
         // kernel's next STEP clocks.
         if (!extReset && k_step) k_nreset <= 1'b1;
     end
+
+    // DECIDE (step 15b): a prefetch-buffer hit -- the second half of a
+    // longword or the next sequential word, already fetched, no SDRAM access
+    // at all. It hands the kernel k_din, so the predictor's select goes, 2
+    // clocks before the step.
+    task pf_take;
+        begin
+            dec_r      <= 1'b0;
+            k_din_psel <= 1'b0;
+            k_din      <= pf_d;
+            bus_berr   <= 1'b0;
+            tmr        <= 6'd0;
+            q          <= Q_FINISH;
+        end
+    endtask
+
+    // DECIDE (step 15b): the registers every new cycle loads, fetch or data
+    task cyc_begin;
+        begin
+            a_r       <= k_addr[31:1];
+            fc_r      <= k_fc;
+            eRWn      <= k_nwr;          // RW valid before AS, like S1
+            tmr       <= 6'd0;
+            dp_fast   <= k_fast;
+            cyc_start <= 1'b1;
+            dec_r     <= 1'b0;
+            dp_spec   <= 1'b0;
+        end
+    endtask
 
     // One kernel step. (IPL is re-sampled in the clock after it, see k_ipl
     // above; base64_top already debounces it on the 7M grid.) berr is held
