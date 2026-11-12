@@ -20,6 +20,10 @@ when to stop and report. Results go in the plan's own log section.
 The branches stack (13 -> 14 -> 15 -> tooling-build-seeds -> step15b).
 New work branches from `step15b-predictor-timing`. Nothing is merged or released until Glen says.
 
+**For the planner: read `report-after-15b.md` first.** It summarises the
+hardware results, the timing picture after step 15b, Glen's direction
+(margin over small speed losses) and the options for the next step.
+
 ## Queue, in order
 
 1. ~~`tooling-build-seeds.md`~~ **done** on branch `tooling-build-seeds`
