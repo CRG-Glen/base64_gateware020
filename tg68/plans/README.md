@@ -33,12 +33,8 @@ branches from `tooling-build-seeds`. Nothing is merged or released until Glen sa
 
 ## Open questions for Glen (from the step 15 test)
 
-- SysInfo 12x caches **off** read 4800 Dhrystones (step 14: 5205). The
-  predictor is idle with the caches off and the sim's caches-off bench
-  is clock-for-clock identical, 16x caches off is unchanged (6462) and
-  xSysInfo 12x caches off went up (9353 vs 8698), so this is most likely
-  SysInfo's run-to-run spread. A re-run of SysInfo caches off at 12x,
-  step 15 then step 14 back to back, would settle it.
+- (Settled: SysInfo 12x caches off re-run after a reset gave 5162,
+  step 14 5205; within the spread.)
 - 14x was not reported; `speed 14` is worth one boot and benchmark.
 - `speed` 1.2 (prints the automatic swap count) is in the bitstream
   folders but not yet on the Amiga.

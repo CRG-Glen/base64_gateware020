@@ -420,7 +420,7 @@ style. `README.md` is the user-facing version of the same material.
 | step 12 at 16x (seed 4) | 12907 / 5992 | 19.97 / 10.39 |
 | step 14 at 12x (seed 8, `speed`) | 9695 / 5205 | 15.74 / 8.31 |
 | step 14 at 16x (seed 8, `speed 16`, no board mod) | 12929 / 6441 | 19.97 / 10.53 |
-| step 15 at 12x (fetch predictor, seed 8) | 11179 / 4800 | 16.59 / 8.48 |
+| step 15 at 12x (fetch predictor, seed 8) | 11179 / 5162 | 16.59 / 8.48 |
 | step 15 at 16x (seed 8, `speed 16`) | 14925 / 6462 | 21.03 / 10.40 |
 
 - AIBB MemTest did not move from step 6 to step 7 (pairs only come from
@@ -465,8 +465,8 @@ style. `README.md` is the user-facing version of the same material.
   should not change (the predictor needs the cache; bench readoff gives
   identical clock counts) and does not at 16x (SysInfo 6462 vs 6441) or
   in xSysInfo at 12x (9353 vs 8698), but SysInfo 12x caches off read
-  4800 against step 14's 5205: SysInfo's known run-to-run spread, to be
-  re-run before acting on it. Frontier timedemo (Glen's tool, first
+  4800 against step 14's 5205; re-run after a reset: 5162 (-0.8%, within
+  SysInfo's run-to-run spread). Caches off is unchanged, as expected. Frontier timedemo (Glen's tool, first
   numbers; caches on): 12x min 9.4 / max 70.7 / average 26.2 fps, 16x
   11.8 / 73.2 / 30.6 fps. `speed` at 12x: $170C (rising sample in use,
   nothing moved): step 14b's 12x fix works; at 16x after the tests $4710
