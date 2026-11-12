@@ -162,7 +162,7 @@ module tg68_bus #(
     // register drives all ~1150 loads (kernel changes 4, 5 and 6, see
     // TG68KdotC_Kernel.vhd): copy 2 the ALU, data_read and the MEM_IO
     // process; copy 3 the EA_data/data_write process; copy 4 the first
-    // clkena_lw block of the opcode/PC process (step 16).
+    // clkena_lw block and the exec block of the opcode/PC process (step 16).
     // yosys merges registers it can prove identical, (* keep *) or not (it
     // did with change 4's plain copy: every build had one register). Step
     // 14 kept the copies apart by storing copy 2 inverted and powering copy

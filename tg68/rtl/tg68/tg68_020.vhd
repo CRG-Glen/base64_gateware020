@@ -19,7 +19,8 @@
 -- 3 = change 5: that copy low active on clkena_lw2n_in, and a third copy on
 -- clkena_lw3_in for the EA_data/data_write process (see the kernel).
 -- 4 = change 6: copy 2 active high on clkena_lw2_in, and a fourth copy on
--- clkena_lw4_in for the first clkena_lw block of the opcode/PC process.
+-- clkena_lw4_in for the first clkena_lw block and the exec block of the
+-- opcode/PC process.
 library ieee; use ieee.std_logic_1164.all; use ieee.numeric_std.all;
 entity tg68_020 is
   generic (BARREL : integer := 0; BITFIELD : integer := 1; MULHW : integer := 1;

@@ -604,7 +604,9 @@ ALU: TG68K_ALU
 	-- tg68_bus.v), so copy 2 reaches the ALU without an inverter LUT in
 	-- front of every load; and a fourth copy takes the first clkena_lw block
 	-- of the opcode/PC process (interrupt, decodeOPC, last_opc_pc, exe_pc,
-	-- the alu_bf_* registers), whose paths were the worst on clkena_lw.
+	-- the alu_bf_* registers), whose paths were the worst on clkena_lw, and
+	-- the exec <= set block of the same process (with the first block alone
+	-- copy 4 had 33 loads and clkena_lw still 181).
 	clkena_lw4 <= clkena_lw4_in WHEN ClkenaLW_Ext=4 ELSE clkena_lw;
 	clr_berr <= '1' WHEN setopcode='1' AND trap_berr='1' ELSE '0';
 	
@@ -1476,7 +1478,7 @@ PROCESS (clk, IPL, setstate, addrvalue, state, exec_write_back, set_direct_data,
 					PCbase <= '0';
 				END IF;	
 			END IF;	
-			IF clkena_lw='1' THEN
+			IF clkena_lw4='1' THEN	-- Base64 change 6 (rebalanced)
 				exec <= set;
 				exec(alu_move) <= set(opcMOVE) OR set(alu_move);
 				exec(alu_setFlags) <= set(opcADD) OR set(alu_setFlags);
