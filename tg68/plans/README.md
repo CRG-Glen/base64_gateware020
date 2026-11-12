@@ -15,9 +15,10 @@ when to stop and report. Results go in the plan's own log section.
 | 14b capture fix, kernel change 5 | same branch, `bitstreams/step14b_cal/` | In step 15, which runs: 12x `speed` reads $170C (rising sample, clean) |
 | 15 fetch predictor | `step15-fetch-predictor`, `bitstreams/step15_fpred/` | **Runs on hardware** at 12x and 16x: SysInfo +15% caches on (numbers in docs/HISTORY.md). Not merged |
 | tooling | `tooling-build-seeds` | Done (PC side only) |
+| 15b predictor timing | `step15b-predictor-timing`, `bitstreams/step15b_fpred/` | **Waiting for Glen's test**: same speed as 15, 5 of 18 seeds pass, 14x / 16x 1.13x / 1.29x |
 
-The branches stack (13 -> 14 -> 15 -> tooling-build-seeds). New work
-branches from `tooling-build-seeds`. Nothing is merged or released until Glen says.
+The branches stack (13 -> 14 -> 15 -> tooling-build-seeds -> step15b).
+New work branches from `step15b-predictor-timing`. Nothing is merged or released until Glen says.
 
 ## Queue, in order
 
@@ -25,7 +26,8 @@ branches from `tooling-build-seeds`. Nothing is merged or released until Glen sa
    (from `step15-fetch-predictor`): `build.py full --seed 1 --seeds 9`
    now runs 4 seeds at a time and prints a table. Build step 15b from
    this branch.
-2. **`step15b-predictor-timing.md`** (ready to build). Get step 15's
+2. ~~`step15b-predictor-timing.md`~~ **built** (A and B kept, C reverted;
+   see its log). Waiting for Glen's test. Get step 15's
    kernel -> logic margin back and more seeds passing, with no change in
    behaviour. Three small changes, measured one at a time.
 3. Anything in **`backlog.md`** needs a plan written first (by the

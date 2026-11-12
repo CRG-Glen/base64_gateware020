@@ -43,6 +43,7 @@ The bitstreams are not kept in git: download them from this repository's
 
 | Folder | What changed | Status |
 | --- | --- | --- |
+| `bitstreams/step15b_fpred/` | step 15 with more timing margin: the predicted fetch no longer waits for the kernel's pair signal, and the cycle decision is split into fetch and data branches. Same speed as step 15 within 0.4% (a predicted fetch is now always one word). 12x file (switchable to 14x / 16x with `speed`) | Test build, not yet on hardware. 12x seed 10: +0.37 / +0.75 ns, 14x / 16x need 1.13× / 1.29× the worst-case model (step 15: 1.14× / 1.31×); 5 of seeds 1-18 pass (step 15: 1 of 9) |
 | `bitstreams/step15_fpred/` | + fetch predictor: after every CPU step the instruction cache is read at the next fetch address, so a sequential instruction fetch from the cache takes 4 clocks, not 5 (see *Fetch predictor (step 15)*). 12x file (switchable to 14x / 16x with `speed`); no `_x16` file from this step on | **Runs on hardware at 12x and 16x**, SD card included. SysInfo 11179 / 14925 Dhrystones (12x / 16x, caches on; +15% on step 14), AIBB MemTest 16.59 / 21.03 MB/s (+5%), xSysInfo 16888 / 24471; Frontier timedemo average 26.2 / 30.6 fps. Caches off about as step 14. 12x seed 8: +0.60 / +0.40 ns, 14x / 16x need 1.14× / 1.31× the worst-case model; 1 of seeds 1-9 passes |
 | `bitstreams/step14b_cal/` | step 14 rebuilt with kernel change 5 (a third copy of the kernel's long-word clock enable, and change 4's copy now really separate) and the 7 MHz capture fix: at 12x the rising-edge sample is kept, and the board switches sample on its own if the one in use drifts (`speed` 1.2 shows how often). 12x files (switchable) and `_x16` files | Test build, not yet on hardware. 12x seed 5: +0.36 / +3.28 ns, 14x / 16x need 1.12× / 1.28× the worst-case model; seeds 5 and 8 of 1-8 pass |
 | `bitstreams/step14_headroom/` | + timing headroom: the paths that limited every build since step 7 restructured, at no cost in clocks (identical clock counts in every bench); step 13b's longer 7 MHz calibration (`speed 12 rise` no longer needed). 12x files (switchable) and `_x16` files | **Runs on hardware at 12x, 14x and 16x** (first build: seed 8, +0.43 / +2.53 ns, 14x / 16x need 1.11× / 1.27× the worst-case model): benchmarks as step 13. The 7 MHz capture fix (rising sample at 12x, automatic switch on drift) is a rebuild, not yet on hardware |
@@ -873,7 +874,28 @@ actually provides:
 pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
 
-Step 15 (fetch predictor) builds as supplied (not yet on hardware):
+Step 15b (fetch predictor timing) builds as supplied (not yet on
+hardware):
+
+| Build | Seed | Worst 1T slack | Worst multicycle slack |
+| --- | --- | --- | --- |
+| full | 10 | +0.37 ns | +0.75 ns |
+
+Seeds 8, 9, 10, 16 and 18 of 1-18 pass (step 15: 1 of 9). Two changes:
+the predicted fetch no longer tests whether the kernel offers a pair
+(`long_cand`, the kernel's latest output, gated every register the cycle
+decision loads), and the decision is split into a fetch branch and a data
+branch, so data-cycle registers do not wait for the predictor's compare.
+kernel -> logic is negative on 3 of 18 seeds (step 15: 4 of 9), at most
+-0.25 ns. A third change (`dp_fast` loaded on every DECIDE clock) made it
+worse (1 of 9 passing, kernel -> logic to -2.4 ns) and was reverted.
+At 14x the build needs the chip 1.13× faster than the worst-case model,
+at 16x 1.29×. Cost: a sequential 32-bit pair in the instruction stream
+is now two predicted words (8 clocks) instead of one pair (5); bench c
++0.4% clocks, scatter +0.3%, the other benches unchanged.
+
+Step 15 (fetch predictor) builds as supplied (runs on hardware at 12x
+and 16x):
 
 | Build | Seed | Worst 1T slack | Worst multicycle slack |
 | --- | --- | --- | --- |

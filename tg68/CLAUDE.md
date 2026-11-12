@@ -208,8 +208,9 @@ flatten. nextpnr: `--placer static --router router2`.
   predictor): **run on hardware** at 12x and 16x (SysInfo +15% caches
   on). Not merged.
 - Branches stack: `step13-pll-speed` -> `step14-timing-headroom` ->
-  `step15-fetch-predictor` -> `tooling-build-seeds`. New work starts from
-  the newest one.
+  `step15-fetch-predictor` -> `tooling-build-seeds` ->
+  `step15b-predictor-timing` (built, waiting for Glen). New work starts
+  from the newest one.
 
 ## Licensing (unresolved; check before publishing anything new)
 

@@ -1,6 +1,6 @@
 # Step 15b: timing margin for the fetch predictor
 
-Status: ready to build. Branch: `step15b-predictor-timing`, from
+Status: **built**, test bitstreams in `bitstreams/step15b_fpred/` (seed 10), waiting for Glen's test. Branch: `step15b-predictor-timing`, from
 `step15-fetch-predictor` (after `tooling-build-seeds` if that is done:
 branch from it then). No change in behaviour is intended except the one
 named in change A.
@@ -216,4 +216,48 @@ here).
 
 ## Log
 
-(build model: record the seed tables and what was kept here)
+Kept: A and B (commits 52ccd8e, 5509b34). C (815ff2c) reverted in
+f615054, per fallback 1: it made the seed table worse. Source at f615054
+equals B. Packaged seed 10 per fallback 2 (5 of seeds 1-18 pass).
+
+Benches (clocks), A, A+B and A+B+C identical except where noted:
+c 65892 (+252, +0.38%), copy 9432, read 6204, scatter 3756 (+12,
++0.3%), readoff 11316, chip 31440, wrfast 7464, wrmix 31572; sd PASS.
+fastmem: "instruction-stream pairs: 0 from the cache, 2 from the SDRAM"
+(was 6 / 2); fn32 check 0x8194 passes. B's bus/top/fastmem output is
+identical line for line to A's. C: `dpf_bad` check, a mutant loading
+dp_fast for fetches only was caught (212 clocks); removed with C.
+Mutants re-run on A+B+C (the predictor code is the same in A+B): no
+fp_bad kill in the clock after the step, word from the wrong bank, fp_v
+not cleared when the address loads: all caught.
+
+Seeds (worst 1T / worst multicycle; K = kernel -> logic slack, 3T,
+34.88 ns budget):
+
+| Seed | A | A+B | A+B+C |
+| --- | --- | --- | --- |
+| 1 | -1.00 / +0.91 (K +0.91) | -0.09 / -0.25 (K -0.25) | -0.13 / +0.94 |
+| 2 | -0.07 / +2.48 | -0.22 / +2.42 | -0.36 / -0.02 (K -0.02) |
+| 3 | -0.10 / +0.74 | -0.82 / +1.88 | -0.06 / +1.16 |
+| 4 | -0.58 / +1.76 | -0.01 / +1.00 | +0.18 / -2.11 (K -2.11) |
+| 5 | -0.20 / +0.36 | -1.02 / +1.71 | -0.59 / -2.42 (K -2.42) |
+| 6 | -1.24 / +0.95 | -0.29 / +0.20 | -0.76 / +1.59 |
+| 7 | -0.51 / +2.35 | -0.48 / +1.16 | -0.05 / +0.45 |
+| 8 | -1.43 / -1.24 (K -1.24) | **PASS +0.20 / +0.84** | **PASS +0.06 / +0.04** |
+| 9 | -0.05 / +1.99 | **PASS +0.30 / +0.22** | +0.35 / -0.27 (K -0.27) |
+
+A+B, seeds 10-18 (same netlist): 10 **PASS +0.37 / +0.75** (K 34.14 ns),
+11 -0.92 / +0.91, 12 -1.26 / -1.03 (K -0.21), 13 -1.82 / -0.07 (K -0.07),
+14 -1.94 / +0.85, 15 -1.38 / +1.22, 16 **PASS +0.22 / +0.22**, 17 -0.36 /
++0.24, 18 **PASS +0.35 / +2.53** (K 32.26 ns). The 1T misses are spread:
+clkena -> kernel, adapter ctrl -> logic / cache RAM, logic -> logic.
+
+Against the criteria: 5 of 18 pass (fallback 2: at least 3 of 18, met;
+2 of 9 on seeds 1-9, short of 3). kernel -> logic on the passing seeds is
+34.0-34.3 ns except seed 18 (32.3), not the 33 ns asked for, but it is
+negative on only 3 of 18 seeds and by at most 0.25 ns (step 15: 4 of 9,
+to -1.73 ns). Seed 10 chosen (most 1T slack): 14x 1.130x, 16x 1.292x.
+Seed 18 has nearly the same 1T slack (+0.35) and far more multicycle
+margin (+2.53); its .sdf was not kept, so it was not scored at 14x/16x:
+the planner may want it rebuilt (`build.py full --skip-synth --seed 18
+--seeds 1` on f615054) and compared.
