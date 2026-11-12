@@ -634,9 +634,14 @@ module tg68_bus #(
     wire        fp_bad  = ic_we && (ic_wa == fp_a[IC_AW:1]);
     wire        k_pcand = (DP32_ACK != 0) && k_long_cand && !k_addr[1];
     (* keep *) reg [31:1] fp_ac = 31'h7FFFFFFF;
-    wire        fp_hit  = (FPRED != 0) && fp_v && ic_on && (k_bs == 2'b00) && !k_skip
-                          && (k_addr[31:1] == fp_ac) && !k_pcand
-                          && BGn && BGACKn && BRn && HALTn;
+    // fp_hit0: the fetch is the predicted one. A new cycle of any kind
+    // also needs the bus free (HALT holds fetches as before); DECIDE tests
+    // that after fp_hit0, as it does for a bus cycle, so the bus-state
+    // registers enter the decision once (through fp_hit and again through
+    // "not fp_hit" they missed 1T by 0.4-0.9 ns on four seeds of five).
+    wire        fp_hit0 = (FPRED != 0) && fp_v && ic_on && (k_bs == 2'b00) && !k_skip
+                          && (k_addr[31:1] == fp_ac) && !k_pcand;
+    wire        fp_hit  = fp_hit0 && BGn && BGACKn && BRn && HALTn;
 
     // ------------------------------------------------------------------
     // DIRECT -- direct SDRAM path for on-board fast RAM
@@ -832,6 +837,11 @@ module tg68_bus #(
 
         // FETCH PREDICTOR pipeline (see above). fp_bad before the sequencer:
         // a step on this edge starts a new read and clears fp_kill.
+        // IPL is sampled in the clock after each step (k_step): the kernel
+        // has just sampled the old value, and the new one is stable for the
+        // STEP clocks to its next sample. (Step 15: it was loaded by the
+        // step decision itself, three more registers on that 1T path.)
+        if (k_step) k_ipl <= {IPL2n, IPL1n, IPL0n};
         fp_s1 <= k_step;
         fp_s2 <= fp_s1;
         if (fp_s1) begin
@@ -889,7 +899,6 @@ module tg68_bus #(
                 k_step   <= 1'b1; fp_rsel_n <= 1'b0;
                 k_clkena_lw <= !k_longword || k_long_ack; k_clkena_lw2_n <= !(!k_longword || k_long_ack); k_clkena_lw3 <= !k_longword || k_long_ack;
                 cnt      <= 6'd0;
-                k_ipl    <= {IPL2n, IPL1n, IPL0n};
             end
         end else begin
             // The prefetched word goes into the data cache one clock after
@@ -974,10 +983,12 @@ module tg68_bus #(
                 oRESETn <= k_nresetout;
                 if (internal_step) begin
                     if (cnt_ok) step();
-                end else if (fp_hit) begin
+                end else if (fp_hit0) begin
                     // FETCH PREDICTOR: the word is in k_din_fp, selected
-                    // since two clocks after the last step
-                    if (cnt_ok) step();
+                    // since two clocks after the last step. (If the bus is
+                    // not free this waits; fp_v drops on this edge, and the
+                    // fetch goes on as a normal lookup.)
+                    if (bus_free && cnt_ok) step();
                 end else if (k_pf_ok) begin
                     // second half of a longword / next sequential word:
                     // already fetched, no SDRAM access at all
@@ -1320,16 +1331,15 @@ module tg68_bus #(
         if (!extReset && k_step) k_nreset <= 1'b1;
     end
 
-    // One kernel step. IPL is re-sampled on the same edge so it is stable
-    // for the next STEP clocks; base64_top already debounces it on the 7M
-    // grid. berr is held for exactly the step that consumes it.
+    // One kernel step. (IPL is re-sampled in the clock after it, see k_ipl
+    // above; base64_top already debounces it on the 7M grid.) berr is held
+    // for exactly the step that consumes it.
     task step;
         begin
             k_clkena <= 1'b1;
             k_step   <= 1'b1; fp_rsel_n <= 1'b0;
             k_clkena_lw <= !k_longword || k_long_ack; k_clkena_lw2_n <= !(!k_longword || k_long_ack); k_clkena_lw3 <= !k_longword || k_long_ack;
             cnt      <= 6'd0;
-            k_ipl    <= {IPL2n, IPL1n, IPL0n};
             k_berr   <= 1'b0;     // the kernel samples the old value here
             q        <= Q_SETTLE;
             dec_r    <= 1'b0;
