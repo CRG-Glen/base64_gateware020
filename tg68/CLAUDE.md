@@ -689,6 +689,19 @@ that gives the "_fast" files.
   minimum tCK at CL2 (100 MHz), so CL3 stays at 16x.
   Hardware: E clock 709379 Hz, a real floppy reads fine. Glen is
   stress-testing it on the bench.
+- Tried and dropped (branch `exp-kernel-clock-buffer`, never on hardware):
+  the kernel on its own global clock buffer (a second DCCA on the speed
+  mux's output, `FREQUENCY NET "clk_k" 21.5 MHz`), so nextpnr sees the
+  kernel's real 4-clock budget. nextpnr then relaxed kernel -> kernel
+  (40 -> 41-43 ns) but the pass rate did not move: 3 of 9 seeds (step 14b:
+  2 of 8), same spread of misses. It does not optimise paths between the
+  two clock nets at all (kernel -> logic, clkena -> kernel), and the
+  buffers' skew (0.27-0.87 ns by seed, kernel early) comes off clkena ->
+  kernel. `--tmg-ripup`: 1 of 4. `--placer heap`: cannot route the mux to
+  the second DCC. Also measured: nextpnr's target frequency has no effect
+  on this flow (clk at 12 (the default since step 13: the lpf constrains
+  the pin, not the mux output), 24 or 86 MHz: byte-identical routed
+  designs on seeds 1, 2, 5, 8).
 - Timing headroom: from step 7 on only ~1 seed in 8 passes every class,
   with a different path missing each time (README "Timing"). A new
   feature will likely need a seed search. A real fix would need fewer
