@@ -80,6 +80,11 @@ module tb;
             ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
         end
         ks_fac = dut.fp_ac;
+        // cnt_ok is cnt >= STEP-1 as a register (step 15)
+        if (!dut.extReset && dut.q != 4'd0 && dut.cnt_ok !== (dut.cnt >= 3)) begin
+            $display("FAIL cnt_ok %b with cnt %0d (q %0d)", dut.cnt_ok, dut.cnt, dut.q);
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
         fpp = (dut.q == 4'd1) && !dut.internal_step && dut.fp_hit && !dut.extReset;
         ks_la = dut.k_long_ack; ks_ds = dut.k_din_sel; ks_hs = dut.k_din_hsel; ks_dd = dut.k_din_dsel;
         // The kernel's l1 <= long_ack (Base64 change, was long_ack AND cand)

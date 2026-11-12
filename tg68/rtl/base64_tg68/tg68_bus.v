@@ -75,7 +75,9 @@ module tg68_bus #(
     parameter integer RD11       = 1,  // pair prefetch + one-clock-shorter direct read
     // Step 15 switches (1 = on; 0 = as step 14):
     parameter integer FPRED      = `S15_DEFAULT,  // FETCH PREDICTOR: a sequential fetch hit in 4 clocks
-    parameter integer WR4        = `S15_DEFAULT,  // a posted word/byte write steps at DECIDE (4 clocks)
+    parameter integer WR4        = 0,  // a posted word/byte write steps at DECIDE (4 clocks):
+                                       // works (sim: 1% on compiled C) but puts the fast RAM
+                                       // decode in the step decision; off for timing
     parameter integer BARREL     = 0   // documentation only: which netlist
 )(
     input  wire        clk,
@@ -358,9 +360,13 @@ module tg68_bus #(
     // kernel -> cache RAM paths SETTLE-1 clocks for this.
     // (step 15: in the clock after a kernel step, when the kernel's address
     // is changing anyway, the RAMs read the predicted next fetch address)
+    // fp_rsel_n: low in the clock after a step, like k_step, but a register
+    // of its own for this multiplexer (a 1T path into the RAMs' address
+    // pins); stored inverted so that yosys does not merge it with k_step
     reg  [31:1]      fp_a = 31'd0;
-    wire [IC_AW-2:0] ic_ra = ((FPRED != 0) && k_step) ? fp_a[IC_AW:2]
-                                                      : k_addr[IC_AW:2];   // row: both banks
+    (* keep *) reg   fp_rsel_n = 1'b1;
+    wire [IC_AW-2:0] ic_ra = ((FPRED != 0) && !fp_rsel_n) ? fp_a[IC_AW:2]
+                                                          : k_addr[IC_AW:2];   // row: both banks
     reg  [15:0]      ic_dq_e, ic_dq_o;
     reg  [TAGW-1:0]  ic_tq_e, ic_tq_o;
     reg              ic_we = 1'b0;
@@ -750,6 +756,11 @@ module tg68_bus #(
         LDSn <= lds_i;
     end
     reg [5:0] cnt  = 6'd0;   // clocks since last clkena (saturating)
+    // step 15: cnt >= STEP-1 as a register, for the step decisions (two
+    // LUT levels less on the cache-hit step). Equal to the compare in
+    // every clock but the one right after a step, when q is SETTLE and
+    // nothing steps (tb-asserted).
+    reg       cnt_ok = 1'b0;
     reg [5:0] tmr  = 6'd0;   // per-state timer
     reg       bus_berr = 1'b0;
     // dec_r is 1 exactly while q is Q_DECIDE: set on the way in (SETTLE),
@@ -783,6 +794,7 @@ module tg68_bus #(
         k_clkena <= 1'b0;
         k_step   <= 1'b0;
         k_clkena_lw <= 1'b0; k_clkena_lw2_n <= 1'b1; k_clkena_lw3 <= 1'b0;
+        fp_rsel_n <= 1'b1;
         ic_we    <= 1'b0;
         dc_we    <= 1'b0;
         cyc_start <= 1'b0;
@@ -815,6 +827,7 @@ module tg68_bus #(
         ic_on_r  <= (ICACHE != 0) && k_cacr[0] && !flush_nxt;
         dc_on_r  <= (DCACHE != 0) && k_cacr[0] && !flush_nxt;
         if (cnt != 6'h3F) cnt <= cnt + 6'd1;
+        cnt_ok <= (cnt >= STEP - 2) && !k_step;
         if (tmr != 6'h3F) tmr <= tmr + 6'd1;
 
         // FETCH PREDICTOR pipeline (see above). fp_bad before the sequencer:
@@ -826,8 +839,17 @@ module tg68_bus #(
             fp_tq      <= fp_a[1] ? ic_tq_o : ic_tq_e;
             k_din_psel <= (FPRED != 0);
         end
+        // fp_v is set here and nowhere else, and cleared by registers only
+        // (never by the step decision: with it there the cache-hit step
+        // missed 1T on every seed). Between a step and E3 it is stale, and
+        // nothing reads it: DECIDE starts at E3, on the edge this loads it.
         if (fp_s2) fp_v <= (fp_tq == tag_of(fp_a)) && !fp_kill;
-        if (fp_bad) begin fp_kill <= 1'b1; fp_v <= 1'b0; end
+        // fp_kill covers the clocks from the step to E3: an instruction-
+        // cache write to the predicted entry in the clock after the step
+        // (it lands on the edge the RAMs read) or later
+        if (k_step)      fp_kill <= fp_bad;
+        else if (fp_bad) fp_kill <= 1'b1;
+        if (fp_bad) fp_v <= 1'b0;
         // the next fetch address, from every DECIDE clock of a fetch (the
         // kernel's outputs are final there); fp_v goes with it
         if (dec_r && k_bs == 2'b00 && !k_skip) begin
@@ -864,7 +886,7 @@ module tg68_bus #(
             q        <= Q_SETTLE;
             if (cnt >= STEP - 1) begin
                 k_clkena <= 1'b1;
-                k_step   <= 1'b1;
+                k_step   <= 1'b1; fp_rsel_n <= 1'b0;
                 k_clkena_lw <= !k_longword || k_long_ack; k_clkena_lw2_n <= !(!k_longword || k_long_ack); k_clkena_lw3 <= !k_longword || k_long_ack;
                 cnt      <= 6'd0;
                 k_ipl    <= {IPL2n, IPL1n, IPL0n};
@@ -951,18 +973,18 @@ module tg68_bus #(
                 // reset every peripheral on the motherboard.
                 oRESETn <= k_nresetout;
                 if (internal_step) begin
-                    if (cnt >= STEP - 1) step();
+                    if (cnt_ok) step();
                 end else if (fp_hit) begin
                     // FETCH PREDICTOR: the word is in k_din_fp, selected
                     // since two clocks after the last step
-                    if (cnt >= STEP - 1) step();
+                    if (cnt_ok) step();
                 end else if (k_pf_ok) begin
                     // second half of a longword / next sequential word:
                     // already fetched, no SDRAM access at all
                     dec_r    <= 1'b0;
                     // (step 15: this cycle hands the kernel k_din, so the
                     // predictor's select goes, 2 clocks before the step)
-                    k_din_psel <= 1'b0; fp_v <= 1'b0;
+                    k_din_psel <= 1'b0;
                     k_din    <= pf_d;
                     bus_berr <= 1'b0;
                     tmr      <= 6'd0;
@@ -978,11 +1000,10 @@ module tg68_bus #(
                     dp_spec  <= 1'b0;
                     // step 15: a bus or data cycle may hand the kernel k_din:
                     // the predictor's select goes here, >= 2 clocks before
-                    // its step (a write that steps on this edge keeps it:
+                    // its step; the step after it reads the prediction again (a write that steps on this edge keeps it:
                     // nothing may change in the clock before a step, and a
                     // write takes no data)
-                    fp_v <= 1'b0;
-                    if (!((WR4 != 0) && !k_look && k_fast && !k_nwr && !k_wpair && cnt >= STEP - 1))
+                    if (!((WR4 != 0) && !k_look && k_fast && !k_nwr && !k_wpair && cnt_ok))
                         k_din_psel <= 1'b0;
                     // The cache RAMs read on this edge used k_addr already.
                     if (k_look) begin
@@ -1021,7 +1042,7 @@ module tg68_bus #(
                         // step 15: a write that is not a pair needs nothing
                         // back and leaves k_long_ack alone, so the kernel
                         // steps now (a pair's k_long_ack must be 2 clocks old)
-                        if ((WR4 != 0) && !k_wpair && cnt >= STEP - 1) step();
+                        if ((WR4 != 0) && !k_wpair && cnt_ok) step();
                         else q   <= Q_FINISH;
                     end else if (k_fast) begin
                         dp_req_i <= 1'b1;   // direct read
@@ -1046,7 +1067,7 @@ module tg68_bus #(
                 if (cc_long || (cc_hit && !k_long_ack)) begin
                     // hit (a pair hit if k_long_ack): no bus cycle at all
                     bus_berr <= 1'b0;
-                    if (cnt >= STEP - 1 && DIN_SETUP <= 1) step();
+                    if (cnt_ok && DIN_SETUP <= 1) step();
                     else q   <= Q_FINISH;
                     if (dp_spec) dp_kind <= 2'd2;   // drop the speculative read
                 end else if (cc_hit) begin
@@ -1128,7 +1149,7 @@ module tg68_bus #(
                 dp_q     <= dp_rdata;
                 // step 11: a plain direct read steps the kernel now (its
                 // word is in k_din_dw since DWAIT), FINISH if cnt says wait
-                if ((RD11 != 0) && !k_long_ack && cnt >= STEP - 1 && DIN_SETUP <= 1) step();
+                if ((RD11 != 0) && !k_long_ack && cnt_ok && DIN_SETUP <= 1) step();
                 else q   <= k_long_ack ? Q_DDATA2 : Q_FINISH;
                 // Data read: fetch the next word while the kernel settles,
                 // unless that would leave this 1 KB (row/slot boundaries).
@@ -1242,7 +1263,7 @@ module tg68_bus #(
             // latch a write on the AS rising edge, and the bridge holds the
             // motherboard copy for one more clock. They change only when
             // the next cycle is set up, >= SETTLE clocks from now.
-            Q_FINISH: if (tmr >= DIN_SETUP - 1 && cnt >= STEP - 1) step();
+            Q_FINISH: if (tmr >= DIN_SETUP - 1 && cnt_ok) step();
             default: q <= Q_SETTLE;
             endcase
 
@@ -1305,17 +1326,14 @@ module tg68_bus #(
     task step;
         begin
             k_clkena <= 1'b1;
-            k_step   <= 1'b1;
+            k_step   <= 1'b1; fp_rsel_n <= 1'b0;
             k_clkena_lw <= !k_longword || k_long_ack; k_clkena_lw2_n <= !(!k_longword || k_long_ack); k_clkena_lw3 <= !k_longword || k_long_ack;
             cnt      <= 6'd0;
             k_ipl    <= {IPL2n, IPL1n, IPL0n};
             k_berr   <= 1'b0;     // the kernel samples the old value here
             q        <= Q_SETTLE;
             dec_r    <= 1'b0;
-            // FETCH PREDICTOR: the cache is read at fp_a next (ic_ra takes
-            // it while k_step is high)
-            fp_v     <= 1'b0;
-            fp_kill  <= 1'b0;
+            // (FETCH PREDICTOR: the cache is read at fp_a next, fp_rsel_n)
         end
     endtask
 
