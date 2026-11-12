@@ -422,6 +422,8 @@ style. `README.md` is the user-facing version of the same material.
 | step 14 at 16x (seed 8, `speed 16`, no board mod) | 12929 / 6441 | 19.97 / 10.53 |
 | step 15 at 12x (fetch predictor, seed 8) | 11179 / 5162 | 16.59 / 8.48 |
 | step 15 at 16x (seed 8, `speed 16`) | 14925 / 6462 | 21.03 / 10.40 |
+| step 15b at 12x (timing margin, seed 10) | 10797 / 4875 | 16.60 / 8.34 |
+| step 15b at 16x (seed 10, `speed 16`) | 14412 / 5925 | 21.03 / 10.60 |
 
 - AIBB MemTest did not move from step 6 to step 7 (pairs only come from
   cache hits; MemTest's reads miss and its writes are 16-bit). Step 8's
@@ -471,6 +473,23 @@ style. `README.md` is the user-facing version of the same material.
   11.8 / 73.2 / 30.6 fps. `speed` at 12x: $170C (rising sample in use,
   nothing moved): step 14b's 12x fix works; at 16x after the tests $4710
   (falling in use, the unused rising sample moved), as with step 14.
+- Step 15b (seed 10: step 15 with the pair test out of the predicted
+  fetch and DECIDE split; runs at 12x and 16x): SysInfo caches on 10797 /
+  14412 (12x / 16x), 3.4% below step 15 at both speeds, where the sim's
+  compiled C lost 0.4%; caches off 4875 / 5925 (-5.6% / -8.3%, but with
+  the caches off the 15b changes are idle and the sim is clock-for-clock
+  identical, so that is SysInfo's spread, which step 15 itself showed:
+  4800 then 5162). AIBB 16.60 / 21.03 (on), 8.34 / 10.60 (off): as step 15.
+  xSysInfo 12x 18430 / 9240, 10.48 / 5.25 MIPS, 23.69 / 21.13 MB/s; 16x
+  24129 / 11638, 13.73 / 6.62 MIPS, 29.60 / 26.25 MB/s. Frontier
+  timedemo 12x 9.4 / 70.3 / 26.1 fps, 16x 11.8 / 73.4 / 30.6 (step 15:
+  26.2 / 30.6). SD 2.0 / 2.2 MB/s. `speed` at 12x: no sample moved, at
+  boot or later; 16x: the unused rising sample moved, as before. Open:
+  whether the SysInfo -3.4% is change A's cost (a predicted fetch is now
+  one word, so a sequential 32-bit immediate or abs.L address costs 8
+  clocks, not 5; SysInfo's Dhrystone may use many more of those than
+  bench c's 75 in 9247 fetches) or spread; a back-to-back run of 15 and
+  15b, and the real Dhrystone 2.1 in the sim, would tell.
 - Step 14 (seed 8, the switchable build): xSysInfo 12x 16247 / 8698
   Dhrystones, 9.24 / 4.95 MIPS, fast RAM 23.32 / 21.12 MB/s, SD 2.0 MB/s;
   16x (`speed 16`) 21317 / 11621, 12.13 / 6.61 MIPS, 29.17 / 26.18, SD

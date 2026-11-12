@@ -15,7 +15,7 @@ when to stop and report. Results go in the plan's own log section.
 | 14b capture fix, kernel change 5 | same branch, `bitstreams/step14b_cal/` | In step 15, which runs: 12x `speed` reads $170C (rising sample, clean) |
 | 15 fetch predictor | `step15-fetch-predictor`, `bitstreams/step15_fpred/` | **Runs on hardware** at 12x and 16x: SysInfo +15% caches on (numbers in docs/HISTORY.md). Not merged |
 | tooling | `tooling-build-seeds` | Done (PC side only) |
-| 15b predictor timing | `step15b-predictor-timing`, `bitstreams/step15b_fpred/` | **Waiting for Glen's test**: same speed as 15, 5 of 18 seeds pass, 14x / 16x 1.13x / 1.29x |
+| 15b predictor timing | `step15b-predictor-timing`, `bitstreams/step15b_fpred/` | **Runs on hardware** at 12x and 16x; 5 of 18 seeds pass, 14x / 16x 1.13x / 1.29x. SysInfo caches on 3.4% below step 15 at both speeds (AIBB, Frontier, xSysInfo 16x unchanged): spread or change A's cost, open |
 
 The branches stack (13 -> 14 -> 15 -> tooling-build-seeds -> step15b).
 New work branches from `step15b-predictor-timing`. Nothing is merged or released until Glen says.
