@@ -42,7 +42,9 @@ hardware results, the timing picture after step 15b, Glen's direction
    the busiest one's loads, and the data cache stops sharing the
    predictor's read address. Needs GHDL (`setup_cloud.sh` installs it):
    the kernel netlist is regenerated.
-4. **`exp18x.md`** (ready to build): an experimental bitstream with 18x
+4. **`exp18x.md`** **built**, test bitstream `bitstreams/exp18x/` on branch
+   `exp-18x` (seed 3: 1.26x at 16x, 1.42x at 18x), **waiting for Glen's
+   test**. Was: an experimental bitstream with 18x
    in place of 14x, to find out on Glen's board how much real margin
    there is. The planner's view after step 16: margin restructuring has
    stopped paying (placement noise is larger than the gains); 5 of 18

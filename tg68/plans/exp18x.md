@@ -1,6 +1,6 @@
 # Experiment: an 18x clock (127.7 MHz), in place of 14x
 
-Status: ready to build. Branch: `exp-18x`, from `step15b-predictor-timing`.
+Status: **built**, test bitstream in `bitstreams/exp18x/` (seed 3), waiting for Glen's test. Branch: `exp-18x`, from `step15b-predictor-timing`.
 **Experimental: never a release, never merged.** It answers one question
 on Glen's board: does the design run at 18x, and so how much real margin
 does the silicon have over the worst-case timing model?
@@ -179,3 +179,16 @@ looks at 20x only if 18x shows no sign of trouble.
   from 15b. bench sd passes.
 - `speed` 1.3x: 12 / 18 / 16, 14 rejected; vamos fake-board runs give
   the expected text for every case.
+- Seeds 1-18 (one synthesis, `--keep-sdf`): **2 pass at 12x**, seeds 3
+  (+0.49 / +1.87 ns) and 9 (+0.16 / +1.73). Others miss by 0.00-1.40 ns
+  1T or to -1.82 multicycle (adapter ctrl -> logic, kernel -> logic,
+  clkena -> kernel, as in 15b). 15b had 5 of 18 on a nearly identical
+  netlist: the difference is placement noise.
+- Scored: seed 3 1.264x at 16x, **1.423x at 18x** (adapter ctrl ->
+  logic); seed 9 1.301x / 1.464x (clkena -> kernel). Shipped seed 3 (the
+  lowest 18x ratio, and also the most 12x slack). Its 16x ratio beats
+  15b's seed 10 (1.292x).
+- `bitstreams/exp18x/`: `_plain`, `_fast`, `speed18` (speed 1.3x),
+  `README.txt` (what it is, how to try it, the test order), timing at
+  12x, 16x and 18x.
+
