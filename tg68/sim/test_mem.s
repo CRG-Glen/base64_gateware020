@@ -4,7 +4,26 @@
         .long 0x00009000
         .long start
         .org 0x100
-start:  moveq   #1,%d0
+start:
+        .ifdef SPEED18
+        | exp-18x: switch speed first (SPEED16 too: 16x, as a control) and
+        | wait until the switch is done
+        .ifdef SPEED16
+        move.w  #0x5B10,0xEAF00A
+        .else
+        move.w  #0x5B12,0xEAF00A
+        .endif
+9:      move.w  0xEAF00A,%d0
+        btst    #11,%d0
+        bne.s   9b
+        .ifdef SPEED16
+        cmp.b   #0x10,%d0
+        .else
+        cmp.b   #0x12,%d0
+        .endif
+        bne.s   9b
+        .endif
+        moveq   #1,%d0
         movec   %d0,%cacr
         lea     0x08000000,%a0
         move.w  #255,%d0

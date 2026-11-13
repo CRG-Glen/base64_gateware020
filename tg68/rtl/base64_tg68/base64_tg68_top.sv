@@ -361,21 +361,25 @@ module base64_tg68_top #(
     wire [16:0] ms_top    = 17'd113500;
     wire        spd_hold2 = 1'b1;      // 2-clock rt_ hold after AS
     wire        spd_lox   = 1'b0;      // (the SD stretch is SD_LO_EXTRA there)
+    wire        spd_rfc   = 1'b0;
 `else
     reg  [4:0]  ph_top    = 5'd11;
     reg  [4:0]  ph_half   = 5'd6;
     reg  [16:0] ms_top    = 17'd85129;
     reg         spd_hold2 = 1'b0;
     reg         spd_lox   = 1'b0;
+    reg         spd_rfc   = 1'b0;   // exp-18x
     always @(posedge clk) begin
-        ph_top    <= (spd == 2'd2) ? 5'd15 : (spd == 2'd1) ? 5'd13 : 5'd11;
-        ph_half   <= (spd == 2'd2) ? 5'd8  : (spd == 2'd1) ? 5'd7  : 5'd6;
+        // exp-18x: speed code 1 is 18x (was 14x: 13 / 7 / 99318)
+        ph_top    <= (spd == 2'd2) ? 5'd15 : (spd == 2'd1) ? 5'd17 : 5'd11;
+        ph_half   <= (spd == 2'd2) ? 5'd8  : (spd == 2'd1) ? 5'd9  : 5'd6;
         // 1 ms: 85.13 / 99.32 / 113.51 MHz
-        ms_top    <= (spd == 2'd2) ? 17'd113507 : (spd == 2'd1) ? 17'd99318 : 17'd85129;
+        ms_top    <= (spd == 2'd2) ? 17'd113507 : (spd == 2'd1) ? 17'd127695 : 17'd85129;
         // address/data hold past AS: 1 clock (11.75 ns) at 12x, 2 above
         spd_hold2 <= (spd != 2'd0);
         // SD clock: stretch the low half at 16x (see shifter.v)
-        spd_lox   <= (spd == 2'd2);
+        spd_lox   <= (spd != 2'd0);     // exp-18x: 16x and 18x
+        spd_rfc   <= (spd == 2'd1);     // exp-18x: SDRAM tRFC + 1 clock at 18x
     end
 `endif
     localparam [4:0] MC4    = CLK_MULT[4:0] / CPU_MULT;      // 2,3,4,6,12
@@ -1787,7 +1791,7 @@ module base64_tg68_top #(
     //  7-0 multiplier in force
     assign spd_stat = {ph_slip, cal_jr, cal_jf, smp_r, sp != SP_IDLE, 1'b1,
                        pll_lock16, pll_lock14,
-                       (spd == 2'd2) ? 8'd16 : (spd == 2'd1) ? 8'd14 : 8'd12};
+                       (spd == 2'd2) ? 8'd16 : (spd == 2'd1) ? 8'd18 : 8'd12};   // exp-18x
     always @(posedge clk) begin
         cal_go  <= 1'b0;
         swap_go <= 1'b0;
@@ -1818,7 +1822,7 @@ module base64_tg68_top #(
             else if (sp_cnt != 8'd15) sp_cnt <= sp_cnt + 8'd1;
             else begin
                 sp_cnt <= 8'd0;
-                sp     <= (sp_tgt == 2'd2 && !sdram_cl3) ? SP_CL : SP_SW;
+                sp     <= (sp_tgt != 2'd0 && !sdram_cl3) ? SP_CL : SP_SW;   // exp-18x: CL3 at 16x and 18x
             end
         end
         SP_CL: begin
@@ -1860,7 +1864,7 @@ module base64_tg68_top #(
             if (edge_7m) sp_cnt <= sp_cnt + 8'd1;
             if (sp_cnt == 8'd8) begin
                 sp_cnt <= 8'd0;
-                sp     <= (sp_tgt != 2'd2 && sdram_cl3) ? SP_CL2 : SP_IDLE;
+                sp     <= (sp_tgt == 2'd0 && sdram_cl3) ? SP_CL2 : SP_IDLE;   // exp-18x
             end
         end
         SP_CL2: begin
@@ -2244,6 +2248,7 @@ module base64_tg68_top #(
         .pair (dp_pair), .wdata_lo (dp_wdata_lo),
         // TG68 step 13: the speed switch's CAS latency change
         .cfg_req (sdram_cfg_req), .cfg_cl3 (sdram_cfg_cl3), .cl3_now (sdram_cl3),
+        .rfc_long (spd_rfc),              // exp-18x: tRFC + 1 at 18x
         .ack (sd_ack), .ack_early (sd_ack_early),
         .rdata_live (sd_rdata_live), .rdata (sd_rdata), .ready (sd_ready),
         .sdram_a (sdram_a), .sdram_ba (sdram_ba), .sdram_dq (sdram_dq),

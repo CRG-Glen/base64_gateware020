@@ -65,6 +65,11 @@ module sdram_ctrl #(
     // cl3_now is the latency in force. Power-on: CAS_LAT.
     input  wire        cfg_req,
     input  wire        cfg_cl3,
+    // TG68: branch exp-18x: one more clock after REFRESH (tRFC) while the
+    // system clock is 18x (7.83 ns: T_RFC's count gives 62.6 ns, within
+    // the -6 part's 60 but under the sim model's 65 ns). Changes only in a
+    // speed switch, with the CPU held and the SDRAM idle.
+    input  wire        rfc_long,
     output reg         cl3_now = (CAS_LAT == 3),
     output reg         ack,
     // Combinational ack, asserted in the SAME cycle the CAS data lands on dq
@@ -289,7 +294,7 @@ module sdram_ctrl #(
                 if (timer != 0) timer <= timer - 1'b1;
                 else begin
                     set_cmd(CMD_REFRESH);
-                    timer <= T_RFC[3:0];
+                    timer <= T_RFC[3:0] + {3'd0, rfc_long};   // TG68: exp-18x
                     state <= S_INIT_REF2;
                 end
             end
@@ -297,7 +302,7 @@ module sdram_ctrl #(
                 if (timer != 0) timer <= timer - 1'b1;
                 else begin
                     set_cmd(CMD_REFRESH);
-                    timer <= T_RFC[3:0];
+                    timer <= T_RFC[3:0] + {3'd0, rfc_long};   // TG68: exp-18x
                     state <= S_INIT_MODE;
                 end
             end
@@ -414,7 +419,7 @@ module sdram_ctrl #(
                         state <= S_REF_PRE;
                     end else begin
                         set_cmd(CMD_REFRESH);
-                        timer <= T_RFC[3:0];
+                        timer <= T_RFC[3:0] + {3'd0, rfc_long};   // TG68: exp-18x
                         state <= S_REFRESH;
                     end
                 end
@@ -519,7 +524,7 @@ module sdram_ctrl #(
                 if (timer != 0) timer <= timer - 1'b1;
                 else begin
                     set_cmd(CMD_REFRESH);
-                    timer <= T_RFC[3:0];
+                    timer <= T_RFC[3:0] + {3'd0, rfc_long};   // TG68: exp-18x
                     state <= S_REFRESH;
                 end
             end

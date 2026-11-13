@@ -1,8 +1,11 @@
 | speed -- show or change the Base64 TG68 system clock while running.
 |
+| EXPERIMENTAL 1.3x, for the exp-18x gateware only: 18x (127.7 MHz) in
+| place of 14x. Speed code 1 (the "14x" PLL, bit 8) is 18x there.
+|
 |   speed             report the clock in force, change nothing
 |   speed 12          85.1 MHz, the ICS570B's own clock (power-on default)
-|   speed 14          99.3 MHz, from the FPGA's PLL
+|   speed 18          127.7 MHz, from the FPGA's PLL (exp-18x; no 14x)
 |   speed 16          113.5 MHz, from the FPGA's PLL
 |   speed 16 RISE     the same, with the 7 MHz sample forced to the rising
 |   speed 16 FALL     or falling clock edge (normally calibrated: see below)
@@ -12,12 +15,12 @@
 | The gateware (step 13) has a speed register in the AutoConfig ROM board
 | (5194/14) at board+$F00A, next to mapROM's control register. A write is
 | taken only when the high byte is $5B:
-|   $5B0C / $5B0E / $5B10   ask for 12x / 14x / 16x (anything else ignored)
+|   $5B0C / $5B12 / $5B10   ask for 12x / 18x / 16x (anything else ignored)
 |   +$40 / +$80             force the 7 MHz sample to the rising / falling
 |                           clock edge
 | A read gives
-|   bits 7-0   multiplier in force (12, 14 or 16)
-|   bit  8     14x PLL locked
+|   bits 7-0   multiplier in force (12, 14 or 16; exp-18x: 12, 18 or 16)
+|   bit  8     14x PLL locked (exp-18x: the 18x PLL)
 |   bit  9     16x PLL locked
 |   bit  10    run-time switching present (0: the fixed-clock board-mod
 |              build, or gateware before step 13, which reads 0 here)
@@ -143,7 +146,7 @@ _start:
         beq.s   6f
         cmp.w   #12,%d2
         beq.s   7f
-        cmp.w   #14,%d2
+        cmp.w   #18,%d2                     | exp-18x: 18 in place of 14
         beq.s   7f
         cmp.w   #16,%d2
         bne     usage
@@ -260,7 +263,7 @@ args_done:
         bne.s   5f
         lea     m_recal(%pc),%a0            | same speed: a recalibration
         bsr     puts
-5:      cmp.w   #14,%d6                     | its PLL must be locked
+5:      cmp.w   #18,%d6                     | its PLL must be locked (exp-18x)
         bne.s   6f
         btst    #B_LOCK14,%d5
         bne.s   7f
@@ -328,7 +331,7 @@ report:
         cmp.b   #12,%d5
         beq.s   1f
         lea     m_x14(%pc),%a0
-        cmp.b   #14,%d5
+        cmp.b   #18,%d5                     | exp-18x
         beq.s   1f
         lea     m_x16(%pc),%a0
         cmp.b   #16,%d5
@@ -438,24 +441,24 @@ puthexn:
 | ---- text ------------------------------------------------------------------
 dosname:    .asciz  "dos.library"
 expname:    .asciz  "expansion.library"
-verstag:    .asciz  "$VER: speed 1.2 (11.11.2026) Base64"
-m_usage:    .asciz  "Usage: speed               show the clock in force\n       speed 12            85.1 MHz (power-on default)\n       speed 14            99.3 MHz\n       speed 16           113.5 MHz\n       speed <n> RISE|FALL  force the 7 MHz sampling edge\nThe speed stays over a reset; a power cycle returns to 12.\nThe speed in force again: recalibrate the 7 MHz capture.\n"
+verstag:    .asciz  "$VER: speed 1.3x (13.11.2026) Base64 18x experiment"
+m_usage:    .asciz  "Usage: speed               show the clock in force\n       speed 12            85.1 MHz (power-on default)\n       speed 18           127.7 MHz (experiment)\n       speed 16           113.5 MHz\n       speed <n> RISE|FALL  force the 7 MHz sampling edge\nThe speed stays over a reset; a power cycle returns to 12.\nThe speed in force again: recalibrate the 7 MHz capture.\n"
 m_noexp:    .asciz  "cannot open expansion.library\n"
 m_noboard:  .asciz  "No Base64 AutoConfig ROM board found (5194/14).\n"
 m_nowin:    .asciz  "Board found, but no status window - gateware is too old.\n"
 m_noswitch: .asciz  "This gateware cannot change the clock while running\n(the fixed-clock x16 build, or one older than step 13).\n"
 m_recal:    .asciz  "Same speed: recalibrating the 7 MHz capture.\n"
-m_nolock14: .asciz  "The 14x PLL is not locked: speed not changed.\n"
+m_nolock14: .asciz  "The 18x PLL is not locked: speed not changed.\n"
 m_nolock16: .asciz  "The 16x PLL is not locked: speed not changed.\n"
 m_timeout:  .asciz  "The gateware did not finish the switch.\n"
 m_speed:    .asciz  "System clock: "
 m_x12:      .asciz  "12x  85.1 MHz\n"
-m_x14:      .asciz  "14x  99.3 MHz\n"
+m_x14:      .asciz  "18x 127.7 MHz\n"
 m_x16:      .asciz  "16x 113.5 MHz\n"
 m_xunk:     .asciz  "unknown\n"
 m_avail:    .asciz  "Available:    "
 m_a12:      .asciz  " 12"
-m_a14:      .asciz  " 14"
+m_a14:      .asciz  " 18"
 m_a16:      .asciz  " 16"
 m_smp:      .asciz  "7 MHz sample: "
 m_rise:     .asciz  "rising edge\n"

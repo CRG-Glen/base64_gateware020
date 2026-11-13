@@ -348,7 +348,8 @@ always @(posedge clk) rom_q <= rom[a[ROM_AWID:1]];
 //   +$F006  ms to boot         read-only
 //   +$F008  mapROM control     READ/WRITE
 //   +$F00A  speed (step 13)    READ/WRITE, key $5B:
-//           write $5B0C / $5B0E / $5B10 asks for 12x / 14x / 16x (the top
+//           write $5B0C / $5B0E / $5B10 asks for 12x / 14x / 16x (exp-18x:
+//           $5B12 = 18x in place of $5B0E = 14x) (the top
 //           level switches when the CPU and both buses are idle, and
 //           recalibrates its 7M capture; the speed in force just
 //           recalibrates); +$40 / +$80 force the 7M sample to the rising /
@@ -418,7 +419,8 @@ always @(posedge clk) begin
     spd_wr <= 1'b0;
     if (spd_wr_hit && !spd_wr_q && d_in[15:8] == SPEED_KEY && d_in[7:6] != 2'd3) begin
         if      (d_in[5:0] == 6'd12) begin spd_wr <= 1'b1; spd_val <= 2'd0; spd_smp <= d_in[7:6]; end
-        else if (d_in[5:0] == 6'd14) begin spd_wr <= 1'b1; spd_val <= 2'd1; spd_smp <= d_in[7:6]; end
+        // TG68: branch exp-18x (experiment): 18 ($5B12) takes speed code 1, 14 is not taken
+        else if (d_in[5:0] == 6'd18) begin spd_wr <= 1'b1; spd_val <= 2'd1; spd_smp <= d_in[7:6]; end
         else if (d_in[5:0] == 6'd16) begin spd_wr <= 1'b1; spd_val <= 2'd2; spd_smp <= d_in[7:6]; end
     end
 end
