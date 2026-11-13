@@ -153,4 +153,29 @@ looks at 20x only if 18x shows no sign of trouble.
 
 ## Log
 
-(build model)
+- Built on `exp-18x` (commit 8fac65f) as planned. Every other use of
+  `spd` checked: `ph_top`/`ph_half`/`ms_top` (17 / 9 / 127695, widths
+  fine), `spd_hold2` (already "not 12x"), `spd_lox` now "not 12x" (16x
+  and 18x), the sequencer's two CL tests now "not 12x" / "12x", the
+  register's multiplier byte (18), `smp_r`'s 12x rule unchanged. No other
+  13 / 7 / 99318 constants. `sp_ok` uses `pll_lock14` = the 18x PLL.
+- **SDRAM model at 18x: one parameter, tRFC.** Every refresh: "command
+  issued too soon after REFRESH" (8 clocks = 62.6 ns; the model checks a
+  -7 part's 65 ns; the board's -6 part needs 60). Fixed per the plan:
+  `sdram_ctrl` input `rfc_long` (TG68:, from `spd_rfc` = speed code 1, a
+  config register in check_timing), T_RFC + 1 on all four refresh
+  timer loads. No other violation in any bench at 18x.
+- Benches can now run at 18x: `BENCH_ASD="--defsym SPEED18=1" sh
+  sim/run.sh bench copy|read|scatter|c` (add `--defsym SPEED16=1` for a
+  16x control). The write and chip benches (test_wr.s, test_chip.s) do
+  not switch. Timed-pass clocks (clk12 ticks, so time) at 12x / 16x /
+  18x: copy 9432 / 7536 / 6780, read 6204 / 4884 / 4416, scatter 3756 /
+  3048 / 2772, c 65892 / 49644 / 44160. 18x over 16x: copy +11%, read
+  +11%, scatter +10%, c +12.4%.
+- Sims: bus, top, fastmem pass; the fastmem switch test's 14x leg is
+  18x ($0712 at 81E0; mode loads still 3: CL3 at 16x, kept at 18x, CL2
+  at 12x). CAL_TEST and CAL_DRIFT pass with the 18x expectations (falling
+  sample at 18x; CAL_DRIFT one swap, as before). 12x benches unchanged
+  from 15b. bench sd passes.
+- `speed` 1.3x: 12 / 18 / 16, 14 rejected; vamos fake-board runs give
+  the expected text for every case.
