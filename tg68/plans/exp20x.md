@@ -1,6 +1,6 @@
 # Experiment: a 20x clock (141.88 MHz), in place of 14x
 
-Status: built on Glen's request after 18x worked (no separate plan: the
+Status: **built**, test bitstream `bitstreams/exp20x/` (seed 10), waiting for Glen's test. Built on Glen's request after 18x worked (no separate plan: the
 same change as `exp18x.md`, one speed higher). Branch `exp-20x`, from
 `exp-18x`. **Experimental: never a release, never merged.**
 
@@ -37,4 +37,11 @@ At 20x, timed-pass clocks (clk12 ticks, so time) and against 18x: copy
 
 ## Log
 
-(build model)
+- Seeds 1-18 (`--keep-sdf`): **4 pass at 12x**: 6 (+0.36 / +1.40), 9
+  (+0.50 / +1.47), 10 (+0.77 / +2.19), 16 (+0.26 / +1.14). Scored at 16x /
+  20x: 6 1.279x / 1.599x, 9 1.264x / 1.580x, **10 1.233x / 1.541x**
+  (icache/direct -> logic), 16 1.291x / 1.613x. Shipped seed 10: the
+  lowest 20x ratio, and also the most 12x slack and the lowest 16x ratio
+  of any build so far.
+- `bitstreams/exp20x/`: `_plain`, `_fast`, `speed20` (speed 1.4x),
+  `README.txt`, timing at 12x, 16x and 20x.
