@@ -424,6 +424,9 @@ style. `README.md` is the user-facing version of the same material.
 | step 15 at 16x (seed 8, `speed 16`) | 14925 / 6462 | 21.03 / 10.40 |
 | step 15b at 12x (timing margin, seed 10) | 10797 / 4875 | 16.60 / 8.34 |
 | step 15b at 16x (seed 10, `speed 16`) | 14412 / 5925 | 21.03 / 10.60 |
+| exp-18x at 12x (seed 3) | 10798 / 5162 | 16.60 / 8.29 |
+| exp-18x at 16x (seed 3) | 14376 / 5539 | 21.02 / 10.59 |
+| exp-18x at 18x (seed 3, experiment) | 16225 / 6596 | 23.58 / 11.67 |
 
 - AIBB MemTest did not move from step 6 to step 7 (pairs only come from
   cache hits; MemTest's reads miss and its writes are 16-bit). Step 8's
@@ -473,6 +476,13 @@ style. `README.md` is the user-facing version of the same material.
   11.8 / 73.2 / 30.6 fps. `speed` at 12x: $170C (rising sample in use,
   nothing moved): step 14b's 12x fix works; at 16x after the tests $4710
   (falling in use, the unused rising sample moved), as with step 14.
+- 18x experiment (branch `exp-18x`, seed 3, never a release; 18x in
+  place of 14x): **runs on Glen's A500+** at 1.42x the worst-case model
+  (16x on that build: 1.26x). 18x over 16x: SysInfo +12.9% caches on,
+  AIBB +12.2%, xSysInfo +10.8% (27033 / 13918, 15.38 / 7.92 MIPS, fast
+  RAM 33.23 / 29.51 MB/s), SD 2.5 MB/s, Frontier timedemo 12.9 / 74.9 /
+  32.4 fps (+5.9% average: Chip RAM bound). Only design change beyond
+  the clock: SDRAM tRFC + 1 clock at 18x. Details: plans/exp18x.md.
 - Step 15b (seed 10: step 15 with the pair test out of the predicted
   fetch and DECIDE split; runs at 12x and 16x): SysInfo caches on 10797 /
   14412 (12x / 16x), 3.4% below step 15 at both speeds, where the sim's

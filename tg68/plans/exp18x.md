@@ -192,3 +192,26 @@ looks at 20x only if 18x shows no sign of trouble.
   `README.txt` (what it is, how to try it, the test order), timing at
   12x, 16x and 18x.
 
+## Hardware result (Glen, A500+): **18x works**
+
+Seed 3, `_fast`. Boots at 12x as usual; 16x as step 15b; `speed18 18`
+switches and runs every test, SD included.
+
+| | 12x | 16x | 18x | 18x vs 16x |
+| --- | --- | --- | --- | --- |
+| SysInfo caches on | 10798 | 14376 | 16225 | +12.9% |
+| SysInfo caches off | 5162 | 5539 | 6596 | +19% (spread) |
+| AIBB MemTest on / off | 16.60 / 8.29 | 21.02 / 10.59 | 23.58 / 11.67 | +12.2% / +10.2% |
+| xSysInfo on | 18094 | 24407 | 27033 | +10.8% |
+| xSysInfo off | 9475 | 12117 | 13918 | +14.9% |
+| xSysInfo fast RAM on / off MB/s | 23.71 / 21.15 | 29.59 / 26.24 | 33.23 / 29.51 | +12.3% / +12.5% |
+| SD (xSysInfo) MB/s | 2.0 | 2.2 | 2.5 | +14% |
+| Frontier timedemo min / max / avg fps | 9.4 / 70.6 / 26.1 | 11.8 / 73.4 / 30.6 | 12.9 / 74.9 / 32.4 | avg +5.9% |
+
+The clock is 12.5% faster; CPU-bound work gains 11-13%, as the sim
+predicted (10-12%). Frontier gains less (+5.9% average): it spends much
+of its time on the 7 MHz Chip RAM bus, which does not speed up. The
+board ran at 1.42x the worst-case timing model with no visible fault.
+Not yet reported: whether it stayed up through a long warm run, and
+`speed18`'s status after one (any sample moved, swaps).
+
