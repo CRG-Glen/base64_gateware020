@@ -11,7 +11,7 @@ start:
         .ifdef SPEED16
         move.w  #0x5B10,0xEAF00A
         .else
-        move.w  #0x5B12,0xEAF00A
+        move.w  #0x5B14,0xEAF00A        | exp-20x: SPEED18 means the experiment's speed, 20x
         .endif
 9:      move.w  0xEAF00A,%d0
         btst    #11,%d0
@@ -19,7 +19,7 @@ start:
         .ifdef SPEED16
         cmp.b   #0x10,%d0
         .else
-        cmp.b   #0x12,%d0
+        cmp.b   #0x14,%d0
         .endif
         bne.s   9b
         .endif

@@ -348,12 +348,12 @@ pf2:    dbra    %d1,pf2
         moveq   #0,%d0
         move.w  0xEAF00A,%d0
         move.l  %d0,0x81D8          | 81D8 00000710
-        move.w  #0x5B12,0xEAF00A    | -> 18x (exp-18x: in place of 14x)
+        move.w  #0x5B14,0xEAF00A    | -> 20x (exp-20x: in place of 14x)
         bsr     spdchk
         move.l  %d3,0x81E4          | 81E4 ACF1E135
         moveq   #0,%d0
         move.w  0xEAF00A,%d0
-        move.l  %d0,0x81E0          | 81E0 00000712 (18x)
+        move.l  %d0,0x81E0          | 81E0 00000714 (20x)
         move.w  #0x5B0C,0xEAF00A    | -> 12x
         bsr     spdchk
         move.l  %d3,0x81EC          | 81EC ACF1E135

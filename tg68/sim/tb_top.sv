@@ -610,7 +610,7 @@ module tb;
         if (dut.n_swap < 1) begin $display("FAIL: the drifting 7M stream was never swapped out"); errors = errors + 1; end
         checkm(24'h81D4, 32'h0000470C, 32'h00007FFF, "speed: 12x after the drift");
         checkm(24'h81D8, 32'h00004710, 32'h00007FFF, "speed: 16x, falling stream");
-        checkm(24'h81E0, 32'h00004712, 32'h00007FFF, "speed: 18x, falling stream");   // exp-18x
+        checkm(24'h81E0, 32'h00004714, 32'h00007FFF, "speed: 20x, falling stream");   // exp-20x
         checkm(24'h81E8, 32'h0000470C, 32'h00007FFF, "speed: back to 12x, falling");
         checkm(24'h81F0, 32'h0000470C, 32'h00007FFF, "speed: unkeyed / invalid ignored");
         checkm(24'h81F4, 32'h0000570C, 32'h00007FFF, "speed: 12x, rising forced");
@@ -623,7 +623,7 @@ module tb;
         // both are clean and the falling stream stays
         check(24'h81D4, 32'h0000370C, "speed: 12x at power-on, rising 7M stream");
         check(24'h81D8, 32'h00000710, "speed: 16x, falling stream");
-        check(24'h81E0, 32'h00000712, "speed: 18x, falling stream");   // exp-18x
+        check(24'h81E0, 32'h00000714, "speed: 20x, falling stream");   // exp-20x
         check(24'h81E8, 32'h0000370C, "speed: back to 12x, rising stream");
         check(24'h81F0, 32'h0000370C, "speed: unkeyed / invalid writes ignored");
         check(24'h81F4, 32'h0000370C, "speed: 12x, rising forced");
@@ -635,7 +635,7 @@ module tb;
         // clean here); at 14x and 16x the falling one; no swap ever
         check(24'h81D4, 32'h0000170C, "speed: 12x at power-on, rising");
         check(24'h81D8, 32'h00000710, "speed: 16x");
-        check(24'h81E0, 32'h00000712, "speed: 18x");   // exp-18x
+        check(24'h81E0, 32'h00000714, "speed: 20x");   // exp-20x
         check(24'h81E8, 32'h0000170C, "speed: back to 12x, rising");
         check(24'h81F0, 32'h0000170C, "speed: unkeyed / invalid writes ignored");
         check(24'h81F4, 32'h0000170C, "speed: 12x, rising 7M stream forced");
@@ -644,7 +644,7 @@ module tb;
         if (dut.n_swap != 0) begin $display("FAIL: %0d 7M stream swaps with nothing drifting", dut.n_swap); errors = errors + 1; end
 `endif
         check(24'h81DC, 32'hACF1E135, "speed: memory traffic at 16x");
-        check(24'h81E4, 32'hACF1E135, "speed: memory traffic at 18x");
+        check(24'h81E4, 32'hACF1E135, "speed: memory traffic at 20x");
         check(24'h81EC, 32'hACF1E135, "speed: memory traffic at 12x");
         check(24'h81FC, 32'hACF1E135, "speed: memory traffic after a recalibration");
         // step 15: code that overwrites the instruction 0, 1 or 2 words

@@ -65,10 +65,11 @@ module sdram_ctrl #(
     // cl3_now is the latency in force. Power-on: CAS_LAT.
     input  wire        cfg_req,
     input  wire        cfg_cl3,
-    // TG68: branch exp-18x: one more clock after REFRESH (tRFC) while the
-    // system clock is 18x (7.83 ns: T_RFC's count gives 62.6 ns, within
-    // the -6 part's 60 but under the sim model's 65 ns). Changes only in a
-    // speed switch, with the CPU held and the SDRAM idle.
+    // TG68: branch exp-20x: two more clocks after REFRESH (tRFC) while the
+    // system clock is 20x (7.05 ns: T_RFC's count gives 56.4 ns, +1 63.4,
+    // +2 70.5; the -6 part needs 60, the sim model checks 65). (exp-18x
+    // added one at 18x.) Changes only in a speed switch, with the CPU held
+    // and the SDRAM idle.
     input  wire        rfc_long,
     output reg         cl3_now = (CAS_LAT == 3),
     output reg         ack,
@@ -294,7 +295,7 @@ module sdram_ctrl #(
                 if (timer != 0) timer <= timer - 1'b1;
                 else begin
                     set_cmd(CMD_REFRESH);
-                    timer <= T_RFC[3:0] + {3'd0, rfc_long};   // TG68: exp-18x
+                    timer <= T_RFC[3:0] + {2'd0, rfc_long, 1'b0};   // TG68: exp-20x (+2)
                     state <= S_INIT_REF2;
                 end
             end
@@ -302,7 +303,7 @@ module sdram_ctrl #(
                 if (timer != 0) timer <= timer - 1'b1;
                 else begin
                     set_cmd(CMD_REFRESH);
-                    timer <= T_RFC[3:0] + {3'd0, rfc_long};   // TG68: exp-18x
+                    timer <= T_RFC[3:0] + {2'd0, rfc_long, 1'b0};   // TG68: exp-20x (+2)
                     state <= S_INIT_MODE;
                 end
             end
@@ -419,7 +420,7 @@ module sdram_ctrl #(
                         state <= S_REF_PRE;
                     end else begin
                         set_cmd(CMD_REFRESH);
-                        timer <= T_RFC[3:0] + {3'd0, rfc_long};   // TG68: exp-18x
+                        timer <= T_RFC[3:0] + {2'd0, rfc_long, 1'b0};   // TG68: exp-20x (+2)
                         state <= S_REFRESH;
                     end
                 end
@@ -524,7 +525,7 @@ module sdram_ctrl #(
                 if (timer != 0) timer <= timer - 1'b1;
                 else begin
                     set_cmd(CMD_REFRESH);
-                    timer <= T_RFC[3:0] + {3'd0, rfc_long};   // TG68: exp-18x
+                    timer <= T_RFC[3:0] + {2'd0, rfc_long, 1'b0};   // TG68: exp-20x (+2)
                     state <= S_REFRESH;
                 end
             end

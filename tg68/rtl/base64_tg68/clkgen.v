@@ -1,7 +1,8 @@
-// EXPERIMENT (branch exp-18x, never a release): the second PLL makes 18x
-// (127.69 MHz, x3/2: CLKI_DIV 2, CLKFB_DIV 3, CLKOP_DIV 6, VCO 766 MHz) in
-// place of 14x. The names below still say 14 (c14, lock14, u_pll14, speed
-// code 1) to keep the diff small: in this branch "14" means 18x.
+// EXPERIMENT (branch exp-20x, never a release): the second PLL makes 20x
+// (141.88 MHz, x5/3: CLKI_DIV 3, CLKFB_DIV 5, CLKOP_DIV 4, VCO 567.5 MHz) in
+// place of 14x (exp-18x had 18x there). The names below still say 14 (c14,
+// lock14, u_pll14, speed code 1) to keep the diff small: in this branch
+// "14" means 20x.
 //
 // TG68 step 13: the system clock, switchable between 12x, 14x and 16x the
 // Amiga's 7.09 MHz while running.
@@ -47,14 +48,14 @@ end else begin : g_pll
     wire c14, c16;
 `ifdef YOSYS
     (* FREQUENCY_PIN_CLKI="85.13" *)
-    (* FREQUENCY_PIN_CLKOP="127.69" *)
+    (* FREQUENCY_PIN_CLKOP="141.88" *)
     (* ICP_CURRENT="12" *) (* LPF_RESISTOR="8" *) (* MFG_ENABLE_FILTEROPAMP="1" *) (* MFG_GMCREF_SEL="2" *)
     EHXPLLL #(
         .PLLRST_ENA("DISABLED"), .INTFB_WAKE("DISABLED"), .STDBY_ENABLE("DISABLED"),
         .DPHASE_SOURCE("DISABLED"), .OUTDIVIDER_MUXA("DIVA"), .OUTDIVIDER_MUXB("DIVB"),
         .OUTDIVIDER_MUXC("DIVC"), .OUTDIVIDER_MUXD("DIVD"),
-        .CLKI_DIV(2), .CLKOP_ENABLE("ENABLED"), .CLKOP_DIV(6),
-        .CLKOP_CPHASE(3), .CLKOP_FPHASE(0), .FEEDBK_PATH("CLKOP"), .CLKFB_DIV(3)
+        .CLKI_DIV(3), .CLKOP_ENABLE("ENABLED"), .CLKOP_DIV(4),
+        .CLKOP_CPHASE(3), .CLKOP_FPHASE(0), .FEEDBK_PATH("CLKOP"), .CLKFB_DIV(5)
     ) u_pll14 (
         .RST(1'b0), .STDBY(1'b0), .CLKI(c12), .CLKOP(c14), .CLKFB(c14), .CLKINTFB(),
         .PHASESEL0(1'b0), .PHASESEL1(1'b0), .PHASEDIR(1'b1), .PHASESTEP(1'b1),
@@ -76,7 +77,7 @@ end else begin : g_pll
     );
 `else
     // simulation: N output cycles per 12 input cycles, re-phased every 12
-    pll_model #(.N(18)) u_pll14 (.clk_in(c12), .clk_out(c14), .lock(lock14));   // exp-18x: 18x
+    pll_model #(.N(20)) u_pll14 (.clk_in(c12), .clk_out(c14), .lock(lock14));   // exp-20x: 20x
     pll_model #(.N(16)) u_pll16 (.clk_in(c12), .clk_out(c16), .lock(lock16));
 `endif
     // the glitch-free switch: one enable per source, changed on that
