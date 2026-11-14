@@ -484,8 +484,8 @@ style. `README.md` is the user-facing version of the same material.
   step). The released bitstream is the `exp-20x` seed 10 file Glen
   tested (hours at 20x, stable); the release source rebuilds it byte
   for byte (only comments changed). `speed` 1.4 (12 / 16 / 20). The
-  upstream files outside `tg68/` were removed; old branches kept as
-  `archive/` tags.
+  upstream files outside `tg68/` were removed; the old branches stay on
+  GitHub.
 - 20x experiment (branch `exp-20x`, seed 10, never a release; 20x in
   place of 14x): **runs on Glen's A500+ at 12x, 16x and 20x**, 1.54x the
   worst-case model at 20x. 20x over 16x: SysInfo +25.3% (18024 / 7499,

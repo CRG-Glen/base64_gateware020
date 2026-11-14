@@ -118,7 +118,8 @@ v2.0 runs on the developer's A500+ at 12x, 16x and 20x, including hours
 of use at 20x. The design notes in [`tg68/README.md`](tg68/README.md)
 describe every step of the speed-up work, and
 [`tg68/docs/HISTORY.md`](tg68/docs/HISTORY.md) has the measurements. The
-old step-by-step test branches are kept as `archive/...` tags.
+old step-by-step branches (each with its test bitstreams) are still on
+GitHub.
 [`tg68/CLAUDE.md`](tg68/CLAUDE.md) and [`tg68/plans/`](tg68/plans/README.md)
 hold the working rules and plans.
 
