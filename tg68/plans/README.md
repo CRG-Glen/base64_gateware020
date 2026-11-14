@@ -5,24 +5,15 @@ Start every session here. One model plans a step, another builds it (see
 numbers that must not move, the acceptance criteria, the fallbacks and
 when to stop and report. Results go in the plan's own log section.
 
-## State (updated at the end of step 15)
+## State (updated at the v2.0 release)
 
-| Step | Branch | State |
-| --- | --- | --- |
-| 12 | `main` | Released (v1.5), known good on hardware |
-| 13 run-time speed | `step13-pll-speed` | Runs on Glen's A500+ at 12x / 14x / 16x. Not merged |
-| 14 timing headroom | `step14-timing-headroom` | Seed 8 build runs on hardware. Not merged |
-| 14b capture fix, kernel change 5 | same branch, `bitstreams/step14b_cal/` | In step 15, which runs: 12x `speed` reads $170C (rising sample, clean) |
-| 15 fetch predictor | `step15-fetch-predictor`, `bitstreams/step15_fpred/` | **Runs on hardware** at 12x and 16x: SysInfo +15% caches on (numbers in docs/HISTORY.md). Not merged |
-| tooling | `tooling-build-seeds` | Done (PC side only) |
-| 15b predictor timing | `step15b-predictor-timing`, `bitstreams/step15b_fpred/` | **Runs on hardware** at 12x and 16x; 5 of 18 seeds pass, 14x / 16x 1.13x / 1.29x. SysInfo caches on 3.4% below step 15 at both speeds (AIBB, Frontier, xSysInfo 16x unchanged): spread or change A's cost, open |
-
-The branches stack (13 -> 14 -> 15 -> tooling-build-seeds -> step15b).
-New work branches from `step15b-predictor-timing`. Nothing is merged or released until Glen says.
-
-**For the planner: read `report-after-15b.md` first.** It summarises the
-hardware results, the timing picture after step 15b, Glen's direction
-(margin over small speed losses) and the options for the next step.
+- `main` = **v2.0**: steps 13 to 15b plus the 20x clock (run-time 12x /
+  16x / 20x). Runs on Glen's A500+ at all three speeds, hours at 20x.
+  Released bitstream = the `exp-20x` build, seed 10.
+- Every old step and experiment branch is kept as an `archive/<branch>`
+  tag; its test bitstreams are in it.
+- New work branches from `main`. The entries below are the history of
+  how v2.0 was reached; the backlog (`backlog.md`) is what is left.
 
 ## Queue, in order
 

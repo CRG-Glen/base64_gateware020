@@ -479,6 +479,13 @@ style. `README.md` is the user-facing version of the same material.
   11.8 / 73.2 / 30.6 fps. `speed` at 12x: $170C (rising sample in use,
   nothing moved): step 14b's 12x fix works; at 16x after the tests $4710
   (falling in use, the unused rising sample moved), as with step 14.
+- **v2.0 release** (14.11.2026): main gets steps 13 to 15b and the 20x
+  clock; speeds 12x / 16x / 20x (Glen: 14x and 18x not a big enough
+  step). The released bitstream is the `exp-20x` seed 10 file Glen
+  tested (hours at 20x, stable); the release source rebuilds it byte
+  for byte (only comments changed). `speed` 1.4 (12 / 16 / 20). The
+  upstream files outside `tg68/` were removed; old branches kept as
+  `archive/` tags.
 - 20x experiment (branch `exp-20x`, seed 10, never a release; 20x in
   place of 14x): **runs on Glen's A500+ at 12x, 16x and 20x**, 1.54x the
   worst-case model at 20x. 20x over 16x: SysInfo +25.3% (18024 / 7499,

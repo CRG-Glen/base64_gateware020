@@ -19,7 +19,7 @@ nextpnr.log, report.json, timing.txt; its .sdf is deleted unless it is the
 best seed or --keep-sdf is given). It runs them all (--first-pass: stop
 starting new seeds once one has passed), prints a table of every seed's
 worst slacks (also written to build/<cfg>/seeds.txt), and packs the PASS
-seed with the largest worst-1T slack, scored at 14x and 16x as well.
+seed with the largest worst-1T slack, scored at 16x and 20x as well.
 
 Output: build/<cfg>/base64_tg68_<cfg>.bit (plain) and _fast.bit
 (--compress --freq 38.8), from the best seed, with yosys.log,
@@ -273,9 +273,9 @@ if best is None:
 seed = best[0]
 d = os.path.join(out, 'seed%d' % seed)
 print('== best seed: %d (worst 1T slack %+.2f ns)' % (seed, best[1]))
-# 14x and 16x: the same build scored by the worst delay/budget ratio (it
+# 16x and 20x: the same build scored by the worst delay/budget ratio (it
 # cannot pass the worst-case model there; see README "Timing")
-for freq, tag in ((99.32, '14x'), (113.51, '16x')):
+for freq, tag in ((113.51, '16x'), (141.88, '20x')):   # v2.0: 12x / 16x / 20x
     t = subprocess.run([sys.executable, CHECK, 'base64_tg68.sdf', '--freq', str(freq), '--paths', '6'],
                        cwd=d, capture_output=True, text=True)
     open(os.path.join(d, 'timing_at%s.txt' % tag), 'w').write(t.stdout)

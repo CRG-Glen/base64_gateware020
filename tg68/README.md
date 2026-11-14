@@ -10,25 +10,15 @@ and the SD card. An adapter, `tg68_bus.v`, makes TG68K look like fx68k's
 ports and adds the caches and the direct SDRAM path. Changes to the fx68k
 build's own files are few and marked `TG68:`.
 
-> **Step 13:** the normal bitstream can switch the whole design between
-> 12x, 14x and 16x while running, from a Shell (`speed 16`), with no board
-> mod; see *Clock speed at run time (step 13)*. It runs on Glen's A500+ at
-> all three speeds. **Step 14** (test build) gives the timing check room
-> again, at no cost in clocks. **Step 15** predicts the next instruction
-> fetch: on the A500+ SysInfo gives 11179 Dhrystones at 12x and 14925 at
-> 16x with the caches on, 15% more than step 14, and Frontier's timedemo
-> averages 26.2 / 30.6 fps.
->
-> **Status:** steps 1-15 run on an A500+ (13-15 not yet released). The latest, step 12 `full`, at
-> the stock 12x clock: 9690 Dhrystones (10.11 MIPS), AIBB MemTest 15.74 MB/s,
-> xSysInfo fast RAM 23.33 MB/s with the caches on; 5177 Dhrystones and
-> 8.14 MB/s with them off. That is about 3.5× the 2783 Dhrystones of the
-> first working build. On a board with its clock multiplier rewired to x16
-> (see *16x clock*), the `_x16` files give 12907 Dhrystones and 19.97 MB/s.
-> Steps 11 and 12 are for games: code that runs from Chip RAM is cached
-> (step 11), and Chip RAM writes go through an 8-entry write buffer while
-> the CPU carries on (step 12). Frontier and Gloom run much faster with
-> the caches on.
+> **v2.0** (the current release): the clock switches at run time between
+> **12x, 16x and 20x** (85.1, 113.5 and 141.9 MHz) with the `speed`
+> command, with no board mod; sequential instruction fetches from the
+> cache take 4 clocks instead of 5 (the fetch predictor, step 15). On an
+> A500+, caches on: SysInfo 10776 / 14379 / 18024 Dhrystones and AIBB
+> MemTest 16.60 / 21.03 / 26.16 MB/s at 12x / 16x / 20x; xSysInfo fast RAM
+> 36.85 MB/s at 20x; the Frontier timedemo averages 26.2 / 31.1 / 33.8 fps.
+> How to install it and use `speed` and `maprom`: the
+> [front page](../README.md).
 >
 > **SD card: every `full` bitstream from step 4 on reads the card.** The
 > step 1-3 `full` files drove the card's data-out line (MISO) low, so the
@@ -36,13 +26,17 @@ build's own files are few and marked `TG68:`.
 > not support the SCSI inquiry command"). Don't use them with an SD card.
 
 The bitstreams are not kept in git: download them from this repository's
-**Releases** page (each release has that step's `bitstreams/` folder and the
-`maprom` command), or build them yourself.
+**Releases** page, or build them yourself. The test bitstreams of every
+step (the `bitstreams/stepN_*` folders below) were committed to that
+step's branch; from v2.0 those branches are kept as tags
+(`archive/step15-fetch-predictor` and so on), where the folders still are.
 
 ## The bitstreams
 
 | Folder | What changed | Status |
 | --- | --- | --- |
+| **v2.0 release** (`bitstreams/exp20x/` on tag `archive/exp-20x`) | step 15b, with the second PLL at 20x (141.9 MHz) in place of 14x: run-time 12x / 16x / 20x (`speed 20`). SDRAM: two more clocks after each refresh at 20x. Built from the 20x experiment, seed 10 | **Runs on hardware at 12x, 16x and 20x** (hours at 20x), SD card included: SysInfo 18024 Dhrystones at 20x (+25% on 16x), AIBB 26.16 MB/s, xSysInfo fast RAM 36.85 MB/s, Frontier timedemo 33.8 fps. 12x: +0.77 / +2.19 ns; 16x / 20x need 1.23× / 1.54× the worst-case model |
+| `bitstreams/exp18x/` (never released) | the 18x experiment: 18x (127.7 MHz) in place of 14x | Ran on hardware: SysInfo 16225 at 18x (+12.9% on 16x). 18x needs 1.42× the model. Not kept: Glen chose 12x / 16x / 20x |
 | `bitstreams/step15b_fpred/` | step 15 with more timing margin: the predicted fetch no longer waits for the kernel's pair signal, and the cycle decision is split into fetch and data branches. Same speed as step 15 within 0.4% (a predicted fetch is now always one word). 12x file (switchable to 14x / 16x with `speed`) | **Runs on hardware at 12x and 16x**, SD card included. SysInfo 10797 / 14412 Dhrystones (12x / 16x, caches on; 3.4% below step 15, under investigation), AIBB 16.60 / 21.03 MB/s and Frontier timedemo 26.1 / 30.6 fps (as step 15). 12x seed 10: +0.37 / +0.75 ns, 14x / 16x need 1.13× / 1.29× the worst-case model (step 15: 1.14× / 1.31×); 5 of seeds 1-18 pass (step 15: 1 of 9) |
 | `bitstreams/step15_fpred/` | + fetch predictor: after every CPU step the instruction cache is read at the next fetch address, so a sequential instruction fetch from the cache takes 4 clocks, not 5 (see *Fetch predictor (step 15)*). 12x file (switchable to 14x / 16x with `speed`); no `_x16` file from this step on | **Runs on hardware at 12x and 16x**, SD card included. SysInfo 11179 / 14925 Dhrystones (12x / 16x, caches on; +15% on step 14), AIBB MemTest 16.59 / 21.03 MB/s (+5%), xSysInfo 16888 / 24471; Frontier timedemo average 26.2 / 30.6 fps. Caches off about as step 14. 12x seed 8: +0.60 / +0.40 ns, 14x / 16x need 1.14× / 1.31× the worst-case model; 1 of seeds 1-9 passes |
 | `bitstreams/step14b_cal/` | step 14 rebuilt with kernel change 5 (a third copy of the kernel's long-word clock enable, and change 4's copy now really separate) and the 7 MHz capture fix: at 12x the rising-edge sample is kept, and the board switches sample on its own if the one in use drifts (`speed` 1.2 shows how often). 12x files (switchable) and `_x16` files | Test build, not yet on hardware. 12x seed 5: +0.36 / +3.28 ns, 14x / 16x need 1.12× / 1.28× the worst-case model; seeds 5 and 8 of 1-8 pass |
@@ -74,9 +68,10 @@ packed like Muse Lab's own examples and take ~2 s to load at power-on.
 build's dual-SPI 62 MHz settings, and the FPGA won't load those on this
 module. That was the original no-LED fault.)
 
-The pin-out is the fx68k build's (`fx68k/constraints/base64.lpf`), i.e. the
-**Rev C** carrier with the ICS570B ×12 clock. The original TG68 project in
-the repo targets Rev B; this one does not.
+The pin-out is the fx68k build's (its `fx68k/constraints/base64.lpf`, in
+jbilander's repository; here `constraints/`), i.e. the **Rev C** carrier
+with the ICS570B ×12 clock. The original TG68 project in jbilander's
+repository targets Rev B; this one does not.
 
 ## Programming
 
@@ -1295,7 +1290,10 @@ only be reached in simulation with X/U inputs.
 
 ## Credits
 
-Tobias Gubener (TG68K.C), m1nl (the TG68K.C fork with the 32-bit data path,
+Glen Milford (this 68020 project, its hardware testing and direction),
+Claude, Anthropic's AI model, through Claude Code (design and
+implementation of the speed-up steps, the test benches and the timing
+method, working with Glen), Tobias Gubener (TG68K.C), m1nl (the TG68K.C fork with the 32-bit data path,
 and the IcePi Zero Minimig that showed how far this core can go), Alastair M.
 Robinson (the parent gateware and its TG68 work), the fx68k build's authors for the whole board-side design,
 Niklas Ekström (the SD controller and sfsd.device), and JBilander for the

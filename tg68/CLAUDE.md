@@ -9,8 +9,8 @@ whole, and do not copy results into this file.
 This folder (`tg68/`) is a self-contained alternative gateware for
 jbilander's Base64 Amiga 500 accelerator. It replaces the fx68k 68000 with
 TobiFlex's TG68K.C in 68020 mode and keeps the fx68k build's fast RAM, SD
-card, autoconfig and MapROM. Everything outside `tg68/` is upstream and is
-not modified.
+card, autoconfig and MapROM. Outside `tg68/` there is only the front-page
+README.md and a short CLAUDE.md (the upstream files were removed at v2.0).
 
 ## Owner and hardware
 
@@ -82,7 +82,7 @@ sh sim/run.sh bench c|copy|read|scatter|readoff|chip|wrfast|wrmix|sd
 VLFLAGS=-DS15_DEFAULT=0 sh sim/run.sh ...      # the same with step 15 switched off
 python3 scripts/build.py full --seed 1 --seeds 8   # 4 seeds at a time, build/full/seed<N>/, table in seeds.txt
 python3 scripts/build.py full --skip-synth --seed 9 --seeds 8   # more seeds, same netlist
-python3 scripts/check_timing.py build/full/base64_tg68.sdf --paths 4 [--freq 99.32|113.51]
+python3 scripts/check_timing.py build/full/base64_tg68.sdf --paths 4 [--freq 113.51|141.88]
 ```
 
 Toolchain: yowasp-yosys 0.70, yowasp-nextpnr-ecp5 0.11, ecppack
@@ -110,15 +110,17 @@ flatten. nextpnr: `--placer static --router router2`.
    bits; keep new registers out of the kernel-step decision (`step()` in
    tg68_bus.v), which is the tightest 1T path in the design.
 4. **Ship only 12x builds that pass timing.** A 0.5 ns miss failed on
-   hardware once (step 11). Score the same build at 14x (99.32 MHz) and
-   16x (113.51 MHz) by the worst delay/budget ratio; it cannot pass there.
-   Builds at up to 1.14x / 1.31x have run on Glen's board.
+   hardware once (step 11). Score the same build at 16x (113.51 MHz) and
+   20x (141.88 MHz) by the worst delay/budget ratio; it cannot pass there.
+   Builds at up to 1.31x (16x) and 1.54x (20x) have run on Glen's board.
+   Pick the passing seed with the lowest 20x ratio.
 5. **Keep the previous known-good step.** Each step's bitstreams go in
    their own `bitstreams/stepN_name/` folder with timing reports.
 6. Changes to `rtl/base64_fx68k/` files are marked `TG68:` with the reason.
-7. **One build, every speed.** The 12x build switches to 14x and 16x at
-   run time (`speed`); from the next release 12x, 16x and 20x (Glen's
-   decision after `exp-20x`: no 14x or 18x). The `--x16` board-mod build is no longer built,
+7. **One build, every speed: 12x, 16x and 20x** (v2.0; Glen's decision:
+   no 14x or 18x). The build switches at run time (`speed`). In the RTL the
+   20x clock still carries the old 14x names (`c14`, `lock14`, `u_pll14`,
+   speed code 1): those are the names of the tested build. The `--x16` board-mod build is no longer built,
    simulated or shipped; its `ifdef TG68_X16` code stays, frozen at step
    14b. Clock-dependent logic goes into the run-time speed settings (`spd`
    and the registers loaded from it), not an ifdef.
@@ -127,17 +129,22 @@ flatten. nextpnr: `--placer static --router router2`.
 
 ## Git and GitHub
 
-- **One change per branch**, named after it (`step15-fetch-predictor`).
-  Branches stack while earlier steps wait for a hardware test.
+- **One change per branch**, named after it (`step17-...`), from `main`.
+  Branches stack while earlier steps wait for a hardware test. Old step
+  branches are kept as `archive/<branch>` tags (their test bitstreams
+  are in them).
 - **Commit author:** Glen Milford <casualretrogamer@outlook.com>. **No
   Co-Authored-By or other attribution lines** (Glen's instruction).
-- **No pull request, merge or release unless Glen asks.** No force-push
+- **No pull request, merge or release unless Glen asks.** A release: a
+  PR to `main` without binaries, squash-merged; the zip and the notes go
+  to Glen, who publishes the GitHub release. Release credits name Glen
+  and Claude (his request for v2.0). No force-push
   to `main`, no rewriting history that is on GitHub.
 - **Test bitstreams:** commit them to the step's branch under
   `tg68/bitstreams/stepN_name/` with `git add -f` (the folder is
   gitignored), as their own commit whose message says "Drop this commit
   before merging". `_plain` and `_fast`, `timing_full.txt`,
-  `timing_full_at14x.txt`, `timing_full_at16x.txt`, and the `speed`
+  `timing_full_at16x.txt`, `timing_full_at20x.txt`, and the `speed`
   command. Give Glen the direct links
   (`https://github.com/CRG-Glen/base64_gateware020/raw/<branch>/tg68/bitstreams/...`).
 - Commit and push finished work before ending a turn; the session's
@@ -145,7 +152,7 @@ flatten. nextpnr: `--placer static --router router2`.
 
 ## The design in one page (details: docs/HISTORY.md, README.md)
 
-- **One clock** (85.13 MHz at 12x; 14x and 16x from two PLLs through a
+- **One clock** (85.13 MHz at 12x; 16x and 20x from two PLLs through a
   glitch-free fabric mux in `clkgen.v`, switched at run time by the
   sequencer in the top level). The TG68 kernel is clock-enabled and
   **multicycle**: `tg68_bus.v` steps it at most every STEP = 4 clocks and
@@ -202,17 +209,13 @@ flatten. nextpnr: `--placer static --router router2`.
 
 ## Current state (details and numbers: plans/README.md, docs/HISTORY.md)
 
-- `main` = step 12 (released as v1.5), known good on hardware.
-- Step 13 (run-time 12x/14x/16x, `speed`) and step 14 (timing headroom):
-  run on Glen's A500+ at all three speeds. Not merged.
-- Step 14b (7 MHz capture fix, kernel change 5) and step 15 (fetch
-  predictor): **run on hardware** at 12x and 16x (SysInfo +15% caches
-  on). Not merged.
-- Branches stack: `step13-pll-speed` -> `step14-timing-headroom` ->
-  `step15-fetch-predictor` -> `tooling-build-seeds` ->
-  `step15b-predictor-timing` (runs on hardware; SysInfo 3.4% below 15,
-  open). `step16-clkena-copies` was built and dropped (0 seeds pass; its
-  plan log has why). New work starts from `step15b-predictor-timing`.
+- `main` = **v2.0** (steps 13 to 15b plus 20x): run-time 12x / 16x / 20x,
+  the fetch predictor; runs on Glen's A500+ at all three speeds, hours at
+  20x. Released bitstream: 20x build seed 10 (commit a8c9678's RTL; the
+  release source rebuilds it byte for byte).
+- `step16-clkena-copies` was built and dropped (0 seeds pass; tag
+  `archive/step16-clkena-copies`, its plan log has why).
+- New work branches from `main`.
 
 ## Licensing (unresolved; check before publishing anything new)
 
