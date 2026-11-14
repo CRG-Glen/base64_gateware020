@@ -125,7 +125,7 @@ hold the working rules and plans.
 
 ## Credits and licences
 
-- **Glen Milford**: this 68020 gateware project, its testing on real
+- **CRG-Glen**: this 68020 gateware project, its testing on real
   hardware, and the direction of the work.
 - **Claude** (Anthropic's AI model, through Claude Code): design and
   implementation of the speed-up steps, the simulation benches and the
