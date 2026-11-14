@@ -31,13 +31,13 @@
 //     valid ~2 clk after AS, long before the core recognises DTACK (~S4).
 //
 module sd_subsystem #(
-`ifdef TG68_X16
-    // TG68: 16x build only: 1 = hold SCLK low one extra clock per bit (see
-    // shifter.v). Under the define so the 12x build is unchanged text.
+    // TG68: 1 = hold SCLK low one extra clock per bit (see shifter.v):
+    // the fixed 16x board-mod build; sd_lo_x is the same at run time
+    // (step 13, set while the system clock is 16x)
     parameter SD_LO_EXTRA = 0,
-`endif
     parameter ROM_INIT_FILE = "sfsd.mem"
 )(
+    input  wire         sd_lo_x,
     input  wire         clk,        // 85.13 MHz core clock
     input  wire         reset,      // active high: ~s_reset_n[1] | ~pwrup_done
     // core-side bus (fx68k outputs, clk domain)
@@ -131,11 +131,8 @@ end
 wire [15:0] sd_data_out;
 wire        sd_data_oe;   // read indicator from sdcard.v (unused: iEdb mux keys on sd_space & rw)
 
-`ifdef TG68_X16
-sdcard #(.SD_LO_EXTRA(SD_LO_EXTRA)) sdcontrol(   // TG68: 16x build
-`else
-sdcard sdcontrol(
-`endif
+sdcard #(.SD_LO_EXTRA(SD_LO_EXTRA)) sdcontrol(   // TG68: 16x
+    .SD_LO_X         (sd_lo_x),
     .C100M           (clk),
     .CLKCPU          (clk),
     .RESET_n         (~reset),

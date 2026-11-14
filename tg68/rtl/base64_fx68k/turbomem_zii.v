@@ -173,7 +173,13 @@ module turbomem_zii #(
 
     // ---- mapROM control, to fastmem_zii ----
     output wire        maprom_load,
-    output wire        maprom_active
+    output wire        maprom_active,
+    // TG68 step 13: the speed register at +$F00A (see below)
+    output reg         spd_wr = 1'b0,   // one-clock pulse: a keyed write
+    output reg  [1:0]  spd_val = 2'd0,  // 0 12x, 1 14x, 2 16x
+    output reg  [1:0]  spd_smp = 2'd0,  // 7M sampling: 0 auto, 1 rise, 2 fall
+    input  wire [15:0] spd_stat,        // what +$F00A reads
+    input  wire [15:0] spd_stat2        // TG68 step 14: what +$F00C reads
 );
 
 localparam integer ROM_WORDS = (1 << ROM_AWID);
@@ -341,7 +347,18 @@ always @(posedge clk) rom_q <= rom[a[ROM_AWID:1]];
 //   +$F004  resets needed      read-only
 //   +$F006  ms to boot         read-only
 //   +$F008  mapROM control     READ/WRITE
-//   +$F00A..            reserved, read as zero
+//   +$F00A  speed (step 13)    READ/WRITE, key $5B:
+//           write $5B0C / $5B10 / $5B14 asks for 12x / 16x / 20x (v2.0;
+//           before it $5B0E was 14x, which is no longer taken) (the top
+//           level switches when the CPU and both buses are idle, and
+//           recalibrates its 7M capture; the speed in force just
+//           recalibrates); +$40 / +$80 force the 7M sample to the rising /
+//           falling clock edge instead of the calibration's choice. Reads
+//           {slip, jit_r, jit_f, rise, busy, sw_ok, lock16, lock14,
+//           multiplier} (the top level's spd_stat)
+//   +$F00C  speed status 2 (step 14), read-only: automatic 7M sample
+//           swaps since power-up (low byte; the top level's spd_stat2)
+//   +$F00E..            reserved, read as zero
 //
 // The mapROM control register needs a key. A stray write of 0 is harmless,
 // but a stray write with bit 1 set would switch Kickstart fetches over to an
@@ -368,13 +385,18 @@ assign maprom_active = mr_ctrl[1];
 always @(posedge clk) begin
     status_sel <= status_hit;
     if (a[3])
-        status_q <= (a[2:1] == 2'd0) ? {14'd0, mr_ctrl} : 16'h0000;
+        status_q <= (a[2:1] == 2'd0) ? {14'd0, mr_ctrl}
+                  : (a[2:1] == 2'd1) ? spd_stat                 // TG68: speed
+                  : (a[2:1] == 2'd2) ? spd_stat2 : 16'h0000;   // TG68 step 14
     else
         status_q <= status_i[{a[2:1], 4'b0000} +: 16];
 end
 
 // Write strobe on the leading edge of DS, same shape as the autoconfig one.
-wire ctrl_wr = status_hit && !ds_n && !rw && (a[3:1] == 3'd4);
+// TG68: qualified by tm_space (this board's window). status_hit decodes only
+// A15:12, so without it a write of $5Axx to ANY address ending in $F008
+// (chip RAM, fast RAM...) switched mapROM; the same for the speed register.
+wire ctrl_wr = tm_space && status_hit && !ds_n && !rw && (a[3:1] == 3'd4);
 reg  ctrl_wr_q;
 always @(posedge clk) ctrl_wr_q <= ctrl_wr;
 wire ctrl_stb = ctrl_wr & ~ctrl_wr_q;
@@ -384,6 +406,23 @@ always @(posedge clk) begin
         mr_ctrl <= 2'b00;
     else if (ctrl_stb && (d_in[15:8] == MAPROM_KEY))
         mr_ctrl <= d_in[1:0];
+end
+
+// TG68 step 13: the speed register, keyed like mapROM's ($5B), same strobe
+// shape. Only 12, 14 and 16 are taken; anything else is ignored. Not reset:
+// the speed persists over an Amiga reset (only a power cycle returns to 12x).
+localparam [7:0] SPEED_KEY = 8'h5B;
+wire spd_wr_hit = tm_space && status_hit && !ds_n && !rw && (a[3:1] == 3'd5);
+reg  spd_wr_q;
+always @(posedge clk) spd_wr_q <= spd_wr_hit;
+always @(posedge clk) begin
+    spd_wr <= 1'b0;
+    if (spd_wr_hit && !spd_wr_q && d_in[15:8] == SPEED_KEY && d_in[7:6] != 2'd3) begin
+        if      (d_in[5:0] == 6'd12) begin spd_wr <= 1'b1; spd_val <= 2'd0; spd_smp <= d_in[7:6]; end
+        // TG68 v2.0: 20 ($5B14) takes speed code 1 (14x until v2.0); 14 is not taken
+        else if (d_in[5:0] == 6'd20) begin spd_wr <= 1'b1; spd_val <= 2'd1; spd_smp <= d_in[7:6]; end
+        else if (d_in[5:0] == 6'd16) begin spd_wr <= 1'b1; spd_val <= 2'd2; spd_smp <= d_in[7:6]; end
+    end
 end
 
 // ---------------------------------------------------------------------------

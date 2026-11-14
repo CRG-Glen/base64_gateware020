@@ -58,6 +58,20 @@ module sdram_ctrl #(
     // and, on the next clock, the second (S_RD_DONE is held one clock).
     input  wire        pair,
     input  wire [15:0] wdata_lo,
+    // TG68 step 13: run-time CAS latency. cfg_req with cfg_cl3 (1 = CL3,
+    // 0 = CL2) reloads the mode register: taken in IDLE when no request is
+    // pending (the speed switch holds the CPU), all banks precharged first.
+    // cfg_req must stay up until cl3_now follows cfg_cl3.
+    // cl3_now is the latency in force. Power-on: CAS_LAT.
+    input  wire        cfg_req,
+    input  wire        cfg_cl3,
+    // TG68 v2.0: two more clocks after REFRESH (tRFC) while the
+    // system clock is 20x (7.05 ns: T_RFC's count gives 56.4 ns, +1 63.4,
+    // +2 70.5; the -6 part needs 60, the sim model checks 65). (The 18x
+    // experiment needed one.) Changes only in a speed switch, with the CPU held
+    // and the SDRAM idle.
+    input  wire        rfc_long,
+    output reg         cl3_now = (CAS_LAT == 3),
     output reg         ack,
     // Combinational ack, asserted in the SAME cycle the CAS data lands on dq
     // rather than the cycle after. Worth one master clock, which is exactly
@@ -121,6 +135,9 @@ module sdram_ctrl #(
 
     localparam [2:0]  CL3 = CAS_LAT[2:0];
     localparam [12:0] MODE_REG = {3'b000, 1'b0, 2'b00, CL3, 1'b0, 3'b000};
+    // TG68 step 13: the latency in force, as the read timer's load value (a
+    // register that changes only at a mode-register reload, while idle)
+    reg [3:0] cas_lat_r = CAS_LAT[3:0];
 
     localparam integer INIT_CYCLES = (CLK_HZ/1_000_000)*T_INIT_US;
     localparam integer INITW = 14;
@@ -134,6 +151,8 @@ module sdram_ctrl #(
     localparam [7:0] REF_DEFER = 8'd64;
     reg  [7:0] ref_defer = 8'd0;
     wire       ref_urgent = (ref_defer >= REF_DEFER);
+    reg        ref_blk = 1'b0;       // TG68 step 14: urgent refresh, registered
+    always @(posedge clk) ref_blk <= refresh_due && ref_urgent;
     reg [12:0] open_row [0:3];
     reg [3:0]  row_open;          // bit b = bank b has an open row
     reg [3:0]  ras_timer [0:3];   // per-bank tRAS since activate (saturating)
@@ -155,10 +174,42 @@ module sdram_ctrl #(
                S_REFRESH   = 4'd13,
                S_ACK_WAIT  = 4'd14,  // hold after ack until req deasserts
                S_WR2       = 4'd15;  // TG68: second WRITE of a pair
+    // (TG68 step 13: a run-time CAS latency change reuses the refresh path
+    // and S_INIT_MODE, so state stays 4 bits: a fifth bit, for a state of
+    // its own, lengthened the request decode in IDLE)
 
     reg [3:0]  state;
+    // TG68 step 13: a new CAS latency is asked for. It rides on a refresh,
+    // so IDLE's request decode is untouched (a branch of its own there,
+    // even last in the chain and from a register, merged into the request
+    // branch's next-state and row logic and missed 1T on most seeds): cfg_go
+    // raises refresh_due; the refresh, which precharges every bank first,
+    // records it in cfg_ref and ends in S_INIT_MODE, which loads cfg_cl3.
+    // cfg_go is cleared from the refresh start until cl3_now follows.
+    reg       cfg_go  = 1'b0;
+    reg       cfg_ref = 1'b0;
+    always @(posedge clk)
+        cfg_go <= cfg_req && (cfg_cl3 != cl3_now) && !cfg_ref && (state != S_INIT_MODE);
+    // TG68 step 14: IDLE's open-row decision, registered one clock early.
+    // The adapter loads the SDRAM address (saddr_r in fastmem_zii) on the
+    // edge it raises its request and freezes it (dp_hold) on the next,
+    // where the request reaches us; so addr is stable for a clock before
+    // IDLE first sees req. The row registers do not change on any edge
+    // into IDLE (only in reset, in IDLE's own branches, which leave IDLE,
+    // and in S_PRECHG), and ras_timer only counts up, so pre_ras can lag
+    // (a rare row-miss precharge then waits a clock) but never lead. As a
+    // live compare this decision put the request into a 1T path to the
+    // row registers that missed on most seeds once the chip had grown. A
+    // sim-only check below counts any use of a stale value (pre_bad).
+    reg        pre_open = 1'b0, pre_hit = 1'b0, pre_ras = 1'b0;
+    always @(posedge clk) begin
+        pre_open <= row_open[a_bank];
+        pre_hit  <= row_open[a_bank] && (open_row[a_bank] == a_row);
+        pre_ras  <= (ras_timer[a_bank] >= T_RAS[3:0]);
+    end
     reg [3:0]  timer;
     reg        init_done;
+    wire      cl3_nx = init_done ? cfg_cl3 : cl3_now;   // S_INIT_MODE's latency
     reg [1:0]  cur_bank;
     reg [12:0] cur_row;
     reg [8:0]  cur_col;
@@ -190,6 +241,7 @@ module sdram_ctrl #(
             timer       <= 4'd0;
             refresh_timer <= 11'd0;
             refresh_due <= 1'b0;
+            cfg_ref     <= 1'b0;
             init_done   <= 1'b0;
             row_open    <= 4'b0000;
             for (b=0;b<4;b=b+1) begin open_row[b] <= 13'd0; ras_timer[b] <= 4'd0; end
@@ -221,6 +273,7 @@ module sdram_ctrl #(
                 if (row_open[b] && ras_timer[b] != 4'hF)
                     ras_timer[b] <= ras_timer[b] + 4'd1;
             end
+            if (cfg_go && !cfg_ref) refresh_due <= 1'b1;   // TG68 step 13
             if (refresh_due && ref_defer < 8'hFF) ref_defer <= ref_defer + 8'd1;
             if (!refresh_due)                     ref_defer <= 8'd0;
 
@@ -242,7 +295,7 @@ module sdram_ctrl #(
                 if (timer != 0) timer <= timer - 1'b1;
                 else begin
                     set_cmd(CMD_REFRESH);
-                    timer <= T_RFC[3:0];
+                    timer <= T_RFC[3:0] + {2'd0, rfc_long, 1'b0};   // TG68: tRFC + 2 at 20x
                     state <= S_INIT_REF2;
                 end
             end
@@ -250,7 +303,7 @@ module sdram_ctrl #(
                 if (timer != 0) timer <= timer - 1'b1;
                 else begin
                     set_cmd(CMD_REFRESH);
-                    timer <= T_RFC[3:0];
+                    timer <= T_RFC[3:0] + {2'd0, rfc_long, 1'b0};   // TG68: tRFC + 2 at 20x
                     state <= S_INIT_MODE;
                 end
             end
@@ -259,7 +312,14 @@ module sdram_ctrl #(
                 else begin
                     set_cmd(CMD_LOADMODE);
                     sdram_ba <= 2'b00;
-                    sdram_a  <= MODE_REG;
+                    // TG68 step 13: at init, the latency in force (cl3_now
+                    // is not reset: the system clock keeps its speed over an
+                    // Amiga reset, and a re-init must match it; MODE_REG at
+                    // power-on); after init this state is the run-time
+                    // change (after a refresh, cfg_ref), and loads cfg_cl3
+                    sdram_a  <= {MODE_REG[12:7], cl3_nx ? 3'd3 : 3'd2, MODE_REG[3:0]};
+                    cl3_now   <= cl3_nx;
+                    cas_lat_r <= cl3_nx ? 4'd3 : 4'd2;
                     timer    <= T_MRD[3:0];
                     state    <= S_IDLE;
                     init_done <= 1'b1;
@@ -270,35 +330,14 @@ module sdram_ctrl #(
                 sdram_dqm <= 2'b11;
                 if (timer != 0) begin
                     timer <= timer - 1'b1;
-                end else if (refresh_due && (!req || ref_urgent)) begin
-                    // A pending CPU access now takes priority over refresh.
-                    // Previously refresh_due was tested BEFORE req, so a
-                    // refresh falling due while the 68000 was mid-cycle
-                    // inserted precharge-all + tRFC + a guaranteed row miss
-                    // into that cycle -- the source of the 22-CPU-clock
-                    // outliers. Refresh has enormous slack (one per 640
-                    // clocks against a 64 ms window), so deferring it by up
-                    // to REF_DEFER clocks costs nothing and is bounded.
-                    refresh_due <= 1'b0;
-                    ref_defer   <= 8'd0;
-                    // must close all rows before refresh
-                    if (row_open != 4'b0000) begin
-                        // NOTE: restoring the evicted row after refresh was
-                        // tried and measured a wash (w2 556->561 but w3/w4
-                        // 514->511), so it is deliberately NOT done. The
-                        // post-refresh miss is cheaper than the extra
-                        // ACTIVATE plus tRCD it would cost.
-                        set_cmd(CMD_PRECHG);
-                        sdram_a[10] <= 1'b1;         // precharge all
-                        row_open <= 4'b0000;
-                        timer <= T_RP[3:0];
-                        state <= S_REF_PRE;
-                    end else begin
-                        set_cmd(CMD_REFRESH);
-                        timer <= T_RFC[3:0];
-                        state <= S_REFRESH;
-                    end
-                end else if (req) begin
+                end else if (req && !ref_blk) begin
+                    // TG68 step 14: the request branch first. The old chain
+                    // tested refresh first with (!req || ref_urgent), which
+                    // put req through the refresh decision on its way to the
+                    // row registers (1T misses). Same priority: a request goes
+                    // unless a refresh is urgent (ref_blk, registered: it
+                    // builds over REF_DEFER clocks, so a refresh waits at
+                    // most one more access); refresh_due alone then refreshes.
                     // latch the request. Only the ADDRESS and direction are
                     // captured here. Write DATA is NOT latched - it is sampled
                     // live at the WRITE command, which is gated on wr_valid.
@@ -317,7 +356,7 @@ module sdram_ctrl #(
                     rd2_pend  <= pair && !we;
                     rd2_left  <= pair && !we;
                     // open-row decision
-                    if (row_open[a_bank] && open_row[a_bank] == a_row) begin
+                    if (pre_hit) begin
                         // HIT: row already open. OPT B -- issue the READ in
                         // THIS cycle rather than spending one getting to
                         // S_RW. Writes still route via S_RW because the
@@ -328,14 +367,14 @@ module sdram_ctrl #(
                             sdram_a   <= {4'b0000, a_col};  // A10=0, no auto-pre
                             set_cmd(CMD_READ);
                             sdram_dqm <= 2'b00;
-                            timer     <= CAS_LAT[3:0];
+                            timer     <= cas_lat_r;
                             state     <= S_RD_WAIT;
                         end else begin
                             state <= S_RW;
                         end
-                    end else if (row_open[a_bank]) begin
+                    end else if (pre_open) begin
                         // wrong row open: precharge it (respect tRAS), then activate
-                        if (ras_timer[a_bank] >= T_RAS[3:0]) begin
+                        if (pre_ras) begin
                             set_cmd(CMD_PRECHG);
                             sdram_ba <= a_bank;
                             sdram_a[10] <= 1'b0;     // this bank only
@@ -354,6 +393,35 @@ module sdram_ctrl #(
                         ras_timer[a_bank] <= 4'd0;
                         timer <= T_RCD[3:0];
                         state <= S_ACTIVE;
+                    end
+                end else if (refresh_due) begin
+                    // A pending CPU access now takes priority over refresh.
+                    // Previously refresh_due was tested BEFORE req, so a
+                    // refresh falling due while the 68000 was mid-cycle
+                    // inserted precharge-all + tRFC + a guaranteed row miss
+                    // into that cycle -- the source of the 22-CPU-clock
+                    // outliers. Refresh has enormous slack (one per 640
+                    // clocks against a 64 ms window), so deferring it by up
+                    // to REF_DEFER clocks costs nothing and is bounded.
+                    refresh_due <= 1'b0;
+                    ref_defer   <= 8'd0;
+                    cfg_ref     <= cfg_go;           // TG68 step 13: then LOAD MODE
+                    // must close all rows before refresh
+                    if (row_open != 4'b0000) begin
+                        // NOTE: restoring the evicted row after refresh was
+                        // tried and measured a wash (w2 556->561 but w3/w4
+                        // 514->511), so it is deliberately NOT done. The
+                        // post-refresh miss is cheaper than the extra
+                        // ACTIVATE plus tRCD it would cost.
+                        set_cmd(CMD_PRECHG);
+                        sdram_a[10] <= 1'b1;         // precharge all
+                        row_open <= 4'b0000;
+                        timer <= T_RP[3:0];
+                        state <= S_REF_PRE;
+                    end else begin
+                        set_cmd(CMD_REFRESH);
+                        timer <= T_RFC[3:0] + {2'd0, rfc_long, 1'b0};   // TG68: tRFC + 2 at 20x
+                        state <= S_REFRESH;
                     end
                 end
             end
@@ -386,7 +454,7 @@ module sdram_ctrl #(
                     sdram_a  <= {4'b0000, cur_col};   // A10=0: NO auto-precharge
                     set_cmd(CMD_READ);
                     sdram_dqm <= 2'b00;
-                    timer <= CAS_LAT[3:0];
+                    timer <= cas_lat_r;
                     state <= S_RD_WAIT;
                 end else if (wr_valid) begin
                     // WRITE: the row is already active (possibly started early
@@ -457,17 +525,37 @@ module sdram_ctrl #(
                 if (timer != 0) timer <= timer - 1'b1;
                 else begin
                     set_cmd(CMD_REFRESH);
-                    timer <= T_RFC[3:0];
+                    timer <= T_RFC[3:0] + {2'd0, rfc_long, 1'b0};   // TG68: tRFC + 2 at 20x
                     state <= S_REFRESH;
                 end
             end
             S_REFRESH: begin
                 if (timer != 0) timer <= timer - 1'b1;
-                else state <= S_IDLE;
+                else begin
+                    // TG68 step 13: a CAS latency change rides on this refresh
+                    state   <= cfg_ref ? S_INIT_MODE : S_IDLE;
+                    cfg_ref <= 1'b0;
+                end
             end
             default: state <= S_IDLE;
             endcase
         end
     end
+
+`ifndef YOSYS
+    // sim only: every request decision must see the live values (pre_ras
+    // may only lag); the fastmem bench fails if pre_bad is not 0
+    integer pre_bad = 0;
+    always @(posedge clk)
+        if (!reset && state == S_IDLE && timer == 0 && req && !ref_blk) begin
+            if (pre_open != row_open[a_bank]
+                    || pre_hit != (row_open[a_bank] && (open_row[a_bank] == a_row))
+                    || (pre_ras && !(ras_timer[a_bank] >= T_RAS[3:0]))) begin
+                pre_bad = pre_bad + 1;
+                if (pre_bad <= 5)
+                    $display("%0t: sdram_ctrl: stale open-row decision (bank %0d)", $time, a_bank);
+            end
+        end
+`endif
 
 endmodule

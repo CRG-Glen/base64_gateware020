@@ -45,6 +45,8 @@ module sdram_model_checked #(
     reg        dq_oe;
 
     integer i, n_err, n_ref;
+    integer cl;      // CAS latency in force: CAS_LAT, then each LOAD MODE's A6:4 (step 13)
+    integer n_mrs;
     integer init_done;
 
     assign dq = dq_oe ? dq_o : 16'bz;
@@ -66,7 +68,7 @@ module sdram_model_checked #(
     endtask
 
     initial begin
-        dq_oe = 0; pipe_v = 0; n_err = 0; n_ref = 0; init_done = 0;
+        dq_oe = 0; pipe_v = 0; n_err = 0; n_ref = 0; init_done = 0; cl = CAS_LAT; n_mrs = 0;
         t_ref = 0.0; t_last_ref = 0.0;
         for (i=0;i<4;i=i+1) begin
             row[i]=0; active[i]=0; t_act[i]=-1e9; t_pre[i]=-1e9;
@@ -131,11 +133,18 @@ module sdram_model_checked #(
             t_ref = $realtime; t_last_ref = $realtime;
             n_ref = n_ref + 1;
         end
-        C_MRS: init_done = 1;
+        C_MRS: begin
+            for (i=0;i<4;i=i+1)
+                if (active[i]) err("LOAD MODE with a bank still ACTIVE");
+            if (a[6:4] != 3'd2 && a[6:4] != 3'd3) err("LOAD MODE with a CAS latency other than 2 or 3");
+            cl = a[6:4];
+            n_mrs = n_mrs + 1;
+            init_done = 1;
+        end
         default: ;
         endcase
 
-        if (pipe_v[CAS_LAT-1]) begin dq_o <= pipe[CAS_LAT-1]; dq_oe <= 1'b1; end
+        if (pipe_v[cl-1]) begin dq_o <= pipe[cl-1]; dq_oe <= 1'b1; end
         else                        dq_oe <= 1'b0;
     end
 

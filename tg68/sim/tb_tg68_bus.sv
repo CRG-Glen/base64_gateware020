@@ -17,7 +17,7 @@ module tb;
 
     tg68_bus dut (
         .clk(clk), .enPhi1(1'b0), .enPhi2(1'b0), .HALTn(1'b1),
-        .extReset(ext_reset), .pwrUp(1'b0),
+        .extReset(ext_reset), .pwrUp(1'b0), .cyc_idle(),
         .oRESETn(oRESETn), .oHALTEDn(oHALTEDn), .E(), .VPAn(1'b1), .VMAn(),
         .ASn(ASn), .eRWn(eRWn), .LDSn(LDSn), .UDSn(UDSn),
         .FC2(FC2), .FC1(FC1), .FC0(FC0),
@@ -53,12 +53,39 @@ module tb;
     // k_long_ack and k_din_sel feed the kernel and are classed adapter ->
     // kernel (2 clocks) by check_timing.py: neither may change in the clock
     // just before the kernel samples (the clkena clock).
+    reg clw3_armed = 1'b0;   // kernel change 5 check (below)
     integer ks_cyc = 0, ks_chg = -10, ks_bad = 0; reg ks_la = 0, ks_ds = 0, ks_hs = 0, ks_dd = 0;
+    reg [31:1] ks_fac = 0; reg ks_ps = 0; reg [15:0] ks_fp = 0; integer ks_fchg = -10; reg fpp = 0; integer fp_chk = 0;   // step 15: fetch predictor
     integer rd_pairs = 0;                // pair reads from the SDRAM (step 9)
     integer n_clw = 0;                   // steps with clkena_lw (kernel change 2)
     always @(posedge clk) begin
         ks_cyc = ks_cyc + 1;
-        if (dut.k_long_ack !== ks_la || dut.k_din_sel !== ks_ds || dut.k_din_hsel !== ks_hs || dut.k_din_dsel !== ks_dd) ks_chg = ks_cyc;
+        if (dut.k_long_ack !== ks_la || dut.k_din_sel !== ks_ds || dut.k_din_hsel !== ks_hs || dut.k_din_dsel !== ks_dd || dut.k_din_psel !== ks_ps) ks_chg = ks_cyc;
+        // step 15: the predicted word must be 2 clocks old when the kernel
+        // samples it, and equal to what the CPU last wrote there
+        if (dut.k_din_fp !== ks_fp) ks_fchg = ks_cyc;
+        ks_ps = dut.k_din_psel; ks_fp = dut.k_din_fp;
+        if (dut.k_clkena && fpp) begin
+            fp_chk = fp_chk + 1;
+            if (ks_cyc - ks_fchg < 2 || dut.k_dat !== dut.k_din_fp) begin
+                $display("FAIL predicted fetch: word changed %0d clocks before the kernel sampled it, data_in %h, predicted %h", ks_cyc - ks_fchg, dut.k_dat, dut.k_din_fp);
+                ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+            end
+            chk_word(dut.k_addr[31:1], dut.k_dat);
+        end
+        // fp_ac (the compare copy of the predicted address) is classed a
+        // 2-clock source: it must never have just changed while fp_v is set
+        if (dut.fp_ac !== ks_fac && dut.fp_v) begin
+            $display("FAIL fp_ac changed on the edge into a clock with fp_v set");
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
+        ks_fac = dut.fp_ac;
+        // cnt_ok is cnt >= STEP-1 as a register (step 15)
+        if (!dut.extReset && dut.q != 4'd0 && dut.cnt_ok !== (dut.cnt >= 3)) begin
+            $display("FAIL cnt_ok %b with cnt %0d (q %0d)", dut.cnt_ok, dut.cnt, dut.q);
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
+        fpp = (dut.q == 4'd1) && !dut.internal_step && dut.fp_hit && !dut.extReset;
         ks_la = dut.k_long_ack; ks_ds = dut.k_din_sel; ks_hs = dut.k_din_hsel; ks_dd = dut.k_din_dsel;
         // The kernel's l1 <= long_ack (Base64 change, was long_ack AND cand)
         // relies on this: long_ack only ever answers an offered pair.
@@ -68,6 +95,18 @@ module tb;
         end
         if (dut.dec_r !== (dut.q == 4'd1)) begin
             $display("FAIL dec_r out of step with q (q=%0d dec_r=%b)", dut.q, dut.dec_r);
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
+        // k_clkena_lw3 too (kernel change 5), from the first edge on (it
+        // powers on at 1 so that yosys keeps it a separate register)
+        if (clw3_armed && dut.k_clkena_lw3 !== dut.k_clkena_lw) begin
+            $display("FAIL k_clkena_lw3 %b, k_clkena_lw %b", dut.k_clkena_lw3, dut.k_clkena_lw);
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
+        clw3_armed = 1'b1;
+        // k_clkena_lw2 is an identical copy of k_clkena_lw (kernel change 4)
+        if (dut.k_clkena_lw2 !== dut.k_clkena_lw) begin
+            $display("FAIL k_clkena_lw2 %b, k_clkena_lw %b", dut.k_clkena_lw2, dut.k_clkena_lw);
             ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
         end
         // k_step is the adapter's copy of k_clkena: always equal
@@ -262,6 +301,9 @@ module tb;
         if (hit_bad) errors = errors + hit_bad;
         if (hit_chk == 0) begin $display("FAIL cache-hit oracle never used"); errors = errors + 1; end
         if (stalled) begin $display("FAIL stall flag set"); errors = errors + 1; end
+        if (dut.fp_chk_bad) begin $display("FAIL: %0d predicted fetches differed from the cache's own lookup", dut.fp_chk_bad); errors = errors + 1; end
+        $display("predicted fetches %0d (checked at the kernel's sample clock: %0d)", dut.fp_hits, fp_chk);
+        if (dut.cc_bad) begin $display("FAIL: %0d CCMP compares used registered inputs that differ from a_r", dut.cc_bad); errors = errors + 1; end
         if (errors == 0) $display("PASS");
         else             $display("FAILED with %0d errors", errors);
         $finish;
