@@ -5,6 +5,8 @@
 #   sim/run.sh top       whole top level on a model motherboard
 #   sim/run.sh fastmem   whole top level with fast RAM + SDRAM model
 #   sim/run.sh bench copy|read|scatter   fast RAM throughput
+#   sim/run.sh bench c|coff              compiled C from fast RAM (caches on|off)
+# BENCH_ASD="--defsym SPEED18=1" sim/run.sh bench copy|read|scatter|c   at 20x (SPEED16 too: 16x)
 #   sim/run.sh bench sd                  SD controller, SPI loopback
 # CORE=tg68_020_b0_nobf_smul sim/run.sh bus   tests another core variant
 set -e
@@ -27,11 +29,11 @@ bus)
   ./obj_dir/tb_bus ;;
 top)
   $AS -o tt.o test_top.s && $LD -o tt.elf tt.o 2>/dev/null && $OC tt.elf tt.bin && mem tt.bin rom_top.mem
-  $VL tb_top.sv $R/base64_tg68/base64_tg68_top.sv $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v $SLAVES -o tb_top > build_top.log 2>&1
+  $VL tb_top.sv $R/base64_tg68/base64_tg68_top.sv $R/base64_tg68/clkgen.v $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v $SLAVES -o tb_top > build_top.log 2>&1
   ./obj_dir/tb_top ;;
 fastmem)
   $AS --defsym FASTMEM=1 -o tf.o test_top.s && $LD -o tf.elf tf.o 2>/dev/null && $OC tf.elf tf.bin && mem tf.bin rom_top_fm.mem
-  $VL -DFASTMEM tb_top.sv sdram_model_checked.v $R/base64_tg68/base64_tg68_top.sv $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v $SLAVES -o tb_fm > build_fm.log 2>&1
+  $VL -DFASTMEM tb_top.sv sdram_model_checked.v $R/base64_tg68/base64_tg68_top.sv $R/base64_tg68/clkgen.v $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v $SLAVES -o tb_fm > build_fm.log 2>&1
   ./obj_dir/tb_fm ;;
 bench)
   # run.sh bench [copy|read|scatter]: fast RAM throughput, timed 2nd pass
@@ -47,8 +49,14 @@ bench)
     wrchip) SRC=test_wr.s; D=-DBENCH_WRCHIP ;;
     wrfast) SRC=test_wr.s; D=-DBENCH_WRFAST; ASD="--defsym FAST=1" ;;
     wrmix) SRC=test_wr.s; D=-DBENCH_WRCHIP; ASD="--defsym MIX=1" ;;
+    # compiled C (step 15): bench_c.c, built with gcc -O2 -m68020 (needs
+    # gcc-m68k-linux-gnu), run from fast RAM with its stack there
+    c|coff) SRC=test_c.s; D=-DBENCH_C; [ "$2" = coff ] && ASD="--defsym NOCACHE=1"
+       m68k-linux-gnu-gcc -m68020 -O2 -fomit-frame-pointer -ffreestanding -fno-builtin -fno-pic -fno-pie \
+         -fno-tree-loop-distribute-patterns -fno-asynchronous-unwind-tables -c -o bc.o bench_c.c
+       m68k-linux-gnu-ld -T bench_c.ld -o bc.elf bc.o 2>/dev/null && m68k-linux-gnu-objcopy -O binary bc.elf cimg.bin ;;
   esac
-  $AS $ASD -o tm.o $SRC && $LD -o tm.elf tm.o 2>/dev/null && $OC tm.elf tm.bin && mem tm.bin rom_mem.mem
-  $VL -DFASTMEM -DMEMBENCH $D tb_top.sv sdram_model_checked.v $R/base64_tg68/base64_tg68_top.sv $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v $SLAVES -o tb_bench > build_bench.log 2>&1
+  $AS $ASD $BENCH_ASD -o tm.o $SRC && $LD -o tm.elf tm.o 2>/dev/null && $OC tm.elf tm.bin && mem tm.bin rom_mem.mem
+  $VL -DFASTMEM -DMEMBENCH $D tb_top.sv sdram_model_checked.v $R/base64_tg68/base64_tg68_top.sv $R/base64_tg68/clkgen.v $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v $SLAVES -o tb_bench > build_bench.log 2>&1
   ./obj_dir/tb_bench | grep -v "^per cycle\|^AS->DTACK" ;;
 esac

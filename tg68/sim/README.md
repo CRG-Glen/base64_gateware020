@@ -67,6 +67,27 @@
   (`n_posted`). (Checked against broken versions: no chip fill, no
   invalidate on a CPU write, no flush on CI, a posted write's byte lanes
   swapped: all caught.)
+* **bench wrchip | wrmix | wrfast** (step 12): 1 KB written as bursts of
+  four longwords (MOVEM.L), to Chip RAM, to Chip RAM with 32 ALU
+  instructions per burst (`wrmix`, the chunky-to-planar case), and to fast
+  RAM. Every bench prints the clocks the CPU spent waiting: a fast RAM
+  write for the SDRAM port, a read in CFREE, a Chip RAM write for room in
+  the write buffer. `top` also checks the buffer's ordering (a CIA read
+  after four buffered writes finds them all in chip RAM, 0x81CC) and a
+  MOVEM.L longer than the buffer (0x81D0).
+* **bench c | coff** (step 15): a compiled C workload (`bench_c.c`: records
+  and pointers, string copy and compare, calls, a switch, arrays; gcc -O2
+  -m68020, needs `gcc-m68k-linux-gnu`), copied to fast RAM with its stack
+  there and run twice; the second pass is timed and both checksums are
+  checked. It prints what each kernel step was and how many clocks it
+  took. `coff` runs it with the caches off. `VLFLAGS=-DS15_DEFAULT=0`
+  runs any bench with the fetch predictor off, as step 14.
+  Step 15's checks run in every bench: each predicted fetch against the
+  cache's own read of the kernel's address (`fp_chk_bad`) and against the
+  shadow of the CPU's writes, the predicted word two clocks old when the
+  kernel samples it, `fp_ac` never changing into a clock with `fp_v` set,
+  and `cnt_ok` equal to the counter compare. `fastmem` adds four routines
+  that store over the instruction just ahead (0x8210-0x822C).
 * **bench chip**: a loop in Chip RAM writes 1 KB to Chip RAM, timed on the
   second pass (Chip RAM code from the instruction cache).
 * **bench copy | read | scatter | sd**: fast RAM throughput, timed on a second

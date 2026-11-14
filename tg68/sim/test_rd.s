@@ -4,7 +4,27 @@
         .long 0x00009000
         .long start
         .org 0x100
-start:  moveq   #1,%d0
+start:
+        .ifdef SPEED18
+        | SPEED18 (named in the 18x experiment): switch to 20x first (SPEED16:
+        | 16x) and
+        | wait until the switch is done
+        .ifdef SPEED16
+        move.w  #0x5B10,0xEAF00A
+        .else
+        move.w  #0x5B14,0xEAF00A
+        .endif
+9:      move.w  0xEAF00A,%d0
+        btst    #11,%d0
+        bne.s   9b
+        .ifdef SPEED16
+        cmp.b   #0x10,%d0
+        .else
+        cmp.b   #0x14,%d0
+        .endif
+        bne.s   9b
+        .endif
+        moveq   #1,%d0
         .ifdef NOCACHE
         moveq   #0,%d0              | bench readoff: caches off
         .endif

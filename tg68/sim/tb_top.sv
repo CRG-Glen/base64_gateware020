@@ -18,12 +18,31 @@ module tb;
     always #5.873 clk12 = ~clk12;
 `endif
     reg [3:0] div = 0;
-    reg clk7 = 0;
+    reg clk7_0 = 0;
     always @(posedge clk12) begin
         div <= (div == CM - 1) ? 0 : div + 1;
-        if (div == 0)      clk7 <= 1;
-        if (div == CM / 2) clk7 <= 0;
+        if (div == 0)      clk7_0 <= 1;
+        if (div == CM / 2) clk7_0 <= 0;
     end
+`ifdef CAL_TEST
+    // step 13: 7M edges 0-0.4 ns late at random, with the clock delayed in
+    // clkgen.v, to test the 7M capture calibration
+    reg clk7 = 0;
+    always @(clk7_0) begin
+        #($urandom_range(0, 400) * 0.001);
+        clk7 = clk7_0;
+    end
+`elsif CAL_DRIFT
+    // step 14: 7M edges 0.05-0.45 ns late; clkgen.v delays the clock by
+    // 0.25 ns from 300 us on (drift onto the rising-edge sample)
+    reg clk7 = 0;
+    always @(clk7_0) begin
+        #($urandom_range(50, 450) * 0.001);
+        clk7 = clk7_0;
+    end
+`else
+    wire clk7 = clk7_0;
+`endif
 
     wire [23:1] a;
     wire [15:0] d;
@@ -41,7 +60,7 @@ module tb;
     assign d = mb_drive ? mb_q : 16'bz;
 
     base64_tg68_top #(
-        .PWRUP_BIT(12), .COLD_RETRY(1'b0), .FORCE_RETRY_MS(0),
+        .PWRUP_BIT(12), .CAL_EDGES(64), .COLD_RETRY(1'b0), .FORCE_RETRY_MS(0),
 `ifdef SDTEST
         .PASSIVE_EN(1'b0), .ENABLE_SD(1'b1),
 `else
@@ -142,12 +161,44 @@ module tb;
     // k_long_ack and k_din_sel feed the kernel and are classed adapter ->
     // kernel (2 clocks) by check_timing.py: neither may change in the clock
     // just before the kernel samples (the clkena clock).
+    reg clw3_armed = 1'b0;   // kernel change 5 check (below)
     integer ks_cyc = 0, ks_chg = -10, ks_bad = 0; reg ks_la = 0, ks_ds = 0, ks_hs = 0, ks_dd = 0;
+    reg [31:1] ks_fac = 0; reg ks_ps = 0; reg [15:0] ks_fp = 0; integer ks_fchg = -10; reg fpp = 0; integer fp_chk = 0;   // step 15: fetch predictor
     integer rd_pairs = 0;                // pair reads from the SDRAM (step 9)
     integer n_clw = 0;                   // steps with clkena_lw (kernel change 2)
     always @(posedge dut.clk) begin
         ks_cyc = ks_cyc + 1;
-        if (dut.cpu.k_long_ack !== ks_la || dut.cpu.k_din_sel !== ks_ds || dut.cpu.k_din_hsel !== ks_hs || dut.cpu.k_din_dsel !== ks_dd) ks_chg = ks_cyc;
+        if (dut.cpu.k_long_ack !== ks_la || dut.cpu.k_din_sel !== ks_ds || dut.cpu.k_din_hsel !== ks_hs || dut.cpu.k_din_dsel !== ks_dd || dut.cpu.k_din_psel !== ks_ps) ks_chg = ks_cyc;
+        // step 15: the predicted word must be 2 clocks old when the kernel
+        // samples it, and equal to what the CPU last wrote there
+        if (dut.cpu.k_din_fp !== ks_fp) ks_fchg = ks_cyc;
+        ks_ps = dut.cpu.k_din_psel; ks_fp = dut.cpu.k_din_fp;
+        if (fpp && !dut.cpu.k_clkena) begin
+            $display("FAIL predicted fetch in DECIDE not followed by a kernel step");
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
+        if (dut.cpu.k_clkena && fpp) begin
+            fp_chk = fp_chk + 1;
+            if (ks_cyc - ks_fchg < 2 || dut.cpu.k_dat !== dut.cpu.k_din_fp) begin
+                $display("FAIL predicted fetch: word changed %0d clocks before the kernel sampled it, data_in %h, predicted %h", ks_cyc - ks_fchg, dut.cpu.k_dat, dut.cpu.k_din_fp);
+                ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+            end
+            chk_word(dut.cpu.k_addr[31:1], dut.cpu.k_dat);
+            if (dut.cpu.k_addr[31:1] >= 31'h4000 && dut.cpu.k_addr[31:1] < 31'h5000) chip_ihit = chip_ihit + 1;
+        end
+        // fp_ac (the compare copy of the predicted address) is classed a
+        // 2-clock source: it must never have just changed while fp_v is set
+        if (dut.cpu.fp_ac !== ks_fac && dut.cpu.fp_v) begin
+            $display("FAIL fp_ac changed on the edge into a clock with fp_v set");
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
+        ks_fac = dut.cpu.fp_ac;
+        // cnt_ok is cnt >= STEP-1 as a register (step 15)
+        if (!dut.cpu.extReset && dut.cpu.q != 4'd0 && dut.cpu.cnt_ok !== (dut.cpu.cnt >= 3)) begin
+            $display("FAIL cnt_ok %b with cnt %0d (q %0d)", dut.cpu.cnt_ok, dut.cpu.cnt, dut.cpu.q);
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
+        fpp = (dut.cpu.q == 4'd1) && !dut.cpu.internal_step && dut.cpu.fp_hit && !dut.cpu.extReset;
         ks_la = dut.cpu.k_long_ack; ks_ds = dut.cpu.k_din_sel; ks_hs = dut.cpu.k_din_hsel; ks_dd = dut.cpu.k_din_dsel;
         // The kernel's l1 <= long_ack (Base64 change, was long_ack AND cand)
         // relies on this: long_ack only ever answers an offered pair.
@@ -162,6 +213,18 @@ module tb;
         // tick_rq is tick_r as a register (posted chip writes): always equal
         if (dut.tick_rq !== dut.tick_r) begin
             $display("FAIL tick_rq %b, tick_r %b", dut.tick_rq, dut.tick_r);
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
+        // k_clkena_lw3 too (kernel change 5), from the first edge on (it
+        // powers on at 1 so that yosys keeps it a separate register)
+        if (clw3_armed && dut.cpu.k_clkena_lw3 !== dut.cpu.k_clkena_lw) begin
+            $display("FAIL k_clkena_lw3 %b, k_clkena_lw %b", dut.cpu.k_clkena_lw3, dut.cpu.k_clkena_lw);
+            ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
+        end
+        clw3_armed = 1'b1;
+        // k_clkena_lw2 is an identical copy of k_clkena_lw (kernel change 4)
+        if (dut.cpu.k_clkena_lw2 !== dut.cpu.k_clkena_lw) begin
+            $display("FAIL k_clkena_lw2 %b, k_clkena_lw %b", dut.cpu.k_clkena_lw2, dut.cpu.k_clkena_lw);
             ks_bad = ks_bad + 1; hit_bad = hit_bad + 1;
         end
         // k_step is the adapter's copy of k_clkena: always equal
@@ -306,6 +369,24 @@ module tb;
     always @(posedge lds_n) if (!rw && ba >= 24'h8000 && ba < 24'hA000) ram[ba[12:1]][7:0]  = d[7:0];
     always @(posedge uds_n) if (!rw && ba == 24'h8F80) ipl_n = 3'b111;
 `ifdef FASTMEM
+    // step 13: the turbomem board as if autoconfigured at $EA0000, so the
+    // program can use its speed register (+$F00A) for real
+    initial begin
+        #100;
+        force dut.g_fastmem.u_turbomem.configured = 1'b1;
+        force dut.g_fastmem.u_turbomem.base = 8'hEA;
+    end
+    integer n_switch = 0; reg [1:0] cur_d = 0;
+    always @(posedge dut.clk) begin
+        // (only arrivals at the selected source: between two PLL clocks the
+        // switch has a moment with neither on, which cur shows as 12x)
+        if (dut.clk_cur != cur_d && dut.clk_cur == dut.clk_sel) begin
+            n_switch = n_switch + 1;
+            $display("%0t: system clock now %0s", $time,
+                     dut.clk_cur == 2'd2 ? "16x" : dut.clk_cur == 2'd1 ? "14x" : "12x");
+        end
+        cur_d <= dut.clk_cur;
+    end
     // MapROM control, as the turbomem board's $F008 register would set it
     always @(posedge uds_n) if (!rw && ba == 24'h8F40) begin
         if (d[15:8] == 8'd1) force dut.g_fastmem.u_turbomem.mr_ctrl = 2'b01;
@@ -349,6 +430,40 @@ module tb;
         if (dut.cpu.q == 9 && dut.cpu.dp_ack) n_dir = n_dir + 1;
         if (dut.cpu.q == 4 && (!dut.core_dtack_n)) n_bus = n_bus + 1;
     end
+    // step 15: what each kernel step was and how long it took (gap = clocks
+    // from the previous step). The kernel's outputs still show the cycle
+    // being ended in the clock k_clkena is high.
+    integer gap = 0, sk_f = 0, sk_f5 = 0, sk_f5seq = 0, sk_f4 = 0, sk_fpair = 0, sk_w = 0, sk_w5 = 0, sk_w4 = 0, sk_wpair = 0,
+            sk_r = 0, sk_r5 = 0, sk_rpair = 0, sk_i = 0, sk_i4 = 0;
+    reg [31:1] f_next = 0;
+    wire sk_fetch = (dut.cpu.k_bs == 2'b00) && !dut.cpu.k_skip;
+    always @(posedge clk12) begin
+        gap <= dut.cpu.k_clkena ? 1 : gap + 1;
+        if (dut.cpu.k_clkena && sk_fetch)
+            f_next <= dut.cpu.k_addr[31:1] + (dut.cpu.k_long_ack ? 31'd2 : 31'd1);
+        if (dut.cpu.k_clkena && t0 > 0 && t1 == 0) begin
+            if (sk_fetch) begin
+                sk_f = sk_f + 1;
+                if (dut.cpu.k_long_ack) sk_fpair = sk_fpair + 1;
+                else if (gap == 5) begin
+                    sk_f5 = sk_f5 + 1;
+                    if (dut.cpu.k_addr[31:1] == f_next) sk_f5seq = sk_f5seq + 1;
+                end else if (gap == 4) sk_f4 = sk_f4 + 1;
+            end else if (dut.cpu.k_bs == 2'b11) begin
+                sk_w = sk_w + 1;
+                if (dut.cpu.k_long_ack) sk_wpair = sk_wpair + 1;
+                else if (gap == 5) sk_w5 = sk_w5 + 1;
+                else if (gap == 4) sk_w4 = sk_w4 + 1;
+            end else if (dut.cpu.k_bs == 2'b10) begin
+                sk_r = sk_r + 1;
+                if (dut.cpu.k_long_ack) sk_rpair = sk_rpair + 1;
+                else if (gap == 5) sk_r5 = sk_r5 + 1;
+            end else begin
+                sk_i = sk_i + 1;
+                if (gap == 4) sk_i4 = sk_i4 + 1;
+            end
+        end
+    end
     always @(negedge dut.core_dtack_n) if (t0 > 0 && t1 == 0) begin t_dt = $realtime; sum_as2dt = sum_as2dt + (t_dt - t_as); n_fm = n_fm + 1;
         if (dut.core_a[31:24] == 8'h08) begin
         if (dut.core_rw) begin n_rd = n_rd + 1; s_rd = s_rd + (t_dt - t_as); end else begin n_wr = n_wr + 1; s_wr = s_wr + (t_dt - t_as); end end end
@@ -357,6 +472,13 @@ module tb;
     function [31:0] rd32(input [23:0] ad);
         rd32 = {ram[ad[12:1]], ram[ad[12:1]+1]};
     endfunction
+    // the same, comparing only the bits set in mask
+    task checkm(input [23:0] ad, input [31:0] exp, input [31:0] mask, input [8*24-1:0] what);
+        if ((rd32(ad) & mask) !== (exp & mask)) begin
+            $display("FAIL %-24s @%h = %h, expected %h (mask %h)", what, ad, rd32(ad), exp, mask);
+            errors = errors + 1;
+        end else $display("ok   %-24s @%h = %h", what, ad, rd32(ad));
+    endtask
     task check(input [23:0] ad, input [31:0] exp, input [8*24-1:0] what);
         if (rd32(ad) !== exp) begin
             $display("FAIL %-24s @%h = %h, expected %h", what, ad, rd32(ad), exp);
@@ -394,6 +516,8 @@ module tb;
         $display("cache hits checked against the CPU's writes (whole run) %0d, stale %0d; pair hits %0d; pair writes %0d; pair reads %0d; SDRAM violations %0d; clkena_lw steps %0d", hit_chk, hit_bad, long_hits, wr_pairs, rd_pairs, u_sdram.n_err, n_clw);
         if (u_sdram.n_err) errors = errors + 1;
         if (hit_bad) errors = errors + 1;
+        $display("steps by kind: fetch %0d (pairs %0d, single in 4 clocks %0d, in 5 clocks %0d of which sequential %0d); write %0d (pairs %0d, single in 4 %0d, in 5 %0d); read %0d (pairs %0d, single in 5 %0d); internal %0d (in 4 clocks %0d)",
+                 sk_f, sk_fpair, sk_f4, sk_f5, sk_f5seq, sk_w, sk_wpair, sk_w4, sk_w5, sk_r, sk_rpair, sk_r5, sk_i, sk_i4);
         $display("1 KB: %0.1f us -> %0.2f MB/s; %0d CPU bus cycles", (t1-t0)/1000.0, 1024.0/((t1-t0)/1000.0), n_fm);
         $display("stall clocks: fast write waits for the port %0d, read waits (CFREE) %0d, chip write waits %0d", st_fw, st_fr, st_cw);
         $display("per cycle, in 11.75 ns clocks: AS->DTACK %0.1f, DTACK->AS up %0.1f, AS up->next AS %0.1f",
@@ -408,6 +532,9 @@ module tb;
         check(24'h8114, 32'h00000000, "SPI loopback mismatches");
         check(24'h8118, 32'h00000102, "SPI loopback first word");
         check(24'h811C, 32'h000000F1, "SPI loopback bytes");
+`elsif BENCH_C
+        check(24'h8100, 32'h05364511, "C workload checksum, pass 1");
+        check(24'h8104, 32'h61FEF797, "C workload checksum, pass 2");
 `elsif BENCH_COPY
         check(24'h8100, 32'h000000FF, "first copied long");
         check(24'h8104, 32'h00000000, "last copied long");
@@ -422,6 +549,9 @@ module tb;
         check(24'h8100, 32'h00007F80, "sum");
 `endif
         check(24'h8FF0, 32'h600DC0DE, "done marker");
+        if (dut.cpu.fp_chk_bad) begin $display("FAIL: %0d predicted fetches differed from the cache's own lookup", dut.cpu.fp_chk_bad); errors = errors + 1; end
+        $display("predicted fetches %0d (checked at the kernel's sample clock: %0d)", dut.cpu.fp_hits, fp_chk);
+        if (dut.cpu.cc_bad) begin $display("FAIL: %0d CCMP compares used registered inputs that differ from a_r", dut.cpu.cc_bad); errors = errors + 1; end
         if (errors) $display("FAILED"); else $display("PASS");
         $finish;
 `else
@@ -452,6 +582,92 @@ module tb;
         if (undriven > 0) begin $display("FAIL: %0d writes latched with the data bus not driven", undriven); errors = errors + 1; end
 `ifdef FASTMEM
         check(24'h81C8, 32'h0000005F, "posted writes after fast RAM reads");
+`ifdef TG68_X16
+        // board-mod build: fixed 16x, the register reads $0010, writes do nothing
+        check(24'h81D4, 32'h00000010, "speed: fixed 16x (board mod)");
+        check(24'h81D8, 32'h00000010, "speed: write ignored (16)");
+        check(24'h81DC, 32'hACF1E135, "speed: memory traffic");
+        check(24'h81E0, 32'h00000010, "speed: write ignored (14)");
+        check(24'h81E4, 32'hACF1E135, "speed: memory traffic");
+        check(24'h81E8, 32'h00000010, "speed: write ignored (12)");
+        check(24'h81EC, 32'hACF1E135, "speed: memory traffic");
+        check(24'h81F0, 32'h00000010, "speed: unkeyed / invalid writes ignored");
+        check(24'h81F4, 32'h00000010, "speed: write ignored (12, rising)");
+        check(24'h81F8, 32'h00000010, "speed: write ignored (invalid select)");
+        check(24'h81FC, 32'hACF1E135, "speed: memory traffic");
+        $display("clock switches: %0d; SDRAM mode loads: %0d", n_switch, u_sdram.n_mrs);
+        if (n_switch != 0) begin $display("FAIL: the clock switched in the fixed 16x build"); errors = errors + 1; end
+        if (u_sdram.n_mrs != 1) begin $display("FAIL: expected 1 SDRAM mode load"); errors = errors + 1; end
+`else
+`ifdef CAL_DRIFT
+        // step 14: rising chosen at power-up (12x, both clean), then the
+        // clock drifts onto it at 300 us: the top level must swap to the
+        // falling stream by itself (n_swap). Later calibrations at every
+        // speed find the rising one moving and keep the falling one. Bit 15
+        // (aligner slip) is not compared: the forced-rising test at 81F4
+        // runs on the drifting stream on purpose.
+        $display("automatic 7M stream swaps: %0d", dut.n_swap);
+        if (dut.n_swap < 1) begin $display("FAIL: the drifting 7M stream was never swapped out"); errors = errors + 1; end
+        checkm(24'h81D4, 32'h0000470C, 32'h00007FFF, "speed: 12x after the drift");
+        checkm(24'h81D8, 32'h00004710, 32'h00007FFF, "speed: 16x, falling stream");
+        checkm(24'h81E0, 32'h00004714, 32'h00007FFF, "speed: 20x, falling stream");   // v2.0
+        checkm(24'h81E8, 32'h0000470C, 32'h00007FFF, "speed: back to 12x, falling");
+        checkm(24'h81F0, 32'h0000470C, 32'h00007FFF, "speed: unkeyed / invalid ignored");
+        checkm(24'h81F4, 32'h0000570C, 32'h00007FFF, "speed: 12x, rising forced");
+        checkm(24'h81F8, 32'h0000570C, 32'h00007FFF, "speed: invalid select ignored");
+        if (dut.smp_r !== 1'b0) begin $display("FAIL: the drifting stream is still in use"); errors = errors + 1; end
+`elsif CAL_TEST
+        // at 12x the falling sample sits in the 7M jitter: the power-up
+        // calibration and each one at 12x must pick the rising stream (bit
+        // 12) and report the falling one moving (bit 13); at 14x and 16x
+        // both are clean and the falling stream stays
+        check(24'h81D4, 32'h0000370C, "speed: 12x at power-on, rising 7M stream");
+        check(24'h81D8, 32'h00000710, "speed: 16x, falling stream");
+        check(24'h81E0, 32'h00000714, "speed: 20x, falling stream");   // v2.0
+        check(24'h81E8, 32'h0000370C, "speed: back to 12x, rising stream");
+        check(24'h81F0, 32'h0000370C, "speed: unkeyed / invalid writes ignored");
+        check(24'h81F4, 32'h0000370C, "speed: 12x, rising forced");
+        check(24'h81F8, 32'h0000370C, "speed: invalid sample select ignored");
+        if (dut.smp_r !== 1'b1) begin $display("FAIL: the calibration left the jittery stream in use"); errors = errors + 1; end
+        if (dut.n_swap != 0) begin $display("FAIL: %0d 7M stream swaps (the stream in use is clean)", dut.n_swap); errors = errors + 1; end
+`else
+        // step 14: at 12x the rising stream unless it moved more (both are
+        // clean here); at 14x and 16x the falling one; no swap ever
+        check(24'h81D4, 32'h0000170C, "speed: 12x at power-on, rising");
+        check(24'h81D8, 32'h00000710, "speed: 16x");
+        check(24'h81E0, 32'h00000714, "speed: 20x");   // v2.0
+        check(24'h81E8, 32'h0000170C, "speed: back to 12x, rising");
+        check(24'h81F0, 32'h0000170C, "speed: unkeyed / invalid writes ignored");
+        check(24'h81F4, 32'h0000170C, "speed: 12x, rising 7M stream forced");
+        check(24'h81F8, 32'h0000170C, "speed: invalid sample select ignored");
+        if (dut.smp_r !== 1'b1) begin $display("FAIL: the calibration left the rising stream at 12x"); errors = errors + 1; end
+        if (dut.n_swap != 0) begin $display("FAIL: %0d 7M stream swaps with nothing drifting", dut.n_swap); errors = errors + 1; end
+`endif
+        check(24'h81DC, 32'hACF1E135, "speed: memory traffic at 16x");
+        check(24'h81E4, 32'hACF1E135, "speed: memory traffic at 20x");
+        check(24'h81EC, 32'hACF1E135, "speed: memory traffic at 12x");
+        check(24'h81FC, 32'hACF1E135, "speed: memory traffic after a recalibration");
+        // step 15: code that overwrites the instruction 0, 1 or 2 words
+        // after the store (test_top.s smc0-2). The storing run's result
+        // is what the kernel's own prefetch gives (the same with the
+        // predictor off, VLFLAGS=-DS15_DEFAULT=0); the run after it must
+        // see the new instruction.
+        check(24'h8210, 32'h00000005, "smc +0: the storing run");
+        check(24'h8214, 32'h00000002, "smc +0: the run after");
+        check(24'h8218, 32'h00000002, "smc +1: the storing run");
+        check(24'h821C, 32'h00000002, "smc +1: the run after");
+        check(24'h8220, 32'h00000002, "smc +2: the storing run");
+        check(24'h8224, 32'h00000002, "smc +2: the run after");
+        check(24'h8228, 32'h00000002, "smc pair: the storing run");
+        check(24'h822C, 32'h00000002, "smc pair: the run after");
+        if (dut.ph_slip) begin $display("FAIL: the 7M aligner slipped"); errors = errors + 1; end
+        if (!dut.ph_locked) begin $display("FAIL: the 7M aligner is not locked"); errors = errors + 1; end
+        $display("clock switches: %0d; SDRAM mode loads: %0d", n_switch, u_sdram.n_mrs);
+        if (n_switch != 3) begin $display("FAIL: expected 3 clock switches"); errors = errors + 1; end
+        // v2.0: 12x -> 16x loads CL3, 16x -> 20x keeps it, 20x -> 12x loads
+        // CL2: still 3 (step 13: 16x -> 14x loaded CL2, 14x -> 12x none)
+        if (u_sdram.n_mrs != 3) begin $display("FAIL: expected 3 SDRAM mode loads (init, CL3, CL2)"); errors = errors + 1; end
+`endif
         check(24'h8120, 32'h13579BDF, "fast RAM $08000000");
         check(24'h8124, 32'h2468ACE0, "fast RAM $08FFFFFC");
         check(24'h8128, 32'h0000FA57, "code run from fast RAM");
@@ -487,6 +703,7 @@ module tb;
         $display("pair writes: %0d; SDRAM model timing violations: %0d", wr_pairs, u_sdram.n_err);
         if (wr_pairs < 4) begin $display("FAIL: pair writes (32-bit SDRAM) barely used"); errors = errors + 1; end
         if (u_sdram.n_err) begin $display("FAIL: SDRAM model timing violations"); errors = errors + 1; end
+        if (dut.g_sdram.u_sdram.pre_bad) begin $display("FAIL: %0d SDRAM requests used a stale open-row decision", dut.g_sdram.u_sdram.pre_bad); errors = errors + 1; end
         $display("data cache hits: %0d; hits checked against the CPU's writes %0d (stale: %0d); pair hits %0d; shortest direct request->ack %0d clocks",
                  dc_hits, hit_chk, hit_bad, long_hits, dp_min);
         if (long_hits < 4) begin $display("FAIL: pair hits (32-bit data path) barely used"); errors = errors + 1; end
@@ -506,6 +723,9 @@ module tb;
         if (iacks != 1) begin $display("FAIL IACK count %0d", iacks); errors = errors + 1; end
         if (unmapped)   begin $display("FAIL %0d unmapped accesses reached the MB", unmapped); errors = errors + 1; end
         if (led_r)      begin $display("FAIL red LED (stall)"); errors = errors + 1; end
+        if (dut.cpu.fp_chk_bad) begin $display("FAIL: %0d predicted fetches differed from the cache's own lookup", dut.cpu.fp_chk_bad); errors = errors + 1; end
+        $display("predicted fetches %0d (checked at the kernel's sample clock: %0d)", dut.cpu.fp_hits, fp_chk);
+        if (dut.cpu.cc_bad) begin $display("FAIL: %0d CCMP compares used registered inputs that differ from a_r", dut.cpu.cc_bad); errors = errors + 1; end
         if (errors) $display("FAILED, %0d errors", errors); else $display("PASS");
         $finish;
 `endif

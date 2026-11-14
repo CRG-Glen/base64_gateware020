@@ -112,6 +112,10 @@ KIN = re.compile(r'(^|\.)(k_din|data_in|k_ipl|ipl|IPL|k_berr|berr|k_nreset|nRese
 # the address changes, so they have 3T; 2T is used).
 BUSOUT = re.compile(r'^(cpu\.(a_r|fc_r|eRWn|oEdb|eab|FC\d)|core_a|core_fc|core_rw|core_dout|hi_null_r'
                     r'|cpu\.dp_(we|wdata|be)|cpu\.pf_a'
+                    # step 15: the fetch predictor's compare copy of its address.
+                    # fp_v, which gates its only user (fp_hit), is cleared on the
+                    # edge fp_ac loads and set >= 3 clocks later (tb-asserted)
+                    r'|cpu\.fp_ac'
                     # a_r bits that yosys named after the slave port they drive
                     r'|g_\w+\.u_\w+\.(a|a_high|a_low|region)'
                     r'|g_fastmem\.u_fastmem\.(owns_r|cpu_win_r|mr_win_r|saddr_r|saddr)'
@@ -124,8 +128,24 @@ STATIC = re.compile(r'^(g_(fastmem|sd)\.u_\w+\.(maprom_active|maprom_load|config
                     # names the flip-flops after the top-level wires they
                     # drive (fm_cfg_on = configured, fm_cfg_match = addr_match;
                     # seen in the step 6 build)
-                    r'|fm_cfg_(on|match)'
-                    r'|g_sdram\.u_sdram\.init_done)(_|\[|$)')
+                    r'|(g_fastmem\.u_fastmem\.)?fm_cfg_(on|match)'
+                    # (...and inside the fast RAM instance: seen in the step
+                    # 13 build, g_fastmem.u_fastmem.fm_cfg_match = addr_match)
+                    r'|g_sdram\.u_sdram\.init_done'
+                    # step 13, the run-time speed settings: spd and what is
+                    # registered from it (7M grid count and half point, 1 ms
+                    # count, rt_ hold, SD clock stretch), clk_sel, and the
+                    # SDRAM read timer's CAS latency. They change only in the
+                    # switch sequencer's SW state (cas_lat_r in the
+                    # controller's config state), with the CPU held and the
+                    # buses and SDRAM idle; the sequencer then waits 64
+                    # clocks and 8 7M edges (SDRAM: >= 4 clocks before the
+                    # next request) before anything uses them. yosys merges
+                    # spd, ph_top and ph_half into spd_hold2/spd_lox.
+                    # NOT cl3_now: the sequencer reacts to it the next clock.
+                    # (v2.0: spd_rfc, the SDRAM's tRFC + 2 at 20x, likewise)
+                    r'|spd|ph_top|ph_half|ms_top|spd_hold2|spd_lox|spd_rfc|clk_sel'
+                    r'|g_sdram\.u_sdram\.cas_lat_r|g_sd\.u_sd\.\w*lo_x\w*)(_|\[|$)')
 # Instruction cache RAM and its registers: ordinary single-cycle logic, but
 # listed separately because a cache hit loads k_din one clock after ic_qd,
 # so it must NOT get the 2T read-data-latch budget the slaves get.

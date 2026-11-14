@@ -10,16 +10,15 @@ and the SD card. An adapter, `tg68_bus.v`, makes TG68K look like fx68k's
 ports and adds the caches and the direct SDRAM path. Changes to the fx68k
 build's own files are few and marked `TG68:`.
 
-> **Status:** steps 1-12 run on an A500+. The latest, step 12 `full`, at
-> the stock 12x clock: 9690 Dhrystones (10.11 MIPS), AIBB MemTest 15.74 MB/s,
-> xSysInfo fast RAM 23.33 MB/s with the caches on; 5177 Dhrystones and
-> 8.14 MB/s with them off. That is about 3.5× the 2783 Dhrystones of the
-> first working build. On a board with its clock multiplier rewired to x16
-> (see *16x clock*), the `_x16` files give 12907 Dhrystones and 19.97 MB/s.
-> Steps 11 and 12 are for games: code that runs from Chip RAM is cached
-> (step 11), and Chip RAM writes go through an 8-entry write buffer while
-> the CPU carries on (step 12). Frontier and Gloom run much faster with
-> the caches on.
+> **v2.0** (the current release): the clock switches at run time between
+> **12x, 16x and 20x** (85.1, 113.5 and 141.9 MHz) with the `speed`
+> command, with no board mod; sequential instruction fetches from the
+> cache take 4 clocks instead of 5 (the fetch predictor, step 15). On an
+> A500+, caches on: SysInfo 10776 / 14379 / 18024 Dhrystones and AIBB
+> MemTest 16.60 / 21.03 / 26.16 MB/s at 12x / 16x / 20x; xSysInfo fast RAM
+> 36.85 MB/s at 20x; the Frontier timedemo averages 26.2 / 31.1 / 33.8 fps.
+> How to install it and use `speed` and `maprom`: the
+> [front page](../README.md).
 >
 > **SD card: every `full` bitstream from step 4 on reads the card.** The
 > step 1-3 `full` files drove the card's data-out line (MISO) low, so the
@@ -27,14 +26,23 @@ build's own files are few and marked `TG68:`.
 > not support the SCSI inquiry command"). Don't use them with an SD card.
 
 The bitstreams are not kept in git: download them from this repository's
-**Releases** page (each release has that step's `bitstreams/` folder and the
-`maprom` command), or build them yourself.
+**Releases** page, or build them yourself. The test bitstreams of every
+step (the `bitstreams/stepN_*` folders below) were committed to that
+step's branch; from v2.0 those branches are kept as tags
+(`archive/step15-fetch-predictor` and so on), where the folders still are.
 
 ## The bitstreams
 
 | Folder | What changed | Status |
 | --- | --- | --- |
-| `bitstreams/step12_wbuf/` | + 8-entry Chip RAM write buffer: up to 8 Chip RAM writes (4 longwords) are taken at once and written out in order while the CPU carries on. 12x and 16x files | **Latest. Known good on hardware**, 12x (seed 6) and 16x (seed 4), SD card included. Benchmarks as step 11 (they run from fast RAM and the caches); games look smoother, not yet measured |
+| **v2.0 release** (`bitstreams/exp20x/` on tag `archive/exp-20x`) | step 15b, with the second PLL at 20x (141.9 MHz) in place of 14x: run-time 12x / 16x / 20x (`speed 20`). SDRAM: two more clocks after each refresh at 20x. Built from the 20x experiment, seed 10 | **Runs on hardware at 12x, 16x and 20x** (hours at 20x), SD card included: SysInfo 18024 Dhrystones at 20x (+25% on 16x), AIBB 26.16 MB/s, xSysInfo fast RAM 36.85 MB/s, Frontier timedemo 33.8 fps. 12x: +0.77 / +2.19 ns; 16x / 20x need 1.23× / 1.54× the worst-case model |
+| `bitstreams/exp18x/` (never released) | the 18x experiment: 18x (127.7 MHz) in place of 14x | Ran on hardware: SysInfo 16225 at 18x (+12.9% on 16x). 18x needs 1.42× the model. Not kept: Glen chose 12x / 16x / 20x |
+| `bitstreams/step15b_fpred/` | step 15 with more timing margin: the predicted fetch no longer waits for the kernel's pair signal, and the cycle decision is split into fetch and data branches. Same speed as step 15 within 0.4% (a predicted fetch is now always one word). 12x file (switchable to 14x / 16x with `speed`) | **Runs on hardware at 12x and 16x**, SD card included. SysInfo 10797 / 14412 Dhrystones (12x / 16x, caches on; 3.4% below step 15, under investigation), AIBB 16.60 / 21.03 MB/s and Frontier timedemo 26.1 / 30.6 fps (as step 15). 12x seed 10: +0.37 / +0.75 ns, 14x / 16x need 1.13× / 1.29× the worst-case model (step 15: 1.14× / 1.31×); 5 of seeds 1-18 pass (step 15: 1 of 9) |
+| `bitstreams/step15_fpred/` | + fetch predictor: after every CPU step the instruction cache is read at the next fetch address, so a sequential instruction fetch from the cache takes 4 clocks, not 5 (see *Fetch predictor (step 15)*). 12x file (switchable to 14x / 16x with `speed`); no `_x16` file from this step on | **Runs on hardware at 12x and 16x**, SD card included. SysInfo 11179 / 14925 Dhrystones (12x / 16x, caches on; +15% on step 14), AIBB MemTest 16.59 / 21.03 MB/s (+5%), xSysInfo 16888 / 24471; Frontier timedemo average 26.2 / 30.6 fps. Caches off about as step 14. 12x seed 8: +0.60 / +0.40 ns, 14x / 16x need 1.14× / 1.31× the worst-case model; 1 of seeds 1-9 passes |
+| `bitstreams/step14b_cal/` | step 14 rebuilt with kernel change 5 (a third copy of the kernel's long-word clock enable, and change 4's copy now really separate) and the 7 MHz capture fix: at 12x the rising-edge sample is kept, and the board switches sample on its own if the one in use drifts (`speed` 1.2 shows how often). 12x files (switchable) and `_x16` files | Test build, not yet on hardware. 12x seed 5: +0.36 / +3.28 ns, 14x / 16x need 1.12× / 1.28× the worst-case model; seeds 5 and 8 of 1-8 pass |
+| `bitstreams/step14_headroom/` | + timing headroom: the paths that limited every build since step 7 restructured, at no cost in clocks (identical clock counts in every bench); step 13b's longer 7 MHz calibration (`speed 12 rise` no longer needed). 12x files (switchable) and `_x16` files | **Runs on hardware at 12x, 14x and 16x** (first build: seed 8, +0.43 / +2.53 ns, 14x / 16x need 1.11× / 1.27× the worst-case model): benchmarks as step 13. The 7 MHz capture fix (rising sample at 12x, automatic switch on drift) is a rebuild, not yet on hardware |
+| `bitstreams/step13_speed/` | + clock speed switched at run time: `speed 12`, `speed 14` or `speed 16` in a Shell (the `speed` command is in the folder), 12x / 14x / 16x from the FPGA's PLLs, no board mod, power-on default 12x; 7 MHz capture calibration; the 7 MHz aligner's lock fixed. 12x files (switchable) and `_x16` files (board mod, fixed) | **Runs on hardware at 12x, 14x and 16x** (switching from the CLI). 12x seed 12 passes timing; at 14x / 16x it needs the chip 1.14× / 1.30× faster than the worst-case model. At 12x its calibration can keep a falling-edge 7 MHz sample that later moves (`$270C`); `speed 12 rise` after a cold boot avoids it (fixed in step 14) |
+| `bitstreams/step12_wbuf/` | + 8-entry Chip RAM write buffer: up to 8 Chip RAM writes (4 longwords) are taken at once and written out in order while the CPU carries on. 12x and 16x files | **Latest known good on hardware**, 12x (seed 6) and 16x (seed 4), SD card included. Benchmarks as step 11 (they run from fast RAM and the caches); games look smoother, not yet measured |
 | `bitstreams/step11_games/` | + Chip RAM code in the instruction cache (CACR CI/CEI now flush), posted Chip RAM writes, SDRAM bank permutation, pair prefetch, shorter uncached read. 12x and 16x files | **Known good on hardware**, 12x (seed 14) and 16x (seed 1), Kickstart 1.3 and 3.2.3, SD card included. MemTest 15.73 / 8.49 MB/s at 12x (+28% / +29%), 19.97 / 10.39 at 16x (+26% / +25%), games much faster. Code that DMAs itself into Chip RAM without clearing the cache needs the caches off (see step 11) |
 | `bitstreams/step10_ifetch32/` | + instruction prefetch (the next word after an instruction read from SDRAM) and 32-bit instruction-stream pairs (32-bit immediates and absolute-long addresses in one CPU step). 12x and 16x files | **Known good on hardware**, 12x and 16x, SD card included: 9691 / 12936 Dhrystones (12x / 16x, +5% on step 9), caches off 4918 / 5982 (+17% / +15%). Caches-off MemTest 5-7% lower |
 | `bitstreams/exp16x_seed9/` (never released) | The first 16x build (step 9 design): for a board whose ICS570B is rewired to x16 (113.5 MHz). Correct Amiga-side timing (bus cycles, E/CIA), SDRAM CL3, SD clock in spec. See *16x clock*. Superseded by the `_x16` files of steps 10 and 11 | **Worked on Glen's x16 board**, Ripple IDE ROM included: 12311 Dhrystones, MemTest 15.81 MB/s |
@@ -60,9 +68,10 @@ packed like Muse Lab's own examples and take ~2 s to load at power-on.
 build's dual-SPI 62 MHz settings, and the FPGA won't load those on this
 module. That was the original no-LED fault.)
 
-The pin-out is the fx68k build's (`fx68k/constraints/base64.lpf`), i.e. the
-**Rev C** carrier with the ICS570B ×12 clock. The original TG68 project in
-the repo targets Rev B; this one does not.
+The pin-out is the fx68k build's (its `fx68k/constraints/base64.lpf`, in
+jbilander's repository; here `constraints/`), i.e. the **Rev C** carrier
+with the ICS570B ×12 clock. The original TG68 project in jbilander's
+repository targets Rev B; this one does not.
 
 ## Programming
 
@@ -463,6 +472,176 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   fast RAM copy bench never waits for the SDRAM port, and a pure write
   burst waits 3% of the time, so a queue there could gain at most a few
   percent.
+* **Fetch predictor (step 15).** A cache hit costs 5 clocks per CPU step
+  where an internal step costs 4, because the kernel's address is only
+  ready for the cache RAM two clocks after a step. But nine instruction
+  fetches in ten are of the word after the last one fetched, and that
+  address is known at the step. So after every step the instruction
+  cache is read at the predicted next fetch address, from the adapter's
+  own registers, and the word and the result of its tag compare are ready
+  before the kernel's outputs settle. If the kernel then asks for that
+  address, it is stepped at once, as for an internal step: 4 clocks.
+  The prediction is only ever a cache entry whose tag matches, so the CPU
+  gets exactly the word a normal lookup would give; a write to that entry
+  between the read and the step (code that overwrites the next
+  instruction, a cache fill, a flush) drops the prediction and the fetch
+  goes the normal way. A predicted fetch is always one word, also when
+  the kernel offers a 32-bit pair (step 15b; a pair still comes from the
+  normal lookup, two words in 5 clocks, when there is no prediction). It only works from the
+  instruction cache: with the caches off, and for code not yet cached,
+  nothing changes.
+  Measured in simulation with a compiled C workload (`sim/bench_c.c`:
+  records, strings, calls, arrays; gcc -O2 -m68020, run from fast RAM): 62%
+  of all CPU steps are instruction fetches and 89% of the single-word
+  fetches are sequential. The timed pass takes 65,640 clocks, down from
+  73,680 (+12%). The fast RAM benches gain 5-10% (their loops run from
+  the cache); caches off and Chip RAM are unchanged.
+  Tests: every predicted fetch is compared with the cache's own read of
+  the kernel's address in the same clock (`fp_chk_bad`) and with the test
+  bench's shadow of the CPU's writes; routines that store over the
+  instruction 0, 1 or 2 words after the store, and with a longword store,
+  give the same results as with the predictor off
+  (`VLFLAGS=-DS15_DEFAULT=0`). Broken versions (no drop on a cache write
+  in each of the clocks before the step, the word from the wrong bank, the
+  select never set, no tag compare, the valid bit kept when the address
+  loads) are caught. One guard is not reachable by a test: a cache write
+  to the predicted entry while its fetch is held in DECIDE.
+  Also in this step: a word or byte write to fast RAM can step the CPU
+  a clock sooner (`WR4`); it works and gains 1% on the C workload, but is
+  off, because it puts the fast RAM address decode into the step decision.
+  The interrupt level is now sampled in the clock after a step, so it is
+  a whole step old when the kernel samples it (an interrupt is taken one
+  CPU step, 47 ns, later).
+* **Timing headroom (step 14).** From step 7 on only about one placement
+  seed in 8-16 passed the timing check at 12x, and step 13's extra logic
+  (51% of the LUTs, up from 48%) made it worse: the step 13b build
+  passed on none of 40 seeds. The paths that missed were old ones,
+  routed longer on a fuller chip. Step 14 restructures them so that each
+  does less work in its one clock, without adding a clock anywhere:
+  * Kernel change 4 (from step 12, never shipped): the kernel's
+    clkena_lw is two registers with half the loads each.
+  * SDRAM: the open-row decision (row open, row hit, tRAS met) is
+    registered a clock before the request reaches the controller (the
+    address is already stable then), and a request is tested before a
+    non-urgent refresh instead of through the refresh decision.
+  * Cache hits: the wanted tag, the cache-on term and the word select are
+    registered at DECIDE, so CCMP only compares tags.
+  * The adapter's BRn (bus request, with the write buffer's busy flag) is
+    a register, as HALTn became in step 13; the reset, the address hold
+    after AS and the cache flush trigger likewise (step 13b).
+  The 7 MHz capture got two changes from the first step 14 build on the
+  A500+: at a cold boot at 12x it kept the falling-edge sample, which
+  passed the 0.33 s power-up window and then moved now and then
+  (`$270C`: the speed multiplexer delays the 12x clock by about half a
+  period on every build, which puts that sample next to a 7 MHz edge,
+  and it drifts as the chip warms). So at 12x the calibration now keeps
+  the rising-edge sample unless it moved more (14x and 16x keep the
+  falling one, as before), and whenever the sample in use moves four
+  times while the other never has, the board switches to the other on
+  its own, with the CPU held for a few microseconds and no clock change.
+  `speed` reports how often that has happened (board+$F00C). In
+  simulation the clock delay is stepped mid-run onto the sample in use:
+  the board switches once and carries on (a version that never switches
+  fails). The simulated Chip RAM bench is a 7 MHz cycle per access faster
+  with the rising sample (the bus grid sits a clock later against the
+  DTACK synchronizer); every data and bus check passes, and the real
+  effect, if any, will show in xSysInfo's Chip RAM figure.
+  Every bench gives the same clock counts as before. Each precomputed
+  value has a simulation-only check that it equals the live one whenever
+  it is used (`pre_bad`, `cc_bad`); broken versions are caught. 4 of
+  seeds 1-11 now pass at 12x. Not covered by the test benches: another
+  bus master on the Amiga (BR), as from a DMA card.
+* **Clock speed at run time (step 13).** The normal (12x) bitstream can
+  now run the whole design at 12x, 14x or 16x the Amiga's 7.09 MHz,
+  switched while the machine runs, with no board mod and no reflash. Type
+  `speed 14` or `speed 16` in a Shell (`sw/speed/`, attached to each
+  release); `speed` alone shows the clock in force and which speeds are
+  available.
+
+  | `speed` | System clock | Source |
+  | --- | --- | --- |
+  | 12 | 85.13 MHz | the ICS570B, straight from its pin (power-on default) |
+  | 14 | 99.32 MHz | FPGA PLL, ×7/6 |
+  | 16 | 113.51 MHz | FPGA PLL, ×4/3 |
+
+  The ratios are exact, so each speed has a whole number of fast clocks
+  per 7 MHz cycle and everything on the Amiga side (bus cycles, E, the
+  CIA timers) stays correct at every speed, as in the `_x16` build. What
+  changes with the speed, at run time: the 7M grid's count (12/14/16), the
+  address hold after AS (2 clocks above 12x), the SDRAM's CAS latency (3
+  at 16x, 2 below: the IS42S16160 needs a 10 ns clock for CL2), the SD
+  card clock's low-half stretch (16x), and the 1 ms counter.
+  How a switch runs, all in the gateware (`base64_tg68_top.sv` section
+  13, `clkgen.v`): the `speed` command writes the new speed to the ROM
+  board's register at +$F00A (key $5B, like MapROM's); the adapter stops
+  starting bus cycles; once nothing is in flight (the adapter, the SDRAM
+  port, the Chip RAM write buffer, AS at the CPU and on the motherboard)
+  the SDRAM gets its new CAS latency if needed (a PRECHARGE ALL and a
+  LOAD MODE), the clock switches through a glitch-free multiplexer (the
+  old clock stops low, the new one starts from low, so no pulse is cut
+  short), the 7M aligner re-locks to the new count, and the CPU carries
+  on. It takes about 9 ms, nearly all of it the 7 MHz calibration
+  below. Chip DMA, interrupts and the CIAs run on through it; the CPU
+  just sees one long bus cycle. A speed whose PLL has not locked is
+  refused. Asking for the speed already in force recalibrates.
+  **7 MHz capture calibration.** The bridge finds the Amiga's 7 MHz phase
+  by sampling its clock on the falling edge of the fast clock, half a
+  period away from the edges, which the ICS570B makes coincide. The speed
+  multiplexer is built in FPGA logic (the chip's own clock selector,
+  DCSC, came out of the open tools with a bitstream that could not be
+  checked without hardware), and it delays the clock by about 5-6 ns at
+  12x, a different amount for each speed and each build. That can put
+  the falling-edge sample right on a 7 MHz transition, where it would
+  catch the edge a clock early or late at random. So the 7 MHz clock is
+  now sampled on both edges, half a clock apart (one of the two is then
+  always at least a quarter period from a transition), and a calibration
+  watches both: a sample near a transition sees the edge move, a clean
+  one never does. The falling-edge sample stays in use unless it moved
+  more than the rising-edge one (it is the one closest to the old
+  timing). The calibration runs over the third quarter of the power-up
+  hold (~0.33 s, ~2.3 million 7 MHz cycles) and for 65536 cycles (~9 ms)
+  in every speed switch, with the CPU held. (The first step 13 build
+  watched 2048 cycles. On Glen's A500+ at 12x its falling-edge sample,
+  about 0.5 ns from a transition, passed that and kept moving now and
+  then afterwards, while the rising one, forced with `speed 12 RISE`,
+  never moved through a demo; step 13b's longer windows are for that.) `speed` shows which edge is
+  in use and whether either sample, or the phase aligner, has moved
+  since; `speed 16 RISE` / `FALL` force the edge, for testing.
+  Found on the way: the 7 MHz phase aligner (from the fx68k build) never
+  locked. It compared its counter with the value it would have one clock
+  after an aligned edge, so it re-acquired on every edge. That was
+  harmless while the edge never moved, but its tolerance of an odd noisy
+  edge (three disagreements in a row before it re-acquires) never
+  worked. Fixed; the grid is the same. So the red LED's "aligner
+  slipped" now means what it says, and it is cleared by each
+  calibration.
+  The speed **stays over a reset**; only a power cycle (the FPGA
+  reloading) returns to 12x. So a speed that is too fast for a board is
+  undone by switching off and on.
+  The 14x and 16x speeds are made from the board's 12x clock, so **the
+  ICS570B must be strapped for x12** (stock). On a board modded for x16,
+  use the `_x16` files as before: they have a fixed clock and `speed`
+  says so. Step 14b is the last step with `_x16` files; from then on
+  there is one bitstream for every speed, so put the ICS570B back to x12
+  and use `speed 16`.
+  16x is overclocked exactly as the `_x16` build is (see *16x clock*); 14x
+  less so. Test: the `fastmem` sim switches to 16x, to 14x and back to
+  12x, with memory traffic (pair writes and reads of fast RAM, a Chip RAM
+  write and read, a CIA read) after each switch, then a recalibration
+  with the edge forced, and checks the register, that unkeyed or invalid
+  writes are ignored, three clock switches, three SDRAM mode loads and
+  that the aligner is locked and never slipped. `VLFLAGS=-DCAL_TEST`
+  delays the simulated clock by half a 12x period plus 0.2 ns and
+  jitters the 7 MHz edges by 0-0.4 ns: the calibration must then pick
+  the rising edge at 12x and keep the falling one at 14x and 16x (a
+  version that always keeps the falling edge fails it, with the aligner
+  slipping). Its SDRAM model returns read data at the CAS
+  latency of the last LOAD MODE, so a controller expecting another one
+  reads wrong data, and it flags a LOAD MODE with any bank open.
+  Found on the way: the ROM board decoded its control registers from
+  address bits 15-12 only, so a `$5Axx` write to any address ending in
+  `$F008` (in Chip RAM, say) could switch MapROM. Both registers are now
+  qualified by the board's own window.
 * **MapROM.** The board's boot ROM (`turbomem.mem`, built with
   `DIAG_MAPROM=1`) copies Kickstart into the SDRAM shadow at every boot,
   verifies it and switches over, so it is normally already on. Both caches
@@ -532,7 +711,8 @@ either way.
 
 ## 16x clock (board mod, optional)
 
-From step 10 every release has `_x16` files as well as the normal ones.
+Steps 10 to 14b have `_x16` files as well as the normal ones (later steps
+do not: the normal bitstream runs at 16x with `speed 16`, no board mod).
 They are for a Base64 whose clock multiplier has been rewired from x12 to
 x16, and are overclocked (see below). On Glen's board a jumper on the
 ICS570B's pin 6 (grounded or not) switches between x12 and x16; flash the
@@ -622,18 +802,26 @@ Glen's board at x16.
 2. From this folder:
 
    ```
-   build.bat full
-   build.bat full --seed 9  (start the seed search somewhere else)
-   build.bat full --x16     (for a board rewired to x16, see 16x clock)
+   build.bat full                     (seeds 1-8)
+   build.bat full --seed 9 --seeds 8  (seeds 9-16)
+   build.bat full --skip-synth        (place and route again, same netlist)
    ```
+
+   Seeds run `--jobs` at a time (default: up to 4, one per CPU core; each
+   needs about 1.5 GB of memory), each in `build\full\seed<N>\`. At the
+   end `build.py` prints a table of every seed's worst slacks (also in
+   `build\full\seeds.txt`) and packs the passing seed with the most
+   margin. `--first-pass` stops starting new seeds once one has passed.
 
    On Linux/macOS: `python3 scripts/build.py full` with oss-cad-suite's
    `bin` on your PATH, or with the `yowasp-yosys` and
    `yowasp-nextpnr-ecp5` pip packages installed (`build.py` falls back to
    them when plain `yosys` / `nextpnr-ecp5` are missing). A build takes a
    few minutes per seed.
-3. The bitstream lands in `build\full\base64_tg68_full.bit`
-   (`build\full_x16\` for `--x16`). Step 11 `full` uses ~12k of the
+3. The bitstreams land in `build\full\`: `base64_tg68_full.bit` (plain)
+   and `base64_tg68_full_fast.bit` (compressed, loads faster; both work),
+   with the best seed's timing reports at 12x, 14x and 16x in its
+   `seed<N>` folder. If no seed passes, nothing is packed. Step 11 `full` uses ~12k of the
    FPGA's 24k LUTs and 35 of its 56 block RAMs. Expect to try several
    seeds (`--seeds 16`): the timing margins are thin, and only a seed that
    passes `check_timing.py` outright should be used (step 11's seed 1
@@ -680,6 +868,105 @@ actually provides:
 (`--seeds N` for more) until it gets `RESULT: PASS`, and writes `timing.txt`. Expect the 1T classes to
 pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
+
+Step 15b (fetch predictor timing) builds as supplied (runs on hardware
+at 12x and 16x):
+
+| Build | Seed | Worst 1T slack | Worst multicycle slack |
+| --- | --- | --- | --- |
+| full | 10 | +0.37 ns | +0.75 ns |
+
+Seeds 8, 9, 10, 16 and 18 of 1-18 pass (step 15: 1 of 9). Two changes:
+the predicted fetch no longer tests whether the kernel offers a pair
+(`long_cand`, the kernel's latest output, gated every register the cycle
+decision loads), and the decision is split into a fetch branch and a data
+branch, so data-cycle registers do not wait for the predictor's compare.
+kernel -> logic is negative on 3 of 18 seeds (step 15: 4 of 9), at most
+-0.25 ns. A third change (`dp_fast` loaded on every DECIDE clock) made it
+worse (1 of 9 passing, kernel -> logic to -2.4 ns) and was reverted.
+At 14x the build needs the chip 1.13× faster than the worst-case model,
+at 16x 1.29×. Cost: a sequential 32-bit pair in the instruction stream
+is now two predicted words (8 clocks) instead of one pair (5); bench c
++0.4% clocks, scatter +0.3%, the other benches unchanged.
+
+Step 15 (fetch predictor) builds as supplied (runs on hardware at 12x
+and 16x):
+
+| Build | Seed | Worst 1T slack | Worst multicycle slack |
+| --- | --- | --- | --- |
+| full | 8 | +0.60 ns | +0.40 ns |
+
+Seed 8 is the only pass of seeds 1-9. The first two versions passed on
+none of five seeds and were restructured, not seed-hunted: the predicted
+address was loaded by the step decision (0.9-1.4 ns over; it now loads
+on every DECIDE clock of a fetch, with a copy for the address compare
+that the checker gives two clocks, since the valid bit is cleared on the
+edge it loads); the valid and kill bits were cleared by the step decision
+(0.4-1.4 ns over on the cache-hit step; they are now cleared by
+registers only); and the bus-free test entered the decision twice
+(0.4-0.9 ns). What still misses on the other seeds is spread: kernel ->
+logic by 0.9-1.7 ns on four of them (the kernel's address now feeds a
+second 31-bit compare ahead of DECIDE's decision; 34.1 ns of 34.9 on
+seed 8, where step 14b had 31.6), clkena -> kernel, and the cache RAM
+outputs. At 14x the build needs the chip 1.14× faster than the
+worst-case model, at 16x 1.31× (step 14b: 1.12× / 1.28×; step 13, which
+runs at all three: 1.14× / 1.30×). A carry-chain tag compare was tried
+for the cache-hit step and is slower than the plain one (5.6 ns against
+4.7 ns, routed alone).
+
+Step 14b (kernel change 5, 7 MHz capture fix) builds as supplied (not
+yet on hardware):
+
+| Build | Seed | Worst 1T slack | Worst multicycle slack |
+| --- | --- | --- | --- |
+| full | 5 | +0.36 ns | +3.28 ns |
+
+Seeds 5 and 8 of 1-8 pass (seed 8: +0.21 / +2.53 ns); the others miss by
+0.1-0.9 ns, spread over adapter ctrl -> logic, logic -> logic and
+clkena -> kernel (only seed 1). At 14x the build needs the chip 1.12×
+faster than the worst-case model, at 16x 1.28×. The `_x16` file is seed 3
+of seeds 1-4: 1.29×.
+
+Step 14 (timing headroom, with step 13b's longer calibration) builds as
+supplied (not yet on hardware):
+
+| Build | Seed | Worst 1T slack | Worst multicycle slack |
+| --- | --- | --- | --- |
+| full | 8 | +0.43 ns | +2.53 ns |
+
+Seeds 1, 4, 8 and 11 of 1-11 pass (step 13b: none of 40). At 14x the
+build needs the chip 1.11× faster than the worst-case model, at 16x
+1.27×. The `_x16` file is seed 9 of seeds 1-12: 1.30× (step 13's: 1.32×,
+step 12's: 1.35×).
+
+Step 13 (run-time clock speed) builds as supplied (runs on hardware at
+all three speeds):
+
+| Build | Seed | Worst 1T slack | Worst multicycle slack |
+| --- | --- | --- | --- |
+| full | 12 | +0.24 ns | +0.45 ns |
+
+Seed 12 was the first pass of seeds 1-12 on the final design; the others
+missed by 0.1-4 ns, mostly on clkena -> kernel and on the SDRAM request
+decode. Three earlier versions of the CAS latency change were
+restructured on the way, not seed-hunted: its own state (a fifth state
+bit lengthened the request decode), its own branch in IDLE (even last
+in the chain it merged into the request branch's next-state logic), and
+finally a ride on a refresh, which leaves IDLE as it was in step 12. The
+speed hold was folded into a registered HALTn (a term of its own at
+DECIDE missed by 0.4 ns). Kernel change 4 was tried again (seeds 1-4 of
+the final design, and 1-2 of an earlier one) and did worse than without
+it. The design is 51% LUTs (step 12: 48%); the paths that miss are as
+deep as in step 12, only longer routed. The checker classes the speed
+settings (spd and what is registered from it, clk_sel, the SDRAM read
+timer's CAS latency) as config registers: they change only in a switch,
+with the CPU held and 64+ clocks before anything uses them. Scored as
+the 16x files are: at 14x the build needs the chip 1.14× faster than the
+worst-case model, at 16x 1.30× (`timing_full_at14x.txt`,
+`timing_full_at16x.txt`). The `_x16` file (board mod, fixed clock) is
+seed 7, the best of seeds 1-8: 1.32× (step 12's: 1.35×). So on a board
+with the clock chip back at x12, `speed 16` runs at least as close to
+the model as the `_x16` file does on a modded one.
 
 Step 12 (Chip RAM write buffer) builds as supplied (known good on
 hardware, 12x and 16x):
@@ -931,7 +1218,7 @@ committed netlist byte for byte). Its arguments select variants: barrel
 shifter, no bitfields, iterative multiply.
 
 From step 7 the VHDL is m1nl's fork of TG68K.C
-(<https://github.com/m1nl/TG68K.C>, commit `a8e6f38`), with three marked
+(<https://github.com/m1nl/TG68K.C>, commit `a8e6f38`), with five marked
 changes (below): upstream
 TG68K.C (our kernel was identical to its base) plus a cheaper rotate unit and
 the 32-bit data path (`long_cand`/`long_ack`, `data_in_hi`,
@@ -977,6 +1264,25 @@ read back as 0, as on a real 68020). The adapter flushes both caches when
 it sees either, which is how Exec's CacheClearU reaches the caches now that
 the instruction cache holds Chip RAM code.
 
+4. (step 12, in builds from step 14) `ClkenaLW_Ext` 2 and an input
+`clkena_lw2_in`: the ALU and the data-in and address processes take their
+`clkena_lw` from a second register, so each drives about half of the loads.
+It only works since step 14: yosys merges registers it can prove identical,
+and `(* keep *)` on the copy kept the wire, not the register, so every build
+before had a single register (the routed designs had no copy). The copy is
+now stored inverted, which yosys keeps separate.
+
+5. (step 14) `ClkenaLW_Ext` 3 and inputs `clkena_lw2n_in` (change 4's copy,
+low active: inverted inside the kernel, where the inversion folds into the
+loads; inverted outside it cost a LUT in front of every load) and
+`clkena_lw3_in`, a third copy for the EA_data/data_write process, whose
+paths from `clkena_lw` into `ea_data` were the remaining clkena misses. The
+adapter's three registers differ in polarity or power-on value so yosys
+cannot merge them; copy 3 powers on at 1, harmless because that process's
+Reset branch comes first and Reset is forced while `nReset` is low at
+power-on. Both test benches assert every copy equals `k_clkena_lw` (copy 3
+from the first clock edge).
+
 GHDL turns a handful of VHDL `case ... when others => null` statements into
 latches that yosys rejects. `fix_latches.py` neutralises exactly those.
 Every one is a case that already lists all 0/1 values, so the default can
@@ -984,7 +1290,10 @@ only be reached in simulation with X/U inputs.
 
 ## Credits
 
-Tobias Gubener (TG68K.C), m1nl (the TG68K.C fork with the 32-bit data path,
+Glen Milford (this 68020 project, its hardware testing and direction),
+Claude, Anthropic's AI model, through Claude Code (design and
+implementation of the speed-up steps, the test benches and the timing
+method, working with Glen), Tobias Gubener (TG68K.C), m1nl (the TG68K.C fork with the 32-bit data path,
 and the IcePi Zero Minimig that showed how far this core can go), Alastair M.
 Robinson (the parent gateware and its TG68 work), the fx68k build's authors for the whole board-side design,
 Niklas Ekström (the SD controller and sfsd.device), and JBilander for the

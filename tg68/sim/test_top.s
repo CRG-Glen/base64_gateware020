@@ -191,6 +191,30 @@ cp32:   move.l  (%a0)+,(%a1)+
         jsr     0x08000E00          | fills the instruction cache
         jsr     0x08000E00          | from the caches: imm32, abs.L and the long read as pairs
         move.l  %d6,0x8194          | 8194 0x89ABCDEF + 0x01010101 = 0x8AACCEF0
+        | -- fetch predictor (step 15): code that overwrites an instruction
+        | just ahead of itself. smc0/1/2 store d5 over a moveq 0, 1 or 2
+        | words after the store. Each is run twice unchanged (5, from the
+        | cache and the predictor), then with moveq #2: that run gives 2 or 5
+        | (the CPU may have fetched the old word already, as on a real
+        | 68020; the tb expects what the unpredicted design does), and the
+        | run after it must give 2: nothing may come from a stale cache
+        | entry or a stale prediction.
+        lea     smc0,%a0
+        movea.l #0x08007000,%a1
+        moveq   #(smcend-smc0)/4,%d0
+cpsmc:  move.l  (%a0)+,(%a1)+
+        dbra    %d0,cpsmc
+        lea     0x8210,%a3
+        lea     0x08007000,%a2
+        bsr     smcrun
+        lea     0x08007000+(smc1-smc0),%a2
+        bsr     smcrun
+        lea     0x08007000+(smc2-smc0),%a2
+        bsr     smcrun
+        | the same with a longword store (a pair write): its second word
+        | is the instruction; d5's high word is the nop before it
+        lea     0x08007000+(smc3-smc0),%a2
+        bsr     smcrun
         | a pair whose second word is NOT cached must not be taken as a pair
         move.l  #0x31323334,0x08000D00  | both words cached
         move.b  #0x99,0x08000D03    | byte write: the second word's entry is dropped
@@ -313,6 +337,46 @@ pf2:    dbra    %d1,pf2
         dbra    %d2,pf1
         move.w  (%a0),%d3
         move.l  %d3,0x81C8          | 81C8 last value written: 95 = 0x5F
+        | -- step 13: the speed switch, through the real register (the tb
+        | forces the turbomem board configured at $EA0000) --
+        moveq   #0,%d0
+        move.w  0xEAF00A,%d0
+        move.l  %d0,0x81D4          | 81D4 0000070C: 12x, switching ok, both PLLs locked
+        move.w  #0x5B10,0xEAF00A    | -> 16x
+        bsr     spdchk
+        move.l  %d3,0x81DC          | 81DC ACF1E135
+        moveq   #0,%d0
+        move.w  0xEAF00A,%d0
+        move.l  %d0,0x81D8          | 81D8 00000710
+        move.w  #0x5B14,0xEAF00A    | -> 20x (v2.0: in place of 14x)
+        bsr     spdchk
+        move.l  %d3,0x81E4          | 81E4 ACF1E135
+        moveq   #0,%d0
+        move.w  0xEAF00A,%d0
+        move.l  %d0,0x81E0          | 81E0 00000714 (20x)
+        move.w  #0x5B0C,0xEAF00A    | -> 12x
+        bsr     spdchk
+        move.l  %d3,0x81EC          | 81EC ACF1E135
+        moveq   #0,%d0
+        move.w  0xEAF00A,%d0
+        move.l  %d0,0x81E8          | 81E8 0000070C
+        move.w  #0x5B11,0xEAF00A    | not a speed: ignored
+        move.w  #0x1210,0xEAF00A    | no key: ignored
+        moveq   #0,%d0
+        move.w  0xEAF00A,%d0
+        move.l  %d0,0x81F0          | 81F0 0000070C
+        move.w  #0x5B4C,0xEAF00A    | 12x again, 7M sample forced to the rising edge
+        bsr     spdchk
+        moveq   #0,%d0
+        move.w  0xEAF00A,%d0
+        move.l  %d0,0x81F4          | 81F4 0000170C (bit 12: rising stream)
+        move.w  #0x5BCC,0xEAF00A    | sample select 3: not valid, ignored
+        moveq   #0,%d0
+        move.w  0xEAF00A,%d0
+        move.l  %d0,0x81F8          | 81F8 0000170C
+        move.w  #0x5B0C,0xEAF00A    | 12x, calibration decides again
+        bsr     spdchk
+        move.l  %d3,0x81FC          | 81FC ACF1E135
         .endif
         moveq   #0,%d7
         jsr     romfn+0xF80000      | Kickstart-ROM range: over the 7M bus,
@@ -325,6 +389,65 @@ wait:   tst.l   %d3
         move.l  %d3,(%a5)+          | 8120 33333333
         move.l  #0x600DC0DE,0x8FF0
 done:   bra.s   done
+        .ifdef FASTMEM
+| step 13: SDRAM pair writes and uncached reads (the new CAS latency), a
+| buffered chip RAM write and its read, a CIA access: at each speed
+spdchk: moveq   #0,%d4
+        movec   %d4,%cacr           | caches off: every read goes to the SDRAM
+        lea     0x08006200,%a0
+        move.l  #0x12345678,(%a0)
+        move.l  #0x9ABCDEF0,4(%a0)
+        move.l  (%a0),%d3
+        add.l   4(%a0),%d3          | ACF13568
+        move.w  #0xABCD,0x8EC0
+        add.w   0x8EC0,%d3          | ACF1E135
+        tst.b   0xBFE001
+        moveq   #1,%d4
+        movec   %d4,%cacr
+        rts
+        .endif
+        .ifdef FASTMEM
+| step 15: run the routine at a2 as described above; results to (a3)+
+smcrun: move.l  #0x4E717805,%d5     | (nop,) moveq #5,%d4: no change
+        jsr     (%a2)
+        jsr     (%a2)
+        move.l  #0x4E717802,%d5     | (nop,) moveq #2,%d4
+        jsr     (%a2)
+        move.l  %d4,(%a3)+          | 2 or 5
+        jsr     (%a2)
+        move.l  %d4,(%a3)+          | 2
+        rts
+        .balign 4
+smc0:   lea     1f(%pc),%a0
+        moveq   #0,%d4
+        move.w  %d5,(%a0)
+1:      moveq   #5,%d4
+        rts
+        .balign 4
+smc1:   lea     1f(%pc),%a0
+        moveq   #0,%d4
+        move.w  %d5,(%a0)
+        nop
+1:      moveq   #5,%d4
+        rts
+        .balign 4
+smc2:   lea     1f(%pc),%a0
+        moveq   #0,%d4
+        move.w  %d5,(%a0)
+        nop
+        nop
+1:      moveq   #5,%d4
+        rts
+        .balign 4
+smc3:   lea     1f(%pc),%a0         | +0  (1f = +8, long-aligned)
+        moveq   #0,%d4              | +4
+        move.l  %d5,(%a0)           | +6  pair write to +8/+10
+1:      nop                         | +8
+        moveq   #5,%d4              | +10
+        rts
+        .balign 4
+smcend: nop
+        .endif
 chipfn: moveq   #1,%d4              | step 11 test routine, copied to $9800
         rts
 romfn:  moveq   #0x55,%d7

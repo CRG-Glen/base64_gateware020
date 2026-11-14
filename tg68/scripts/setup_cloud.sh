@@ -10,7 +10,7 @@ set -e
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends \
-    verilator fpga-trellis binutils-m68k-linux-gnu python3-pip ghdl >/dev/null
+    verilator fpga-trellis binutils-m68k-linux-gnu gcc-m68k-linux-gnu python3-pip ghdl >/dev/null
 # yosys and nextpnr as WebAssembly builds (pinned), plus amitools/vamos for
 # testing Amiga executables (sw/maprom)
 pip install --break-system-packages -q \

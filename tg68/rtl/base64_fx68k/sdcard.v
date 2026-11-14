@@ -4,13 +4,10 @@
  *
  * Copyright (C) 2025 Niklas Ekström
  */
-`ifdef TG68_X16
 module sdcard #(
     parameter SD_LO_EXTRA = 0   // TG68: 16x build, passed to the shifter
 )(
-`else
-module sdcard(
-`endif
+    input wire SD_LO_X,         // TG68 step 13: the same at run time
     input wire C100M,
     input wire CLKCPU,
     input wire RESET_n,
@@ -280,11 +277,8 @@ fifo rx_fifo(
     .full(rx_fifo_full)
 );
 
-`ifdef TG68_X16
-shifter #(.LO_EXTRA(SD_LO_EXTRA)) shifter_inst(   // TG68: 16x build
-`else
-shifter shifter_inst(
-`endif
+shifter #(.LO_EXTRA(SD_LO_EXTRA)) shifter_inst(   // TG68: 16x
+    .lo_extra(SD_LO_X),
     .clk(C100M),
     .reset(reset_filtered),
 
