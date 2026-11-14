@@ -427,6 +427,9 @@ style. `README.md` is the user-facing version of the same material.
 | exp-18x at 12x (seed 3) | 10798 / 5162 | 16.60 / 8.29 |
 | exp-18x at 16x (seed 3) | 14376 / 5539 | 21.02 / 10.59 |
 | exp-18x at 18x (seed 3, experiment) | 16225 / 6596 | 23.58 / 11.67 |
+| exp-20x at 12x (seed 10) | 10776 / 4461 | 16.60 / 8.48 |
+| exp-20x at 16x (seed 10) | 14379 / 5440 | 21.03 / 10.59 |
+| exp-20x at 20x (seed 10, experiment) | 18024 / 7499 | 26.16 / 13.20 |
 
 - AIBB MemTest did not move from step 6 to step 7 (pairs only come from
   cache hits; MemTest's reads miss and its writes are 16-bit). Step 8's
@@ -476,6 +479,14 @@ style. `README.md` is the user-facing version of the same material.
   11.8 / 73.2 / 30.6 fps. `speed` at 12x: $170C (rising sample in use,
   nothing moved): step 14b's 12x fix works; at 16x after the tests $4710
   (falling in use, the unused rising sample moved), as with step 14.
+- 20x experiment (branch `exp-20x`, seed 10, never a release; 20x in
+  place of 14x): **runs on Glen's A500+ at 12x, 16x and 20x**, 1.54x the
+  worst-case model at 20x. 20x over 16x: SysInfo +25.3% (18024 / 7499,
+  18.81 MIPS), AIBB +24.4% (26.16 / 13.20), xSysInfo +18.9% (29009 /
+  14486, 16.51 / 8.24 MIPS), fast RAM 36.85 / 32.73 MB/s, SD 2.7 MB/s,
+  Frontier timedemo 13.9 / 75.6 / 33.8 fps (+8.7%). SDRAM tRFC + 2
+  clocks at 20x. Details and the PLL options for a release
+  (16x + 20x share a VCO of 567.5 MHz): plans/exp20x.md.
 - 18x experiment (branch `exp-18x`, seed 3, never a release; 18x in
   place of 14x): **runs on Glen's A500+** at 1.42x the worst-case model
   (16x on that build: 1.26x). 18x over 16x: SysInfo +12.9% caches on,

@@ -52,9 +52,11 @@ hardware results, the timing picture after step 15b, Glen's direction
    stopped paying (placement noise is larger than the gains); 5 of 18
    seeds passing is enough to keep building; a faster clock is the
    biggest speed-up left.
-5. **`exp20x.md`** **built** on Glen's request: 20x in place of 14x
-   (branch `exp-20x`, seed 10: 1.23x at 16x, 1.54x at 20x), **waiting for
-   Glen's test**.
+5. **`exp20x.md`** **20x works on Glen's A500+** (branch `exp-20x`, seed
+   10, 1.54x the worst-case model): SysInfo 18024 (+25% over 16x, +67%
+   over 12x), xSysInfo fast RAM 36.85 MB/s, Frontier +8.7% over 16x.
+   Next, for the planner: a release build with the fast speeds; the log
+   has the PLL options (16x and 20x can share one PLL).
 6. Anything in **`backlog.md`** needs a plan written first (by the
    planning model, with Glen choosing the order).
 
