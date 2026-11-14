@@ -304,7 +304,7 @@ module base64_tg68_top #(
 `else
         .ENABLE(1)
 `endif
-    ) u_clkgen (.clk_in(clk_12x), .sel(clk_sel), .clk(clk),
+    ) u_clkgen (.clk_in(clk_12x), .clk_7m(clk_7m), .sel(clk_sel), .clk(clk),   // exp-7m-pll
                 .lock14(pll_lock14), .lock16(pll_lock16), .cur(clk_cur));
 
     // Master clocks per emulated CPU clock period, and the phi2 offset.

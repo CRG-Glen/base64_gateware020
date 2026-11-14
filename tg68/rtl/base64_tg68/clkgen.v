@@ -1,3 +1,10 @@
+// EXPERIMENT (branch exp-7m-pll, never a release): both PLLs are fed from
+// the Amiga's 7.09 MHz clock (clk_7m, pin C7), below the PLL's rated 8 MHz
+// input, in place of the ICS570B's 85.13 MHz: 20x = x20 (CLKFB_DIV 20,
+// CLKOP_DIV 4), 16x = x16 (CLKFB_DIV 16, CLKOP_DIV 5), both VCO 567.5 MHz.
+// 12x stays on the ICS570B pin. (The ratios below in this comment are
+// v2.0's.)
+//
 // v2.0: the second PLL makes 20x (141.88 MHz, x5/3: CLKI_DIV 3, CLKFB_DIV 5,
 // CLKOP_DIV 4, VCO 567.5 MHz) in place of 14x (steps 13-15b). The names
 // below still say 14 (c14, lock14, u_pll14, speed code 1): they are the
@@ -32,6 +39,7 @@ module clkgen #(
     parameter integer ENABLE = 1
 )(
     input  wire       clk_in,     // 12x from the ICS570B (pin L1)
+    input  wire       clk_7m,     // exp-7m-pll: the Amiga's 7.09 MHz (pin C7), the PLLs' input
     input  wire [1:0] sel,        // 0 12x, 1 14x, 2 16x
     output wire       clk,        // the system clock
     output wire       lock14,
@@ -47,38 +55,40 @@ end else begin : g_pll
     wire c12 = clk_in;
     wire c14, c16;
 `ifdef YOSYS
-    (* FREQUENCY_PIN_CLKI="85.13" *)
+    (* FREQUENCY_PIN_CLKI="7.094" *)
     (* FREQUENCY_PIN_CLKOP="141.88" *)
     (* ICP_CURRENT="12" *) (* LPF_RESISTOR="8" *) (* MFG_ENABLE_FILTEROPAMP="1" *) (* MFG_GMCREF_SEL="2" *)
     EHXPLLL #(
         .PLLRST_ENA("DISABLED"), .INTFB_WAKE("DISABLED"), .STDBY_ENABLE("DISABLED"),
         .DPHASE_SOURCE("DISABLED"), .OUTDIVIDER_MUXA("DIVA"), .OUTDIVIDER_MUXB("DIVB"),
         .OUTDIVIDER_MUXC("DIVC"), .OUTDIVIDER_MUXD("DIVD"),
-        .CLKI_DIV(3), .CLKOP_ENABLE("ENABLED"), .CLKOP_DIV(4),
-        .CLKOP_CPHASE(3), .CLKOP_FPHASE(0), .FEEDBK_PATH("CLKOP"), .CLKFB_DIV(5)
+        .CLKI_DIV(1), .CLKOP_ENABLE("ENABLED"), .CLKOP_DIV(4),
+        .CLKOP_CPHASE(3), .CLKOP_FPHASE(0), .FEEDBK_PATH("CLKOP"), .CLKFB_DIV(20)
     ) u_pll14 (
-        .RST(1'b0), .STDBY(1'b0), .CLKI(c12), .CLKOP(c14), .CLKFB(c14), .CLKINTFB(),
+        .RST(1'b0), .STDBY(1'b0), .CLKI(clk_7m), .CLKOP(c14), .CLKFB(c14), .CLKINTFB(),
         .PHASESEL0(1'b0), .PHASESEL1(1'b0), .PHASEDIR(1'b1), .PHASESTEP(1'b1),
         .PHASELOADREG(1'b1), .PLLWAKESYNC(1'b0), .ENCLKOP(1'b0), .LOCK(lock14)
     );
-    (* FREQUENCY_PIN_CLKI="85.13" *)
+    (* FREQUENCY_PIN_CLKI="7.094" *)
     (* FREQUENCY_PIN_CLKOP="113.507" *)
     (* ICP_CURRENT="12" *) (* LPF_RESISTOR="8" *) (* MFG_ENABLE_FILTEROPAMP="1" *) (* MFG_GMCREF_SEL="2" *)
     EHXPLLL #(
         .PLLRST_ENA("DISABLED"), .INTFB_WAKE("DISABLED"), .STDBY_ENABLE("DISABLED"),
         .DPHASE_SOURCE("DISABLED"), .OUTDIVIDER_MUXA("DIVA"), .OUTDIVIDER_MUXB("DIVB"),
         .OUTDIVIDER_MUXC("DIVC"), .OUTDIVIDER_MUXD("DIVD"),
-        .CLKI_DIV(9), .CLKOP_ENABLE("ENABLED"), .CLKOP_DIV(6),
-        .CLKOP_CPHASE(3), .CLKOP_FPHASE(0), .FEEDBK_PATH("CLKOP"), .CLKFB_DIV(12)
+        .CLKI_DIV(1), .CLKOP_ENABLE("ENABLED"), .CLKOP_DIV(5),
+        .CLKOP_CPHASE(3), .CLKOP_FPHASE(0), .FEEDBK_PATH("CLKOP"), .CLKFB_DIV(16)
     ) u_pll16 (
-        .RST(1'b0), .STDBY(1'b0), .CLKI(c12), .CLKOP(c16), .CLKFB(c16), .CLKINTFB(),
+        .RST(1'b0), .STDBY(1'b0), .CLKI(clk_7m), .CLKOP(c16), .CLKFB(c16), .CLKINTFB(),
         .PHASESEL0(1'b0), .PHASESEL1(1'b0), .PHASEDIR(1'b1), .PHASESTEP(1'b1),
         .PHASELOADREG(1'b1), .PLLWAKESYNC(1'b0), .ENCLKOP(1'b0), .LOCK(lock16)
     );
 `else
-    // simulation: N output cycles per 12 input cycles, re-phased every 12
-    pll_model #(.N(20)) u_pll14 (.clk_in(c12), .clk_out(c14), .lock(lock14));   // v2.0: 20x
-    pll_model #(.N(16)) u_pll16 (.clk_in(c12), .clk_out(c16), .lock(lock16));
+    // simulation: N output cycles per G input cycles, re-phased every G
+    // (exp-7m-pll: the input is the 7 MHz clock, 20 / 16 per cycle, so
+    // 240 / 192 per group of 12)
+    pll_model #(.N(240), .G(12)) u_pll14 (.clk_in(clk_7m), .clk_out(c14), .lock(lock14));   // 20x
+    pll_model #(.N(192), .G(12)) u_pll16 (.clk_in(clk_7m), .clk_out(c16), .lock(lock16));   // 16x
 `endif
     // the glitch-free switch: one enable per source, changed on that
     // source's falling edge; on only once the others are seen off
@@ -121,7 +131,7 @@ endmodule
 // Behavioural PLL for Verilator: N cycles of clk_out for every 12 cycles of
 // clk_in, re-phased at the start of each group of 12, so it stays locked to
 // the 7M grid exactly as the real PLL does. lock rises after a few groups.
-module pll_model #(parameter integer N = 14) (
+module pll_model #(parameter integer N = 14, parameter integer G = 12) (
     input  wire clk_in,
     output reg  clk_out = 1'b0,
     output reg  lock = 1'b0
@@ -139,7 +149,7 @@ module pll_model #(parameter integer N = 14) (
             end
             t0 = $realtime;
         end
-        n_in = (n_in == 11) ? 0 : n_in + 1;
+        n_in = (n_in == G - 1) ? 0 : n_in + 1;
     end
     // each group: N cycles, the last low half cut short by the next group
     always @(go) begin
