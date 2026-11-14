@@ -117,7 +117,8 @@ flatten. nextpnr: `--placer static --router router2`.
    their own `bitstreams/stepN_name/` folder with timing reports.
 6. Changes to `rtl/base64_fx68k/` files are marked `TG68:` with the reason.
 7. **One build, every speed.** The 12x build switches to 14x and 16x at
-   run time (`speed`). The `--x16` board-mod build is no longer built,
+   run time (`speed`); from the next release 12x, 16x and 20x (Glen's
+   decision after `exp-20x`: no 14x or 18x). The `--x16` board-mod build is no longer built,
    simulated or shipped; its `ifdef TG68_X16` code stays, frozen at step
    14b. Clock-dependent logic goes into the run-time speed settings (`spd`
    and the registers loaded from it), not an ifdef.

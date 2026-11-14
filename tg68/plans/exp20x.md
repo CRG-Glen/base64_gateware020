@@ -83,3 +83,18 @@ usual spread (the caches-off logic is clock-for-clock identical to 15b).
 - Beyond 20x: 22x (156 MHz) would need about 1.70x the model, and the
   SDRAM's 166 MHz limit at CL3 comes close (6.4 ns clock, 5.4 ns access).
 
+## Glen's decision (after the test): 12x, 16x and 20x only
+
+"14 and 18 are faster in their own right, but they aren't enough of a
+jump to justify including them." So the release has three speeds, which
+is exactly what `exp-20x` already builds: 12x from the pin, 16x on its
+own PLL (unchanged since step 13, so no re-test of a new 16x source), 20x
+on the other PLL. No PLL sharing is needed. The release step is a
+clean-up of this branch, not a redesign: rename the "14" names to 20
+(`c14`, `lock14`, `u_pll14`, `pll_lock14`, `B_LOCK14`, `m_x14`...), make
+`speed` a normal release (12 / 16 / 20, version 1.3, no "experiment"),
+drop the 14x remnants in comments and the speed register's description,
+update README / HISTORY / CLAUDE.md (rule 7: 12x / 16x / 20x), and decide
+the sim's 16x/20x switch test names. A long warm run at 20x is still
+worth asking for before the release.
+

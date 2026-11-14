@@ -55,8 +55,10 @@ hardware results, the timing picture after step 15b, Glen's direction
 5. **`exp20x.md`** **20x works on Glen's A500+** (branch `exp-20x`, seed
    10, 1.54x the worst-case model): SysInfo 18024 (+25% over 16x, +67%
    over 12x), xSysInfo fast RAM 36.85 MB/s, Frontier +8.7% over 16x.
-   Next, for the planner: a release build with the fast speeds; the log
-   has the PLL options (16x and 20x can share one PLL).
+   **Glen's decision: release with 12x, 16x and 20x only** (14x and 18x
+   are not a big enough step). `exp-20x` already is that design (16x on
+   its own PLL as since step 13, 20x on the other), so the release step
+   is a clean-up and rename of this branch; see the end of its log.
 6. Anything in **`backlog.md`** needs a plan written first (by the
    planning model, with Glen choosing the order).
 
