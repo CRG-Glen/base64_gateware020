@@ -28,14 +28,13 @@ build's own files are few and marked `TG68:`.
 The bitstreams are not kept in git: download them from this repository's
 **Releases** page, or build them yourself. The test bitstreams of every
 step (the `bitstreams/stepN_*` folders below) were committed to that
-step's branch; from v2.0 those branches are kept as tags
-(`archive/step15-fetch-predictor` and so on), where the folders still are.
+step's branch (`step15-fetch-predictor` and so on), where they still are.
 
 ## The bitstreams
 
 | Folder | What changed | Status |
 | --- | --- | --- |
-| **v2.0 release** (`bitstreams/exp20x/` on tag `archive/exp-20x`) | step 15b, with the second PLL at 20x (141.9 MHz) in place of 14x: run-time 12x / 16x / 20x (`speed 20`). SDRAM: two more clocks after each refresh at 20x. Built from the 20x experiment, seed 10 | **Runs on hardware at 12x, 16x and 20x** (hours at 20x), SD card included: SysInfo 18024 Dhrystones at 20x (+25% on 16x), AIBB 26.16 MB/s, xSysInfo fast RAM 36.85 MB/s, Frontier timedemo 33.8 fps. 12x: +0.77 / +2.19 ns; 16x / 20x need 1.23× / 1.54× the worst-case model |
+| **v2.0 release** (`bitstreams/exp20x/` on branch `exp-20x`) | step 15b, with the second PLL at 20x (141.9 MHz) in place of 14x: run-time 12x / 16x / 20x (`speed 20`). SDRAM: two more clocks after each refresh at 20x. Built from the 20x experiment, seed 10 | **Runs on hardware at 12x, 16x and 20x** (hours at 20x), SD card included: SysInfo 18024 Dhrystones at 20x (+25% on 16x), AIBB 26.16 MB/s, xSysInfo fast RAM 36.85 MB/s, Frontier timedemo 33.8 fps. 12x: +0.77 / +2.19 ns; 16x / 20x need 1.23× / 1.54× the worst-case model |
 | `bitstreams/exp18x/` (never released) | the 18x experiment: 18x (127.7 MHz) in place of 14x | Ran on hardware: SysInfo 16225 at 18x (+12.9% on 16x). 18x needs 1.42× the model. Not kept: Glen chose 12x / 16x / 20x |
 | `bitstreams/step15b_fpred/` | step 15 with more timing margin: the predicted fetch no longer waits for the kernel's pair signal, and the cycle decision is split into fetch and data branches. Same speed as step 15 within 0.4% (a predicted fetch is now always one word). 12x file (switchable to 14x / 16x with `speed`) | **Runs on hardware at 12x and 16x**, SD card included. SysInfo 10797 / 14412 Dhrystones (12x / 16x, caches on; 3.4% below step 15, under investigation), AIBB 16.60 / 21.03 MB/s and Frontier timedemo 26.1 / 30.6 fps (as step 15). 12x seed 10: +0.37 / +0.75 ns, 14x / 16x need 1.13× / 1.29× the worst-case model (step 15: 1.14× / 1.31×); 5 of seeds 1-18 pass (step 15: 1 of 9) |
 | `bitstreams/step15_fpred/` | + fetch predictor: after every CPU step the instruction cache is read at the next fetch address, so a sequential instruction fetch from the cache takes 4 clocks, not 5 (see *Fetch predictor (step 15)*). 12x file (switchable to 14x / 16x with `speed`); no `_x16` file from this step on | **Runs on hardware at 12x and 16x**, SD card included. SysInfo 11179 / 14925 Dhrystones (12x / 16x, caches on; +15% on step 14), AIBB MemTest 16.59 / 21.03 MB/s (+5%), xSysInfo 16888 / 24471; Frontier timedemo average 26.2 / 30.6 fps. Caches off about as step 14. 12x seed 8: +0.60 / +0.40 ns, 14x / 16x need 1.14× / 1.31× the worst-case model; 1 of seeds 1-9 passes |

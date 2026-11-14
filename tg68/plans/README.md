@@ -10,8 +10,9 @@ when to stop and report. Results go in the plan's own log section.
 - `main` = **v2.0**: steps 13 to 15b plus the 20x clock (run-time 12x /
   16x / 20x). Runs on Glen's A500+ at all three speeds, hours at 20x.
   Released bitstream = the `exp-20x` build, seed 10.
-- Every old step and experiment branch is kept as an `archive/<branch>`
-  tag; its test bitstreams are in it.
+- The old step and experiment branches are still on GitHub, with their
+  test bitstreams (archiving them as tags is Glen's to do: this
+  session's git access cannot push tags or delete branches).
 - New work branches from `main`. The entries below are the history of
   how v2.0 was reached; the backlog (`backlog.md`) is what is left.
 

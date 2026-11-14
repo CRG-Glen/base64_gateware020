@@ -130,9 +130,10 @@ flatten. nextpnr: `--placer static --router router2`.
 ## Git and GitHub
 
 - **One change per branch**, named after it (`step17-...`), from `main`.
-  Branches stack while earlier steps wait for a hardware test. Old step
-  branches are kept as `archive/<branch>` tags (their test bitstreams
-  are in them).
+  Branches stack while earlier steps wait for a hardware test. The old
+  step branches (with their test bitstreams) are still on GitHub: this
+  session's git access cannot push tags or delete branches, so archiving
+  them (tag, then delete) is Glen's to do on GitHub.
 - **Commit author:** Glen Milford <casualretrogamer@outlook.com>. **No
   Co-Authored-By or other attribution lines** (Glen's instruction).
 - **No pull request, merge or release unless Glen asks.** A release: a
@@ -213,8 +214,8 @@ flatten. nextpnr: `--placer static --router router2`.
   the fetch predictor; runs on Glen's A500+ at all three speeds, hours at
   20x. Released bitstream: 20x build seed 10 (commit a8c9678's RTL; the
   release source rebuilds it byte for byte).
-- `step16-clkena-copies` was built and dropped (0 seeds pass; tag
-  `archive/step16-clkena-copies`, its plan log has why).
+- `step16-clkena-copies` was built and dropped (0 seeds pass; its plan
+  log has why).
 - New work branches from `main`.
 
 ## Licensing (unresolved; check before publishing anything new)
