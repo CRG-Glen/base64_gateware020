@@ -1,6 +1,6 @@
 # Experiment: the FPGA's PLLs fed from the Amiga's 7 MHz clock (stage 1)
 
-Status: planned and built in one session on Glen's request. Branch
+Status: **built**, test bitstream `bitstreams/exp7m_pll/` (seed 11), waiting for Glen's test. Planned and built in one session on Glen's request. Branch
 `exp-7m-pll`, from `main` (v2.0). **Experimental: never a release.**
 
 ## Goal
@@ -57,4 +57,14 @@ the 12x PLL does not lock, the board does not start (re-flash v2.0).
 
 ## Log
 
-(build)
+- nextpnr and ecppack accepted the PLLs with CLKI from `clk_7m` (placed at
+  X2/Y49 and X70/Y49; no warning about the input frequency).
+- Sims: bus, top, fastmem, CAL_TEST, CAL_DRIFT, bench sd pass. 12x
+  benches identical to v2.0. 16x / 20x benches pass, no SDRAM violation;
+  clocks (time) copy 7416 / 6036, scatter 2928 / 2436, c 49524 / 39744
+  (v2.0: 7536 / 6168, 3048 / 2556, 49644 / 39804): 1-5% sooner in the
+  model, from the model's PLL phase against the 7 MHz grid; not a
+  prediction for hardware.
+- Seeds 1-18: 4 pass at 12x (3, 9, 11, 12). Scored at 16x / 20x: 3
+  1.309 / 1.636, 9 1.302 / 1.627, **11 1.260 / 1.575**, 12 1.306 / 1.633.
+  Shipped seed 11.

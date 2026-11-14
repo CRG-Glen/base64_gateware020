@@ -16,6 +16,10 @@ when to stop and report. Results go in the plan's own log section.
 - New work branches from `main`. The entries below are the history of
   how v2.0 was reached; the backlog (`backlog.md`) is what is left.
 
+**Experiment in progress:** `exp7m-pll.md`: the 16x and 20x PLLs fed from
+the Amiga's 7.09 MHz clock (branch `exp-7m-pll`), built, waiting for
+Glen's test.
+
 ## Queue, in order
 
 1. ~~`tooling-build-seeds.md`~~ **done** on branch `tooling-build-seeds`
