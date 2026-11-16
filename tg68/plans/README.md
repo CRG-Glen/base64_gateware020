@@ -5,18 +5,39 @@ Start every session here. One model plans a step, another builds it (see
 numbers that must not move, the acceptance criteria, the fallbacks and
 when to stop and report. Results go in the plan's own log section.
 
-## State (updated at the v2.0 release)
+## State (updated 16 November 2026, after v2.0)
 
 - `main` = **v2.0**: steps 13 to 15b plus the 20x clock (run-time 12x /
   16x / 20x). Runs on Glen's A500+ at all three speeds, hours at 20x.
   Released bitstream = the `exp-20x` build, seed 10.
+- **What to build next is in `strategy-after-v2.md`**: the measurements
+  behind it, the steps in order (17: instruction cache drops only its
+  own entry; 18: `perf` counters; 19: barrel shifter; 20: 16 KB caches;
+  X22: a 22x experiment) and the smaller items after them. Steps marked
+  "ready" there are built from that file; each has its own log section.
+- Waiting for Glen: the hardware test of `exp-7m-pll` (the PLLs fed from
+  the Amiga's 7 MHz clock, stage 1; bitstreams in
+  `tg68/bitstreams/exp7m_pll/` on that branch).
 - The old step and experiment branches are still on GitHub, with their
   test bitstreams (archiving them as tags is Glen's to do: this
   session's git access cannot push tags or delete branches).
-- New work branches from `main`. The entries below are the history of
-  how v2.0 was reached; the backlog (`backlog.md`) is what is left.
+- New work branches from `main`. The numbered entries below are the
+  history of how v2.0 was reached.
 
-## Queue, in order
+## Next, in order (details: `strategy-after-v2.md`)
+
+1. **Step 17**, `step17-icache-tag-drop`: ready to build.
+2. **Step 18**, `step18-perf` (counters in a test build and the `perf`
+   command): ready to build (stacked on 17).
+3. **Step 19**, `step19-barrel`: ready to build (stacked on 18); the
+   planner's trial passed no seed in 16, so it has a seed budget and a
+   fallback.
+4. **Step 20**, 16 KB caches: after Glen's `perf` numbers.
+5. **X22**, 22x experiment: when Glen asks.
+6. The smaller items (section 4 there, and `backlog.md`): each needs a
+   plan from the planner first.
+
+## How v2.0 was reached (history)
 
 1. ~~`tooling-build-seeds.md`~~ **done** on branch `tooling-build-seeds`
    (from `step15-fetch-predictor`): `build.py full --seed 1 --seeds 9`
@@ -53,14 +74,3 @@ when to stop and report. Results go in the plan's own log section.
    is a clean-up and rename of this branch; see the end of its log.
 6. Anything in **`backlog.md`** needs a plan written first (by the
    planning model, with Glen choosing the order).
-
-## Open questions for Glen (from the step 15 test)
-
-- (Settled: SysInfo 12x caches off re-run after a reset gave 5162,
-  step 14 5205; within the spread.)
-- 14x was not reported; `speed 14` is worth one boot and benchmark.
-- `speed` 1.2 (prints the automatic swap count) is in the bitstream
-  folders but not yet on the Amiga.
-- What next: step 15b (timing margin, no speed change) or something from
-  `backlog.md`.
-

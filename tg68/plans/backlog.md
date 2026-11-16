@@ -1,5 +1,10 @@
 # Backlog: ideas that need a plan before anyone builds them
 
+**Read `strategy-after-v2.md` first** (16 November 2026): it ranks what
+is left after v2.0 from new measurements and gives the next steps. The
+items below are referred to from its section 4; the 18x item is done
+(v2.0 has 20x).
+
 Glen chooses the order. Each item says what is known and what the plan
 must still work out. The older ideas list (RTG, USB, WiFi, bigger caches,
 slow RAM code cache and why each was or was not pursued) is in

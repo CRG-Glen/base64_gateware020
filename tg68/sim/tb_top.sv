@@ -464,6 +464,42 @@ module tb;
             end
         end
     end
+    // False evictions: a CPU write drops the instruction-cache entry at its
+    // index whatever that entry's tag is. Count the valid entries dropped
+    // (ic_drop), those that held another address (ic_fdrop), and the fills
+    // that put such an entry back (ic_refill = a fetch miss the drop caused).
+    integer ic_drop = 0, ic_fdrop = 0, ic_refill = 0;
+    reg                     ev_v [0:(1 << dut.cpu.IC_AW) - 1];
+    reg [dut.cpu.TAGW-1:0]  ev_t [0:(1 << dut.cpu.IC_AW) - 1];
+    wire [dut.cpu.TAGW-1:0] ev_old = dut.cpu.ic_wa[0] ? dut.cpu.ic_tag_o[dut.cpu.ic_wa[dut.cpu.IC_AW-1:1]]
+                                                      : dut.cpu.ic_tag_e[dut.cpu.ic_wa[dut.cpu.IC_AW-1:1]];
+    always @(posedge clk12) if (dut.cpu.ic_we && !dut.cpu.ic_flush) begin
+        if (!dut.cpu.ic_wt[dut.cpu.TAGW-1]) begin
+            if (ev_old[dut.cpu.TAGW-1]) begin
+                ic_drop = ic_drop + 1;
+                if (ev_old[dut.cpu.TAGW-2:0] != dut.cpu.ic_want[dut.cpu.TAGW-2:0]) begin
+                    ic_fdrop = ic_fdrop + 1; ev_v[dut.cpu.ic_wa] = 1'b1; ev_t[dut.cpu.ic_wa] = ev_old;
+                end
+            end
+        end else begin
+            if (ev_v[dut.cpu.ic_wa] === 1'b1 && ev_t[dut.cpu.ic_wa] == dut.cpu.ic_wt) ic_refill = ic_refill + 1;
+            ev_v[dut.cpu.ic_wa] = 1'b0;
+        end
+    end
+    // bench op: a word write to $08010000 on the kernel's bus is a marker;
+    // print the running clock and step counts there (gen_op.py report
+    // turns the differences into a cost per instruction)
+    integer op_clk = 0, op_stp = 0, op_n = 0;
+    always @(posedge clk12) begin
+        op_clk <= op_clk + 1;
+        if (dut.cpu.k_clkena) begin
+            op_stp <= op_stp + 1;
+            if (dut.cpu.k_bs == 2'b11 && dut.cpu.k_addr == 32'h08010000) begin
+                $display("OPMARK %0d %0d %0d", op_n, op_clk, op_stp);
+                op_n <= op_n + 1;
+            end
+        end
+    end
     always @(negedge dut.core_dtack_n) if (t0 > 0 && t1 == 0) begin t_dt = $realtime; sum_as2dt = sum_as2dt + (t_dt - t_as); n_fm = n_fm + 1;
         if (dut.core_a[31:24] == 8'h08) begin
         if (dut.core_rw) begin n_rd = n_rd + 1; s_rd = s_rd + (t_dt - t_as); end else begin n_wr = n_wr + 1; s_wr = s_wr + (t_dt - t_as); end end end
@@ -519,6 +555,8 @@ module tb;
         $display("steps by kind: fetch %0d (pairs %0d, single in 4 clocks %0d, in 5 clocks %0d of which sequential %0d); write %0d (pairs %0d, single in 4 %0d, in 5 %0d); read %0d (pairs %0d, single in 5 %0d); internal %0d (in 4 clocks %0d)",
                  sk_f, sk_fpair, sk_f4, sk_f5, sk_f5seq, sk_w, sk_wpair, sk_w4, sk_w5, sk_r, sk_rpair, sk_r5, sk_i, sk_i4);
         $display("1 KB: %0.1f us -> %0.2f MB/s; %0d CPU bus cycles", (t1-t0)/1000.0, 1024.0/((t1-t0)/1000.0), n_fm);
+        $display("instruction cache (whole run): valid entries dropped by a write %0d, of which held another address %0d; refilled after such a drop %0d",
+                 ic_drop, ic_fdrop, ic_refill);
         $display("stall clocks: fast write waits for the port %0d, read waits (CFREE) %0d, chip write waits %0d", st_fw, st_fr, st_cw);
         $display("per cycle, in 11.75 ns clocks: AS->DTACK %0.1f, DTACK->AS up %0.1f, AS up->next AS %0.1f",
                  sum_as2dt/n_fm/11.746, sum_dt2up/n_fm/11.746, sum_up2as/n_fm/11.746);

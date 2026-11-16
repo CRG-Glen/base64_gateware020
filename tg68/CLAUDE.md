@@ -79,6 +79,7 @@ bitstreams/        test and release outputs, NOT in git (see below)
 sudo bash tg68/scripts/setup_cloud.sh          # if verilator / yowasp-yosys / m68k gcc are missing
 sh sim/run.sh bus | top | fastmem              # the three regression benches
 sh sim/run.sh bench c|copy|read|scatter|readoff|chip|wrfast|wrmix|sd
+sh sim/run.sh bench op                         # clocks and kernel steps per instruction
 VLFLAGS=-DS15_DEFAULT=0 sh sim/run.sh ...      # the same with step 15 switched off
 python3 scripts/build.py full --seed 1 --seeds 8   # 4 seeds at a time, build/full/seed<N>/, table in seeds.txt
 python3 scripts/build.py full --skip-synth --seed 9 --seeds 8   # more seeds, same netlist
@@ -216,7 +217,8 @@ flatten. nextpnr: `--placer static --router router2`.
   release source rebuilds it byte for byte).
 - `step16-clkena-copies` was built and dropped (0 seeds pass; its plan
   log has why).
-- New work branches from `main`.
+- New work branches from `main`. What to build next, in order, with the
+  measurements behind it: `plans/strategy-after-v2.md`.
 
 ## Licensing (unresolved; check before publishing anything new)
 
