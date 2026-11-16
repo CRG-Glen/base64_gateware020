@@ -16,8 +16,8 @@
 //            3   clear all (running or frozen stays as it was; perf
 //                CLEAR then sends run)
 // Reads: +$F00E = stat, +$F010 / +$F012 / +$F014 = the selected counter's
-// bits 15:0, 31:16, 39:32 (q, registered every clock: freeze before reading,
-// or the words may come from different counts).
+// bits 15:0, 31:16, 39:32 (q, two registers after the counters: freeze
+// before reading, or the words may come from different counts).
 //
 // Power-on: frozen, all zero. An Amiga reset (slave_reset: the external reset
 // or the /RESET pin, which the RESET instruction pulls too) freezes the
@@ -75,7 +75,20 @@ module perf_cnt #(
         assign flat[g*W +: W] = v;
     end endgenerate
 
+    // The read multiplexer in two registered stages (a 20-way, 40-bit
+    // multiplexer in one clock missed 1T by up to 1.1 ns on the first perf
+    // build): a 4-way pick inside each group of four counters, then a
+    // pick among the groups. q is two clocks behind sel; the CPU reads it
+    // many clocks after its select write.
+    localparam integer NG = (N + 3) / 4;
+    wire [NG*W-1:0] grp;
+    generate for (g = 0; g < NG; g = g + 1) begin : gg
+        reg [W-1:0] r = {W{1'b0}};
+        always @(posedge clk)
+            r <= (g*4 + sel[1:0] < N) ? flat[(g*4 + sel[1:0])*W +: W] : {W{1'b0}};
+        assign grp[g*W +: W] = r;
+    end endgenerate
     always @(posedge clk)
-        q <= (sel < N) ? flat[sel*W +: W] : {W{1'b0}};
+        q <= (sel < N) ? grp[sel[5:2]*W +: W] : {W{1'b0}};
 endmodule
 `default_nettype wire
