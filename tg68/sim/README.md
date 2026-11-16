@@ -88,6 +88,16 @@
   kernel samples it, `fp_ac` never changing into a clock with `fp_v` set,
   and `cnt_ok` equal to the counter compare. `fastmem` adds four routines
   that store over the instruction just ahead (0x8210-0x822C).
+* **bench op**: what single instructions cost, in clocks and kernel steps,
+  from fast RAM with the caches on. `gen_op.py` writes the program
+  (`test_op.s`, 16 copies of each instruction between two marker writes to
+  `$08010000`, run twice) and turns the bench's `OPMARK` lines into a
+  table. Add a line to its list `T` to measure another instruction;
+  `CORE=tg68_020_b1 sh run.sh bench op` measures another kernel variant.
+* Every bench also prints "instruction cache (whole run)": valid entries
+  dropped by a CPU write, how many of them held another address than the
+  one written (a write drops the entry at its index whatever it holds),
+  and how many of those were fetched again.
 * **bench chip**: a loop in Chip RAM writes 1 KB to Chip RAM, timed on the
   second pass (Chip RAM code from the instruction cache).
 * **bench copy | read | scatter | sd**: fast RAM throughput, timed on a second

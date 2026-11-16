@@ -6,6 +6,7 @@
 #   sim/run.sh fastmem   whole top level with fast RAM + SDRAM model
 #   sim/run.sh bench copy|read|scatter   fast RAM throughput
 #   sim/run.sh bench c|coff              compiled C from fast RAM (caches on|off)
+#   sim/run.sh bench op                  clocks and kernel steps per instruction
 # BENCH_ASD="--defsym SPEED18=1" sim/run.sh bench copy|read|scatter|c   at 20x (SPEED16 too: 16x)
 #   sim/run.sh bench sd                  SD controller, SPI loopback
 # CORE=tg68_020_b0_nobf_smul sim/run.sh bus   tests another core variant
@@ -51,6 +52,9 @@ bench)
     wrmix) SRC=test_wr.s; D=-DBENCH_WRCHIP; ASD="--defsym MIX=1" ;;
     # compiled C (step 15): bench_c.c, built with gcc -O2 -m68020 (needs
     # gcc-m68k-linux-gnu), run from fast RAM with its stack there
+    # what single instructions cost (clocks and kernel steps), from fast
+    # RAM with the caches on: gen_op.py writes the program and the table
+    op) python3 -I gen_op.py asm; SRC=test_op.s; D= ;;
     c|coff) SRC=test_c.s; D=-DBENCH_C; [ "$2" = coff ] && ASD="--defsym NOCACHE=1"
        m68k-linux-gnu-gcc -m68020 -O2 -fomit-frame-pointer -ffreestanding -fno-builtin -fno-pic -fno-pie \
          -fno-tree-loop-distribute-patterns -fno-asynchronous-unwind-tables -c -o bc.o bench_c.c
@@ -58,5 +62,6 @@ bench)
   esac
   $AS $ASD $BENCH_ASD -o tm.o $SRC && $LD -o tm.elf tm.o 2>/dev/null && $OC tm.elf tm.bin && mem tm.bin rom_mem.mem
   $VL -DFASTMEM -DMEMBENCH $D tb_top.sv sdram_model_checked.v $R/base64_tg68/base64_tg68_top.sv $R/base64_tg68/clkgen.v $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v $SLAVES -o tb_bench > build_bench.log 2>&1
-  ./obj_dir/tb_bench | grep -v "^per cycle\|^AS->DTACK" ;;
+  if [ "$2" = op ]; then ./obj_dir/tb_bench > op.log; grep -v "^OPMARK\|^per cycle\|^AS->DTACK\|^1 KB" op.log; python3 -I gen_op.py report < op.log
+  else ./obj_dir/tb_bench | grep -v "^per cycle\|^AS->DTACK"; fi ;;
 esac

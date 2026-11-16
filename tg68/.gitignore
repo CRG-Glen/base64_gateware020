@@ -11,6 +11,8 @@ sim/*.elf
 sim/*.bin
 sim/*.mem
 sim/build_*.log
+sim/test_op.s
+sim/op.log
 # maprom outputs (sw/maprom/build.sh)
 sw/maprom/maprom
 sw/maprom/*.adf
