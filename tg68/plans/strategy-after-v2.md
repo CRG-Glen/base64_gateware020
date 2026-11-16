@@ -383,6 +383,18 @@ is not a plain bug in the new code; or the predictor's read
   ticks, one 7 MHz bus cycle at the end marker: the timed window is cut
   by Chip RAM marker writes), copy 6168 / 6120 (-0.8%), read 4032 /
   4032, scatter 2556 / 2556.
+- Timing (`build.py full --seed 1 --seeds 16 --keep-sdf`, netlist of
+  3de9d71): **2 of 16 pass**, seed 6 (+0.05 / +0.21 ns) and seed 10
+  (+0.82 / +1.43). v2.0 passed 4 of 18. The failures are in v2.0's
+  classes: kernel -> logic on 8 seeds (to -2.55 ns), logic -> logic on 4
+  (to -1.47), adapter ctrl -> logic on 2 (to -0.18), kernel -> read-data
+  latch on 1. No failing path goes through `iw_*`; the worst path that
+  does is +0.41 ns (seed 15, `iw_t_o` -> adapter ctrl -> logic), the
+  rest have >= 2.7 ns. So nothing to restructure (rule 3). Scored:
+  seed 10 1.266x (16x) / **1.582x (20x)**, seed 6 1.314x / 1.643x.
+  Shipped seed 10: `bitstreams/step17_ickeep/` (`_plain`, `_fast`,
+  timing at 12x / 16x / 20x, `seeds.txt`, `speed`, `README.txt` with the
+  test list). Utilisation 11,285 LUT4, 2,678 FF, 35 DP16KD.
 - Possible refinement, not done: an invalid entry needs no drop either
   (skip on `!valid` too). It would remove bench op's 5 forced drops;
   behaviour otherwise identical. Left as the plan wrote it.

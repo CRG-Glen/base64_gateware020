@@ -34,6 +34,7 @@ step's branch (`step15-fetch-predictor` and so on), where they still are.
 
 | Folder | What changed | Status |
 | --- | --- | --- |
+| `bitstreams/step17_ickeep/` (branch `step17-icache-tag-drop`) | v2.0 + a CPU write drops only its own instruction-cache entry (and its Chip RAM mirrors), no longer cached code at other addresses with the same index (8 KB away). Same three speeds | Test build, not yet on hardware. Sim: compiled C -0.1% clocks, fast RAM write bursts -9.8%, push + pop -7 clocks. 12x seed 10: +0.82 / +1.43 ns; 16x / 20x need 1.27× / 1.58× the worst-case model; seeds 6 and 10 of 1-16 pass |
 | **v2.0 release** (`bitstreams/exp20x/` on branch `exp-20x`) | step 15b, with the second PLL at 20x (141.9 MHz) in place of 14x: run-time 12x / 16x / 20x (`speed 20`). SDRAM: two more clocks after each refresh at 20x. Built from the 20x experiment, seed 10 | **Runs on hardware at 12x, 16x and 20x** (hours at 20x), SD card included: SysInfo 18024 Dhrystones at 20x (+25% on 16x), AIBB 26.16 MB/s, xSysInfo fast RAM 36.85 MB/s, Frontier timedemo 33.8 fps. 12x: +0.77 / +2.19 ns; 16x / 20x need 1.23× / 1.54× the worst-case model |
 | `bitstreams/exp18x/` (never released) | the 18x experiment: 18x (127.7 MHz) in place of 14x | Ran on hardware: SysInfo 16225 at 18x (+12.9% on 16x). 18x needs 1.42× the model. Not kept: Glen chose 12x / 16x / 20x |
 | `bitstreams/step15b_fpred/` | step 15 with more timing margin: the predicted fetch no longer waits for the kernel's pair signal, and the cycle decision is split into fetch and data branches. Same speed as step 15 within 0.4% (a predicted fetch is now always one word). 12x file (switchable to 14x / 16x with `speed`) | **Runs on hardware at 12x and 16x**, SD card included. SysInfo 10797 / 14412 Dhrystones (12x / 16x, caches on; 3.4% below step 15, under investigation), AIBB 16.60 / 21.03 MB/s and Frontier timedemo 26.1 / 30.6 fps (as step 15). 12x seed 10: +0.37 / +0.75 ns, 14x / 16x need 1.13× / 1.29× the worst-case model (step 15: 1.14× / 1.31×); 5 of seeds 1-18 pass (step 15: 1 of 9) |
@@ -870,6 +871,19 @@ actually provides:
 (`--seeds N` for more) until it gets `RESULT: PASS`, and writes `timing.txt`. Expect the 1T classes to
 pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
+
+Step 17 (a write drops only its own instruction-cache entry) builds as
+supplied (test build, not yet on hardware):
+
+| Build | Seed | Worst 1T slack | Worst multicycle slack |
+| --- | --- | --- | --- |
+| full | 10 | +0.82 ns | +1.43 ns |
+
+Seeds 6 and 10 of 1-16 pass (v2.0: 4 of 18). The failing seeds miss in
+the classes v2.0 misses in (kernel -> logic on 8, logic -> logic on 4);
+no failing path goes through the new registers (`iw_*`, worst +0.41 ns).
+At 16x the build needs the chip 1.27× faster than the worst-case model,
+at 20x 1.58× (seed 6: 1.31× / 1.64×).
 
 Step 15b (fetch predictor timing) builds as supplied (runs on hardware
 at 12x and 16x):

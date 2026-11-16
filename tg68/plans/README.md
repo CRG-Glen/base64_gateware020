@@ -26,7 +26,10 @@ when to stop and report. Results go in the plan's own log section.
 
 ## Next, in order (details: `strategy-after-v2.md`)
 
-1. **Step 17**, `step17-icache-tag-drop`: ready to build.
+1. **Step 17**, `step17-icache-tag-drop`: **built, waiting for Glen's
+   test** (bitstreams in `tg68/bitstreams/step17_ickeep/` on that
+   branch, seed 10). One addition to the plan (Chip RAM mirrors), see
+   its log.
 2. **Step 18**, `step18-perf` (counters in a test build and the `perf`
    command): ready to build (stacked on 17).
 3. **Step 19**, `step19-barrel`: ready to build (stacked on 18); the
