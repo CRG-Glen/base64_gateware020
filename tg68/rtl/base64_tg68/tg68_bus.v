@@ -45,6 +45,11 @@
 `ifndef S15_DEFAULT
 `define S15_DEFAULT 1
 `endif
+// step 17's switch default (sim: VLFLAGS=-DS17_DEFAULT=0: every write drops
+// the instruction-cache entry at its index, as up to v2.0)
+`ifndef S17_DEFAULT
+`define S17_DEFAULT 1
+`endif
 
 module tg68_bus #(
     parameter integer STEP       = 4,  // min clocks between clkena pulses
@@ -78,6 +83,9 @@ module tg68_bus #(
     parameter integer WR4        = 0,  // a posted word/byte write steps at DECIDE (4 clocks):
                                        // works (sim: 1% on compiled C) but puts the fast RAM
                                        // decode in the step decision; off for timing
+    // Step 17 (1 = on; 0 = as v2.0):
+    parameter integer ICKEEP     = `S17_DEFAULT,  // a write keeps another address's
+                                       // instruction-cache entry (IC KEEP, below)
     parameter integer BARREL     = 0   // documentation only: which netlist
 )(
     input  wire        clk,
@@ -529,6 +537,74 @@ module tg68_bus #(
     // clock before the next lookup's early read.
     reg  pw_upd2 = 1'b0;
     //
+    // IC KEEP (step 17). Up to v2.0 every CPU write dropped the instruction-
+    // cache entry at its index whatever that entry held, so a write to X
+    // also threw out cached code at every address that is X modulo 8 KB (a
+    // pushed return address, a filled screen). Now the drop is skipped when
+    // the entry is known to hold another address:
+    //   iw_t_e/o   the instruction cache's two tags at the write's row,
+    //              loaded on every DECIDE clock (dec_r) and held, as
+    //              k_din_ce/co are (the last DECIDE clock counts; no other
+    //              enable on the RAM -> register path). The RAMs read the
+    //              kernel's address on the edge into every DECIDE clock:
+    //              fp_rsel_n is low only in a step's clock, >= SETTLE clocks
+    //              before (sim check iw_ra_bad).
+    //   iw_dirty   the instruction cache may have been written since that
+    //              read. The RAMs read before they write, so a write that
+    //              lands on the read's own edge (ic_we in the clock before
+    //              the last DECIDE clock, iw_we_d) is not in the tags, and
+    //              nor is one in that DECIDE clock: both load it. Any later
+    //              write sets it.
+    //   iw_keep    the entry the write would drop (bank a_r[1]) is valid,
+    //              its tag differs from the written address's, and nothing
+    //              has written the cache since it was read: not before
+    //              (iw_dirty), not in this clock (ic_we: it lands before the
+    //              drop would), and no fill is being started in this clock
+    //              (pf_fill: its write and the drop would land together,
+    //              and the drop wins that, as before).
+    // Why it is safe: the drop is skipped only when the entry at the
+    // written address's index held a valid other address when it was read,
+    // and no instruction-cache write of any kind happened from that read up
+    // to the clock the drop would land. So the entry still holds that other
+    // address, a write to X cannot make it stale, and the drop would only
+    // have thrown away good code. In every other case the drop happens
+    // exactly as before. (A fill of X landing later still needs what it
+    // needed before: X's new data reaches memory first.)
+    // Chip RAM mirrors: the motherboard repeats Chip RAM through
+    // $000000-$1FFFFF (1 MB on an A500+ shows twice, 512 KB four times), so
+    // two Chip RAM addresses that differ only in bits 19-20 may be the same
+    // word. The index drop covered that by accident; here such a pair counts
+    // as the same address (iw_msk), so the drop still happens. No other
+    // cacheable window repeats (fast RAM and the ROM shadow decode every
+    // address bit the tag holds).
+    // A pair write's second word (pw_upd2, always the odd bank) is decided a
+    // clock later from iw_k2 (its keep, worked out in pw_upd's clock) and the
+    // writes of its own clock: only an odd-bank write can touch its entry
+    // (the pair's first-word drop is to the even bank).
+    // Sim checks: iw_ra_bad, iw_skip_bad (a skipped drop left an entry
+    // holding the written address).
+    reg  [TAGW-1:0] iw_t_e = {TAGW{1'b0}}, iw_t_o = {TAGW{1'b0}};
+    reg             iw_dirty = 1'b1;
+    reg             iw_we_d  = 1'b0;
+    reg             iw_k2    = 1'b0;
+    localparam [TAGW-2:0] IW_MIR = ({{(TAGW-2){1'b0}}, 1'b1} << (19 - IC_AW - 1))
+                                 | ({{(TAGW-2){1'b0}}, 1'b1} << (20 - IC_AW - 1));
+    wire [TAGW-2:0] iw_msk    = ic_chip ? ~IW_MIR : {(TAGW-1){1'b1}};
+    wire            iw_ok     = (ICKEEP != 0) && !iw_dirty && !ic_we && !pf_fill;
+    wire            iw_other_e = iw_t_e[TAGW-1] && |((iw_t_e[TAGW-2:0] ^ ic_want[TAGW-2:0]) & iw_msk);
+    wire            iw_other_o = iw_t_o[TAGW-1] && |((iw_t_o[TAGW-2:0] ^ ic_want[TAGW-2:0]) & iw_msk);
+    wire            iw_keep   = iw_ok && (a_r[1] ? iw_other_o : iw_other_e);
+    wire            iw_keep2  = iw_k2 && !(ic_we && ic_wa[0]) && !pf_fill;
+    always @(posedge clk) begin
+        iw_we_d <= ic_we;
+        if (dec_r) begin
+            iw_t_e   <= ic_tq_e;
+            iw_t_o   <= ic_tq_o;
+            iw_dirty <= ic_we || iw_we_d;
+        end else if (ic_we)
+            iw_dirty <= 1'b1;
+    end
+    //
     // OVERLAP. A cache lookup does not need the SDRAM, so it may start while
     // a posted write, a prefetch or a discarded read is still finishing in
     // the background (only a miss then waits, in CFREE). Before, every
@@ -888,7 +964,7 @@ module tg68_bus #(
             dp_inc   <= 1'b0;
             pf_valid <= 1'b0;
             pf_fill  <= 1'b0; pf_dc <= 1'b0; pf_ic <= 1'b0; pf_fill_d <= 1'b0;
-            pw_upd   <= 1'b0; pw_upd2 <= 1'b0;
+            pw_upd   <= 1'b0; pw_upd2 <= 1'b0; iw_k2 <= 1'b0;
             dp_pair  <= 1'b0;
             dp_spec  <= 1'b0;
             fp_v <= 1'b0; k_din_psel <= 1'b0;
@@ -928,8 +1004,12 @@ module tg68_bus #(
                 // dp_pair still holds this write's flag: the port is busy
                 // with it, so DECIDE has not reloaded it
                 pw_upd2 <= dp_pair;
+                // (step 17: no drop if the entry holds another address;
+                // the second word's keep is worked out now, iw_k2)
+                iw_k2   <= iw_ok && iw_other_o;
                 if (ICACHE != 0 && !ic_flush) begin
-                    ic_we <= 1'b1; ic_wa <= a_r[IC_AW:1]; ic_wt <= {TAGW{1'b0}};
+                    ic_wa <= a_r[IC_AW:1]; ic_wt <= {TAGW{1'b0}};
+                    if (!iw_keep) ic_we <= 1'b1;
                 end
                 if (DCACHE != 0) begin
                     dc_we <= 1'b1; dc_wa <= a_r[IC_AW:1];
@@ -942,7 +1022,8 @@ module tg68_bus #(
                 // same tag; a pair is always a whole longword)
                 pw_upd2 <= 1'b0;
                 if (ICACHE != 0 && !ic_flush) begin
-                    ic_we <= 1'b1; ic_wa <= {a_r[IC_AW:2], 1'b1}; ic_wt <= {TAGW{1'b0}};
+                    ic_wa <= {a_r[IC_AW:2], 1'b1}; ic_wt <= {TAGW{1'b0}};
+                    if (!iw_keep2) ic_we <= 1'b1;
                 end
                 if (DCACHE != 0) begin
                     dc_we <= 1'b1; dc_wa <= {a_r[IC_AW:2], 1'b1};
@@ -1265,9 +1346,10 @@ module tg68_bus #(
                 if (tmr >= DATA_DELAY - 1) begin
                     // Cache fill on a fetch miss; invalidate on any write.
                     // (step 11: ic_okf, so chip RAM code fills it and a CPU
-                    // write to chip RAM drops the entry)
+                    // write to chip RAM drops the entry; step 17: unless
+                    // the entry holds another address, iw_keep)
                     if (ic_okf && !ic_flush
-                        && (!eRWn || (cyc_fetch && ic_on && !k_cacr[1] && !bus_berr)))
+                        && ((!eRWn && !iw_keep) || (cyc_fetch && ic_on && !k_cacr[1] && !bus_berr)))
                         ic_we <= 1'b1;
                     // Data cache: invalidate on a write; fill on a whole-
                     // word read (a byte read over the motherboard bus need
@@ -1414,6 +1496,41 @@ module tg68_bus #(
                 if (fp_chk_bad <= 5) $display("%0t: tg68_bus: predicted fetch at %h differs from the cache", $time, {k_addr[31:1], 1'b0});
             end
         end
+    // step 17, sim only. iw_ra_bad: the RAMs' read on the edge into every
+    // DECIDE clock used the kernel's address (so iw_t_e/o are the write's
+    // row). iw_skip_bad: two clocks after a drop was skipped (one after it
+    // would have landed) the entry must not hold the written address (or a
+    // Chip RAM mirror of it). iw_skips counts skipped drops; iw_forced the
+    // drops that happened only because the cache was written in between.
+    integer iw_ra_bad = 0, iw_skip_bad = 0, iw_skips = 0, iw_forced = 0;
+    reg  [IC_AW-2:0] iw_ra_p = 0;
+    reg  [1:0]       iw_sp = 2'b00;
+    reg  [IC_AW-1:0] iw_sa0, iw_sa1;
+    reg  [TAGW-2:0]  iw_st0, iw_st1, iw_sm0, iw_sm1;
+    wire             iw_dec_l = (q == Q_LATCH) && (tmr >= DATA_DELAY - 1) && ic_okf && !ic_flush && !eRWn;
+    wire             iw_dec_1 = pw_upd && (ICACHE != 0) && !ic_flush;
+    wire             iw_dec_2 = pw_upd2 && (ICACHE != 0) && !ic_flush;
+    wire             iw_sk    = !extReset && ((iw_dec_l || iw_dec_1) ? iw_keep : (iw_dec_2 && iw_keep2));
+    wire [IC_AW-1:0] iw_ska   = iw_dec_2 ? {a_r[IC_AW:2], 1'b1} : a_r[IC_AW:1];
+    wire [TAGW-1:0]  iw_now   = iw_sa1[0] ? ic_tag_o[iw_sa1[IC_AW-1:1]] : ic_tag_e[iw_sa1[IC_AW-1:1]];
+    always @(posedge clk) begin
+        iw_ra_p <= ic_ra;
+        if (!extReset && dec_r && iw_ra_p != k_addr[IC_AW:2]) begin
+            iw_ra_bad = iw_ra_bad + 1;
+            if (iw_ra_bad <= 5) $display("%0t: tg68_bus: DECIDE's cache read did not use the kernel's address", $time);
+        end
+        if (!extReset && (iw_dec_l || iw_dec_1) && !iw_keep && (ICKEEP != 0)
+            && (a_r[1] ? iw_other_o : iw_other_e)) iw_forced = iw_forced + 1;
+        if (!extReset && iw_dec_2 && !iw_keep2 && (ICKEEP != 0) && iw_other_o) iw_forced = iw_forced + 1;
+        if (iw_sk) iw_skips = iw_skips + 1;
+        iw_sp  <= {iw_sp[0], iw_sk};
+        iw_sa0 <= iw_ska; iw_st0 <= ic_want[TAGW-2:0]; iw_sm0 <= iw_msk;
+        iw_sa1 <= iw_sa0; iw_st1 <= iw_st0; iw_sm1 <= iw_sm0;
+        if (iw_sp[1] && iw_now[TAGW-1] && ((iw_now[TAGW-2:0] ^ iw_st1) & iw_sm1) == 0) begin
+            iw_skip_bad = iw_skip_bad + 1;
+            if (iw_skip_bad <= 5) $display("%0t: tg68_bus: a skipped drop left the written address cached (entry %h)", $time, iw_sa1);
+        end
+    end
     // step 14, sim only: in CCMP the registered compare inputs must equal
     // what a_r and the cache-on registers give (cc_on_k may only be 0 where
     // the live term is 1); the benches fail if cc_bad is not 0

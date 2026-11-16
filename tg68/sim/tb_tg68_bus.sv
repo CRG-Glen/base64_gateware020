@@ -304,6 +304,9 @@ module tb;
         if (dut.fp_chk_bad) begin $display("FAIL: %0d predicted fetches differed from the cache's own lookup", dut.fp_chk_bad); errors = errors + 1; end
         $display("predicted fetches %0d (checked at the kernel's sample clock: %0d)", dut.fp_hits, fp_chk);
         if (dut.cc_bad) begin $display("FAIL: %0d CCMP compares used registered inputs that differ from a_r", dut.cc_bad); errors = errors + 1; end
+        if (dut.iw_ra_bad) begin $display("FAIL: %0d DECIDE cache reads did not use the kernel's address", dut.iw_ra_bad); errors = errors + 1; end
+        if (dut.iw_skip_bad) begin $display("FAIL: %0d skipped instruction-cache drops left the written address cached", dut.iw_skip_bad); errors = errors + 1; end
+        $display("instruction-cache drops skipped (entry held another address) %0d; forced by a cache write in between %0d", dut.iw_skips, dut.iw_forced);
         if (errors == 0) $display("PASS");
         else             $display("FAILED with %0d errors", errors);
         $finish;

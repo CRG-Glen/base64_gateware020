@@ -215,6 +215,107 @@ cpsmc:  move.l  (%a0)+,(%a1)+
         | is the instruction; d5's high word is the nop before it
         lea     0x08007000+(smc3-smc0),%a2
         bsr     smcrun
+        | -- step 17: a write drops only its own instruction-cache entry.
+        | The tb looks at the entries when the CPU writes the 8F50 markers
+        | (the result checks are at 8230-824C) --
+        | (1) code at $08005100 survives writes to its index 8 KB up and in
+        | chip RAM, runs again from the cache, and a write to the code
+        | itself still drops it
+        lea     fastfn,%a0
+        movea.l #0x08005100,%a1
+        moveq   #2,%d0
+c17a:   move.l  (%a0)+,(%a1)+
+        dbra    %d0,c17a
+        jsr     0x08005100          | fills the instruction cache
+        jsr     0x08005100
+        move.l  #0x0DDBA11,0x08007100   | its index 8 KB up: a pair write
+        move.w  #0x1717,0x9100      | ...and in chip RAM (over the bus)
+        move.b  #1,0x8F50           | TB: $08005100-$08005106 still cached
+        jsr     0x08005100          | from the cache
+        move.b  #2,0x8F50           | TB: no fill there since marker 1
+        move.l  %d6,0x8230          | 8230 0000FA57
+        move.w  #0x1717,0x08005104  | the code itself: the immediate's low word
+        move.b  #3,0x8F50           | TB: $08005104 dropped
+        jsr     0x08005100
+        move.l  %d6,0x8234          | 8234 00001717
+        | (2) a pair write whose second word has the index of cached code
+        | keeps it; a pair write whose second word IS the code drops it
+        move.l  #0x78074E75,0x08005202  | moveq #7,%d4 ; rts (two word writes)
+        jsr     0x08005202          | caches $08005202 ($08005200 is never fetched)
+        move.l  #0x12345678,0x08007200  | pair write: second word at $5202's index
+        move.b  #4,0x8F50           | TB: $08005202 still cached
+        jsr     0x08005202
+        move.l  %d4,0x8238          | 8238 00000007
+        move.l  #0x4E717809,0x08005200  | pair write: nop ; moveq #9,%d4
+        move.b  #5,0x8F50           | TB: $08005202 dropped
+        jsr     0x08005202
+        move.l  %d4,0x823C          | 823C 00000009
+        | (3) fast RAM and chip RAM with the same address bits below A24
+        | (tags that differ only in the region bits) are different code
+        lea     fastfn,%a0
+        movea.l #0x08009100,%a1
+        moveq   #2,%d0
+c17b:   move.l  (%a0)+,(%a1)+
+        dbra    %d0,c17b
+        jsr     0x08009100          | caches $08009100
+        move.w  #0x1718,0x9100      | chip RAM, the same bits below A24
+        move.b  #6,0x8F50           | TB: $08009100 still cached
+        lea     fastfn,%a0          | the same routine in chip RAM at $9100
+        movea.l #0x9100,%a1
+        moveq   #2,%d0
+c17c:   move.l  (%a0)+,(%a1)+
+        dbra    %d0,c17c
+        jsr     0x9100              | caches chip $9100 in place of $08009100
+        move.l  #0x0DDBA11,0x08009100   | fast RAM, the same bits below A24
+        move.b  #7,0x8F50           | TB: chip $9100-$9106 still cached
+        jsr     0x9100              | from the cache
+        move.b  #8,0x8F50           | TB: no fill there since marker 7
+        move.l  %d6,0x8240          | 8240 0000FA57
+        | (4) a write through the chip RAM mirror ($100000 up: an A500+'s
+        | 1 MB shows twice) is a write to the same word
+        move.w  #0x1719,0x109104    | $9104, the immediate's low word
+        move.b  #9,0x8F50           | TB: chip $9104 dropped
+        jsr     0x9100
+        move.l  %d6,0x8244          | 8244 00001719
+        | (5) a fill that lands on the edge of the write's own lookup:
+        | smc1 at $08005400 (its store at +6), cached; code at its +8..+12
+        | indexes 8 KB up evicts those three words. The next run's fetch of
+        | +8 misses and is a pair read, whose fill of +10 lands on the edge
+        | the store's lookup reads the old entry (iw_dirty must see it)
+        lea     smc1,%a0
+        movea.l #0x08005400,%a1
+        moveq   #3,%d0
+c17d:   move.l  (%a0)+,(%a1)+
+        dbra    %d0,c17d
+        move.l  #0x4E714E71,0x08007408  | nop ; nop
+        move.w  #0x4E75,0x0800740C      | rts
+        move.l  #0x4E717805,%d5
+        jsr     0x08005400          | caches it; d4 = 5
+        jsr     0x08007408          | evicts its +8, +10, +12
+        move.l  #0x4E717802,%d5
+        jsr     0x08005400          | the store (+6) hits, +8 misses
+        move.l  %d4,0x8248          | 8248 00000002
+        jsr     0x08005400
+        move.l  %d4,0x824C          | 824C 00000002
+        | (6) ...and one that lands in the clock the drop is decided: smc1
+        | at $08005502, so its store (+6) is long-aligned and the nop after
+        | it an odd word. That nop misses and is a single read, whose
+        | prefetch of the store's target (+10) the posted store waits for
+        | in DECIDE; its fill lands while the drop is being decided (ic_we)
+        lea     smc1,%a0
+        movea.l #0x08005502,%a1
+        moveq   #3,%d0
+c17e:   move.l  (%a0)+,(%a1)+
+        dbra    %d0,c17e
+        move.l  #0x4E714E75,0x0800750A  | nop ; rts at the nop's and the target's indexes
+        move.l  #0x4E717805,%d5
+        jsr     0x08005502          | caches it; d4 = 5
+        jsr     0x0800750A          | evicts its +8 and +10
+        move.l  #0x4E717802,%d5
+        jsr     0x08005502          | the store hits, the nop misses
+        move.l  %d4,0x8250          | 8250 00000002
+        jsr     0x08005502
+        move.l  %d4,0x8254          | 8254 00000002
         | a pair whose second word is NOT cached must not be taken as a pair
         move.l  #0x31323334,0x08000D00  | both words cached
         move.b  #0x99,0x08000D03    | byte write: the second word's entry is dropped

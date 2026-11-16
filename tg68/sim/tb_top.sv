@@ -111,6 +111,10 @@ module tb;
         for (i = 0; i < 4096; i = i + 1) ram[i] = 0;
     end
     wire [23:0] ba = {a, 1'b0};
+    // the tb's chip RAM, $8000-$9FFF, and its mirror at $108000: an A500+'s
+    // 1 MB of chip RAM shows twice in $000000-$1FFFFF (step 17 writes
+    // through the mirror)
+    wire chipram = (ba[23:21] == 3'd0) && (ba[19:0] >= 20'h08000) && (ba[19:0] < 20'h0A000);
 
     // ---- Gary, on the 7M grid -------------------------------------------
     integer cycles = 0, iacks = 0, cia = 0, errors = 0, unmapped = 0, romf = 0;
@@ -248,7 +252,13 @@ module tb;
     end
     reg        hp_pend = 0, hp_long = 0; reg [31:1] hp_a = 0;
     reg [17:0] cw_s;
-    task chk_word(input [31:1] wa, input [15:0] got);
+    // chip RAM addresses fold onto one word whatever bit 20 says (the mirror)
+    function [31:1] sh_key(input [31:1] wa);
+        sh_key = (wa[31:21] == 11'd0) ? {wa[31:21], 1'b0, wa[19:1]} : wa;
+    endfunction
+    task chk_word(input [31:1] wa0, input [15:0] got);
+        reg [31:1] wa;
+        wa = sh_key(wa0);
         if (shadow.exists(wa)) begin
             hit_chk = hit_chk + 1;
             cw_s = shadow[wa];
@@ -266,6 +276,62 @@ module tb;
         ram[12'hC00] = 16'h7803;                  // $9800: moveq #3,%d4
         shadow[31'h4C00] = {2'b11, 16'h7803};
     end
+    // step 17: at each CPU write to $8F50 (test_top.s), look at the
+    // instruction-cache entries the test is about. Checked when the write
+    // cycle starts (cyc_start), so every earlier write's drop has landed and
+    // nothing after it has run yet. ic17_fills counts fills of the four
+    // words being watched (a fill means the code was not found cached).
+    integer ic17_n = 0, ic17_bad = 0, ic17_fills = 0;
+    reg [dut.cpu.IC_AW-1:0] ic17_wi = 0;
+    function [dut.cpu.TAGW-1:0] ic17_tag(input [31:0] ad);
+        reg [dut.cpu.TAGW-4:0] lo;
+        begin
+            lo = ad[23:0] >> (dut.cpu.IC_AW + 1);
+            ic17_tag = {1'b1, ad[31:24] == 8'h08, ad[31:24] == 8'h00, lo};
+        end
+    endfunction
+    task ic17_ent(input [31:0] ad, input want, input integer mk);   // want 1: cached; 0: dropped
+        reg [dut.cpu.TAGW-1:0] t;
+        begin
+            t = ad[1] ? dut.cpu.ic_tag_o[ad[dut.cpu.IC_AW:2]] : dut.cpu.ic_tag_e[ad[dut.cpu.IC_AW:2]];
+            ic17_n = ic17_n + 1;
+            // (with step 17 off, -DS17_DEFAULT=0, only the drops are checked)
+            if (want ? (t !== ic17_tag(ad) && dut.cpu.ICKEEP != 0) : (t === ic17_tag(ad))) begin
+                ic17_bad = ic17_bad + 1;
+                $display("FAIL step 17 marker %0d: %h %0s in the instruction cache (entry tag %h)",
+                         mk, ad, want ? "not" : "still", t);
+            end
+        end
+    endtask
+    task ic17_nofill(input integer mk);
+        begin
+            ic17_n = ic17_n + 1;
+            if (ic17_fills != 0 && dut.cpu.ICKEEP != 0) begin
+                ic17_bad = ic17_bad + 1;
+                $display("FAIL step 17 marker %0d: %0d fills of code that should have stayed cached", mk, ic17_fills);
+            end
+        end
+    endtask
+    always @(posedge dut.clk) begin
+        if (dut.cpu.ic_we && dut.cpu.ic_wt[dut.cpu.TAGW-1] && !dut.cpu.ic_flush
+            && dut.cpu.ic_wa[dut.cpu.IC_AW-1:2] == ic17_wi[dut.cpu.IC_AW-1:2]) ic17_fills = ic17_fills + 1;
+        if (dut.cpu.cyc_start && !dut.cpu.eRWn && dut.cpu.a_r == 31'h47A8) begin   // $8F50
+            case (dut.cpu.oEdb[15:8])
+            8'd1: begin ic17_ent(32'h08005100, 1, 1); ic17_ent(32'h08005102, 1, 1); ic17_ent(32'h08005104, 1, 1);
+                        ic17_wi = 32'h08005100 >> 1; ic17_fills = 0; end
+            8'd2: ic17_nofill(2);
+            8'd3: ic17_ent(32'h08005104, 0, 3);
+            8'd4: ic17_ent(32'h08005202, 1, 4);
+            8'd5: ic17_ent(32'h08005202, 0, 5);
+            8'd6: begin ic17_ent(32'h08009100, 1, 6); ic17_ent(32'h08009102, 1, 6); end
+            8'd7: begin ic17_ent(32'h00009100, 1, 7); ic17_ent(32'h00009102, 1, 7); ic17_ent(32'h00009104, 1, 7);
+                        ic17_wi = 32'h00009100 >> 1; ic17_fills = 0; end
+            8'd8: ic17_nofill(8);
+            8'd9: ic17_ent(32'h00009104, 0, 9);
+            default: ;
+            endcase
+        end
+    end
     reg [3:0]  pb_pq = 0; reg pb_mr = 0;
     always @(posedge dut.clk) begin
         pb_pq <= dut.cpu.q;
@@ -275,7 +341,7 @@ module tb;
         // strobes belong to it. (oEdb and the strobes now load on every
         // DECIDE clock, so only a real cycle start may be recorded.)
         if (dut.cpu.cyc_start && !dut.cpu.eRWn) begin
-            pb_k = dut.cpu.a_r;
+            pb_k = sh_key(dut.cpu.a_r);
             pb_s = shadow.exists(pb_k) ? shadow[pb_k] : 18'd0;
             if (!dut.cpu.uds_want) begin pb_s[17] = 1'b1; pb_s[15:8] = dut.cpu.oEdb[15:8]; end
             if (!dut.cpu.lds_want) begin pb_s[16] = 1'b1; pb_s[7:0]  = dut.cpu.oEdb[7:0];  end
@@ -343,7 +409,7 @@ module tb;
             if (w == 3'd1 + xw) begin
                 if (rw) begin
                     if (ba < 24'h2000 || ba[23:19] == 5'b11111) mb_q <= rom[ba[12:1]];
-                    else if (ba >= 24'h8000 && ba < 24'hA000)  mb_q <= ram[ba[12:1]];
+                    else if (chipram)                          mb_q <= ram[ba[12:1]];
                     else begin mb_q <= 16'hFFFF; unmapped = unmapped + 1;
                         $display("unmapped read %h fc=%0d", ba, fc); end
                     mb_drive <= 1;
@@ -365,8 +431,8 @@ module tb;
             undriven = undriven + 1;
             if (undriven <= 5) $display("FAIL: write to %h latched with the data bus not driven", ba);
         end
-    always @(posedge uds_n) if (!rw && ba >= 24'h8000 && ba < 24'hA000) ram[ba[12:1]][15:8] = d[15:8];
-    always @(posedge lds_n) if (!rw && ba >= 24'h8000 && ba < 24'hA000) ram[ba[12:1]][7:0]  = d[7:0];
+    always @(posedge uds_n) if (!rw && chipram) ram[ba[12:1]][15:8] = d[15:8];
+    always @(posedge lds_n) if (!rw && chipram) ram[ba[12:1]][7:0]  = d[7:0];
     always @(posedge uds_n) if (!rw && ba == 24'h8F80) ipl_n = 3'b111;
 `ifdef FASTMEM
     // step 13: the turbomem board as if autoconfigured at $EA0000, so the
@@ -394,7 +460,7 @@ module tb;
         if (d[15:8] == 8'd3) force dut.g_fastmem.u_turbomem.mr_ctrl = 2'b00;
     end
 `endif
-    always @(negedge as_n) if (!rw && !(ba >= 24'h8000 && ba < 24'hA000) && ba[23:16] != 8'hBF) begin
+    always @(negedge as_n) if (!rw && !chipram && ba[23:16] != 8'hBF) begin
         $display("unmapped write %h", ba); unmapped = unmapped + 1; end
 
 `ifdef MEMBENCH
@@ -590,6 +656,9 @@ module tb;
         if (dut.cpu.fp_chk_bad) begin $display("FAIL: %0d predicted fetches differed from the cache's own lookup", dut.cpu.fp_chk_bad); errors = errors + 1; end
         $display("predicted fetches %0d (checked at the kernel's sample clock: %0d)", dut.cpu.fp_hits, fp_chk);
         if (dut.cpu.cc_bad) begin $display("FAIL: %0d CCMP compares used registered inputs that differ from a_r", dut.cpu.cc_bad); errors = errors + 1; end
+        if (dut.cpu.iw_ra_bad) begin $display("FAIL: %0d DECIDE cache reads did not use the kernel's address", dut.cpu.iw_ra_bad); errors = errors + 1; end
+        if (dut.cpu.iw_skip_bad) begin $display("FAIL: %0d skipped instruction-cache drops left the written address cached", dut.cpu.iw_skip_bad); errors = errors + 1; end
+        $display("instruction-cache drops skipped (entry held another address) %0d; forced by a cache write in between %0d", dut.cpu.iw_skips, dut.cpu.iw_forced);
         if (errors) $display("FAILED"); else $display("PASS");
         $finish;
 `else
@@ -706,6 +775,20 @@ module tb;
         // CL2: still 3 (step 13: 16x -> 14x loaded CL2, 14x -> 12x none)
         if (u_sdram.n_mrs != 3) begin $display("FAIL: expected 3 SDRAM mode loads (init, CL3, CL2)"); errors = errors + 1; end
 `endif
+        // step 17 (test_top.s, the 8F50 markers)
+        check(24'h8230, 32'h0000FA57, "step 17: code kept over writes to its index");
+        check(24'h8234, 32'h00001717, "step 17: a write to the code drops it");
+        check(24'h8238, 32'h00000007, "step 17: pair write, second word's index kept");
+        check(24'h823C, 32'h00000009, "step 17: pair write over the code");
+        check(24'h8240, 32'h0000FA57, "step 17: chip code kept over a fast RAM write");
+        check(24'h8244, 32'h00001719, "step 17: a write through the chip RAM mirror");
+        check(24'h8248, 32'h00000002, "step 17: fill on the lookup edge, storing run");
+        check(24'h824C, 32'h00000002, "step 17: fill on the lookup edge, the run after");
+        check(24'h8250, 32'h00000002, "step 17: fill in the decision clock, storing run");
+        check(24'h8254, 32'h00000002, "step 17: fill in the decision clock, the run after");
+        $display("step 17 entry checks: %0d, failed %0d", ic17_n, ic17_bad);
+        if (ic17_n != 14) begin $display("FAIL: expected 14 step 17 entry checks"); errors = errors + 1; end
+        if (ic17_bad) errors = errors + ic17_bad;
         check(24'h8120, 32'h13579BDF, "fast RAM $08000000");
         check(24'h8124, 32'h2468ACE0, "fast RAM $08FFFFFC");
         check(24'h8128, 32'h0000FA57, "code run from fast RAM");
@@ -764,6 +847,9 @@ module tb;
         if (dut.cpu.fp_chk_bad) begin $display("FAIL: %0d predicted fetches differed from the cache's own lookup", dut.cpu.fp_chk_bad); errors = errors + 1; end
         $display("predicted fetches %0d (checked at the kernel's sample clock: %0d)", dut.cpu.fp_hits, fp_chk);
         if (dut.cpu.cc_bad) begin $display("FAIL: %0d CCMP compares used registered inputs that differ from a_r", dut.cpu.cc_bad); errors = errors + 1; end
+        if (dut.cpu.iw_ra_bad) begin $display("FAIL: %0d DECIDE cache reads did not use the kernel's address", dut.cpu.iw_ra_bad); errors = errors + 1; end
+        if (dut.cpu.iw_skip_bad) begin $display("FAIL: %0d skipped instruction-cache drops left the written address cached", dut.cpu.iw_skip_bad); errors = errors + 1; end
+        $display("instruction-cache drops skipped (entry held another address) %0d; forced by a cache write in between %0d", dut.cpu.iw_skips, dut.cpu.iw_forced);
         if (errors) $display("FAILED, %0d errors", errors); else $display("PASS");
         $finish;
 `endif
