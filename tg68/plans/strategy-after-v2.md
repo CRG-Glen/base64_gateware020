@@ -395,6 +395,15 @@ is not a plain bug in the new code; or the predictor's read
   Shipped seed 10: `bitstreams/step17_ickeep/` (`_plain`, `_fast`,
   timing at 12x / 16x / 20x, `seeds.txt`, `speed`, `README.txt` with the
   test list). Utilisation 11,285 LUT4, 2,678 FF, 35 DP16KD.
+- **Glen's hardware test (seed 10): runs at 12x, 16x and 20x**, SD card
+  included. Caches on as v2.0 within 1% (SysInfo 10804 / 14411 / 18029,
+  AIBB 16.69 / 21.13 / 26.32, Frontier timedemo 26.4 / 30.9 / 34.1 fps),
+  which is what the sim said (the benchmarks do not collide). Caches-off
+  numbers moved both ways by up to 7% / 19%, where step 17 cannot change
+  anything: spread. New test from Glen, the Frontier "CPU" timedemo: 31.1
+  / 41.2 / 57.1 fps average (12x / 16x / 20x), a far bigger spread between
+  speeds than the Amiga-side one; the baseline for the next steps. The
+  self-modifying / trackloaded game (test item 4) was not reported.
 - Possible refinement, not done: an invalid entry needs no drop either
   (skip on `!valid` too). It would remove bench op's 5 forced drops;
   behaviour otherwise identical. Left as the plan wrote it.

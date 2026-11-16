@@ -384,6 +384,23 @@ style. `README.md` is the user-facing version of the same material.
   (x + all-ones carry out) is slower than `==` (5.6 vs 4.7 ns alone).
   Not done: prefetch-buffer hits in 4 clocks (caches off: 1.7% in bench
   coff), dp_req's register clock.
+- **A write drops only its own instruction-cache entry (step 17, branch
+  step17-icache-tag-drop, seed 10; runs on hardware at 12x, 16x and
+  20x):** up to v2.0 a CPU write dropped the instruction-cache entry at
+  its index whatever it held, so it also threw out code 8 KB away.
+  `iw_t_e/o` (the tags at the write's row, loaded under `dec_r` from
+  `ic_tq_e/o`), `iw_dirty` (any `ic_we` since that read, including one
+  landing on the read's own edge: `iw_we_d`), `iw_keep` (valid, another
+  tag, nothing written since, no `ic_we` or `pf_fill` in the decision
+  clock) gate `ic_we` at the three drop sites (`pw_upd`, `pw_upd2` via
+  `iw_k2`, Q_LATCH). Chip RAM tags that differ only in bits 19-20 count
+  as the same address (`iw_msk`: the motherboard's mirrors), an addition
+  to the plan. `ICKEEP`, `-DS17_DEFAULT=0`. Sim checks `iw_ra_bad`,
+  `iw_skip_bad`; tests 1-6 in test_top.s (two of them fill races); the
+  tb's Chip RAM repeats at $108000. Sim: wrfast -9.8%, push + pop 26 -> 19
+  clocks, compiled C -0.1%. 2 of 16 seeds pass; 1.27x / 1.58x the model
+  at 16x / 20x. Hardware: benchmarks as v2.0 (they do not collide), as
+  the sim predicted. Details: plans/strategy-after-v2.md, step 17 log.
 - **Cache enable:** both caches follow CACR EI. The data cache must NOT get
   the 68030 CACR bit 8: software tells an 020 from an 030 by setting that bit
   and reading it back, so storing it would make the CPU detect as a 68030 and
@@ -430,6 +447,9 @@ style. `README.md` is the user-facing version of the same material.
 | exp-20x at 12x (seed 10) | 10776 / 4461 | 16.60 / 8.48 |
 | exp-20x at 16x (seed 10) | 14379 / 5440 | 21.03 / 10.59 |
 | exp-20x at 20x (seed 10, experiment) | 18024 / 7499 | 26.16 / 13.20 |
+| step 17 at 12x (seed 10) | 10804 / 4462 | 16.69 / 8.14 |
+| step 17 at 16x (seed 10) | 14411 / 6462 | 21.13 / 10.61 |
+| step 17 at 20x (seed 10) | 18029 / 7095 | 26.32 / 12.69 |
 
 - AIBB MemTest did not move from step 6 to step 7 (pairs only come from
   cache hits; MemTest's reads miss and its writes are 16-bit). Step 8's
@@ -479,6 +499,21 @@ style. `README.md` is the user-facing version of the same material.
   11.8 / 73.2 / 30.6 fps. `speed` at 12x: $170C (rising sample in use,
   nothing moved): step 14b's 12x fix works; at 16x after the tests $4710
   (falling in use, the unused rising sample moved), as with step 14.
+- Step 17 (seed 10; each benchmark run three times and averaged where it
+  moved): caches on as v2.0 within 1% everywhere (SysInfo +0.3 / +0.2 /
+  +0.0%, AIBB +0.5 / +0.5 / +0.6%, 12x / 16x / 20x). xSysInfo 12x 18661 /
+  9045, 10.62 / 5.14 MIPS, fast RAM 23.71 / 21.14 MB/s; 16x 24129 /
+  11638, 13.73 / 6.62, 29.58 / 26.20; 20x 30969 / 14076, 17.62 / 8.01,
+  36.83 / 32.72 (+6.8% caches on). SD 2.0 / 2.2 / 2.7 MB/s. Caches off
+  moved by up to -7% (xSysInfo 12x) and +19% (SysInfo 16x: 6462 against
+  v2.0's 5440, the same as step 15's 6462): step 17 cannot change
+  anything with the caches off (no fills; the sim is clock for clock
+  identical), so that is the benchmarks' spread again. Frontier timedemo
+  (Amiga, caches on) 9.6 / 70.3 / 26.4, 12.0 / 73.7 / 30.9, 14.1 / 75.5 /
+  34.1 fps. **New: Frontier timedemo "CPU"** (Glen's second test, far
+  more sensitive to the CPU): 10.9 / 92.8 / 31.1, 14.5 / 128.6 / 41.2,
+  18.2 / 154.8 / 57.1 fps (min / max / average, 12x / 16x / 20x). No
+  v2.0 number to compare with; the baseline for the next steps.
 - **v2.0 release** (14.11.2026): main gets steps 13 to 15b and the 20x
   clock; speeds 12x / 16x / 20x (Glen: 14x and 18x not a big enough
   step). The released bitstream is the `exp-20x` seed 10 file Glen
