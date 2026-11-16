@@ -410,7 +410,12 @@ is not a plain bug in the new code; or the predictor's read
   Desert Dream (Kefrens) runs on both; on both, the 3D ship at the start
   shows small polygon errors (the same on v2.0, so not step 17; likely
   the demo's timing on a fast CPU, to be narrowed down by Glen: speed 12
-  vs 20, and under Kickstart 1.3, which leaves the caches off).
+  vs 20, and under Kickstart 1.3, which leaves the caches off). Glen:
+  worse at 20x than at 12x; correct under Kickstart 1.3. That does not
+  separate speed from caches: with the caches off, code in Chip RAM runs
+  at about 68000 speed (every word over the 7 MHz bus). Worse at 20x
+  points at a CPU/blitter race. Glen will compare on a real 68020 and
+  68030.
 - Possible refinement, not done: an invalid entry needs no drop either
   (skip on `!valid` too). It would remove bench op's 5 forced drops;
   behaviour otherwise identical. Left as the plan wrote it.
