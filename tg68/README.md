@@ -118,7 +118,10 @@ board, and `AvailMem` should show the Zorro II fast RAM plus the 16 MB at
   68020's does (see step 11 for what that means for DMA-loaded code).
   Every CPU write to a cacheable address invalidates its entry, so
   self-modifying code and program loading by the CPU work without
-  CacheClearU. CACR's EI bit turns it on and off as on a real 68020: off
+  CacheClearU. (Up to v2.0 a write dropped the entry at its index whatever
+  address it held, so it also threw out cached code 8 KB away; from step
+  17 only an entry that holds the written address goes, or one that holds
+  a Chip RAM mirror of it: Chip RAM repeats through $000000-$1FFFFF.) CACR's EI bit turns it on and off as on a real 68020: off
   at reset, and Kickstart 2.0+ turns it on; FI freezes it. Up to step 10
   the clear bits (CI/CEI) were ignored; from step 11 either one flushes
   both caches. The cache is flushed after every reset. `ICACHE=0` in
