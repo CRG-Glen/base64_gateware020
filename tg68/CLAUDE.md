@@ -217,6 +217,9 @@ flatten. nextpnr: `--placer static --router router2`.
   release source rebuilds it byte for byte).
 - `step16-clkena-copies` was built and dropped (0 seeds pass; its plan
   log has why).
+- `step17-icache-tag-drop` (a write drops only its own instruction-cache
+  entry) runs on Glen's A500+ at all three speeds, seed 10; benchmarks as
+  v2.0. Not merged. Step 18 stacks on it.
 - New work branches from `main`. What to build next, in order, with the
   measurements behind it: `plans/strategy-after-v2.md`.
 
