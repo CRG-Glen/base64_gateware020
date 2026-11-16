@@ -89,6 +89,10 @@ module tg68_bus #(
     parameter integer BARREL     = 0   // documentation only: which netlist
 )(
     input  wire        clk,
+`ifdef TG68_PERF
+    // step 18 (test builds only): one-clock event flags for perf_cnt.v
+    output reg  [19:0] perf_ev,
+`endif
     input  wire        enPhi1,     // unused, kept for drop-in compatibility
     input  wire        enPhi2,     // unused
     input  wire        HALTn,      // external HALT: holds off new cycles
@@ -587,6 +591,9 @@ module tg68_bus #(
     reg             iw_dirty = 1'b1;
     reg             iw_we_d  = 1'b0;
     reg             iw_k2    = 1'b0;
+`ifdef TG68_PERF
+    reg             pv_dv    = 1'b0;   // step 18's counter 18 (PERFORMANCE COUNTER EVENTS)
+`endif
     localparam [TAGW-2:0] IW_MIR = ({{(TAGW-2){1'b0}}, 1'b1} << (19 - IC_AW - 1))
                                  | ({{(TAGW-2){1'b0}}, 1'b1} << (20 - IC_AW - 1));
     wire [TAGW-2:0] iw_msk    = ic_chip ? ~IW_MIR : {(TAGW-1){1'b1}};
@@ -880,6 +887,9 @@ module tg68_bus #(
         ic_we    <= 1'b0;
         dc_we    <= 1'b0;
         cyc_start <= 1'b0;
+`ifdef TG68_PERF
+        pv_dv    <= 1'b0;
+`endif
         // EARLY LOOKUP: loaded every clock (only the DECIDE edge counts,
         // and CCMP is always the clock straight after it), so no enable sits
         // in the RAM -> register path.
@@ -1010,6 +1020,9 @@ module tg68_bus #(
                 if (ICACHE != 0 && !ic_flush) begin
                     ic_wa <= a_r[IC_AW:1]; ic_wt <= {TAGW{1'b0}};
                     if (!iw_keep) ic_we <= 1'b1;
+`ifdef TG68_PERF
+                    pv_dv <= !iw_keep && (a_r[1] ? iw_t_o[TAGW-1] : iw_t_e[TAGW-1]);
+`endif
                 end
                 if (DCACHE != 0) begin
                     dc_we <= 1'b1; dc_wa <= a_r[IC_AW:1];
@@ -1024,6 +1037,9 @@ module tg68_bus #(
                 if (ICACHE != 0 && !ic_flush) begin
                     ic_wa <= {a_r[IC_AW:2], 1'b1}; ic_wt <= {TAGW{1'b0}};
                     if (!iw_keep2) ic_we <= 1'b1;
+`ifdef TG68_PERF
+                    pv_dv <= !iw_keep2 && iw_t_o[TAGW-1];
+`endif
                 end
                 if (DCACHE != 0) begin
                     dc_we <= 1'b1; dc_wa <= {a_r[IC_AW:2], 1'b1};
@@ -1351,6 +1367,10 @@ module tg68_bus #(
                     if (ic_okf && !ic_flush
                         && ((!eRWn && !iw_keep) || (cyc_fetch && ic_on && !k_cacr[1] && !bus_berr)))
                         ic_we <= 1'b1;
+`ifdef TG68_PERF
+                    if (ic_okf && !ic_flush && !eRWn && !iw_keep)
+                        pv_dv <= a_r[1] ? iw_t_o[TAGW-1] : iw_t_e[TAGW-1];
+`endif
                     // Data cache: invalidate on a write; fill on a whole-
                     // word read (a byte read over the motherboard bus need
                     // not drive the other byte).
@@ -1479,6 +1499,47 @@ module tg68_bus #(
         BGn = 1'b1; oRESETn = 1'b1; oEdb = 16'd0; stalled = 1'b0;
         dp_inc = 1'b0; dp_pair = 1'b0; dp_wdata_lo = 16'd0;
     end
+
+`ifdef TG68_PERF
+    // ------------------------------------------------------------------
+    // PERFORMANCE COUNTER EVENTS (step 18, test builds only: build.py
+    // --perf). One-clock flags, each a register loaded from registers (and
+    // the kernel's outputs, which are stable at a step), so the counters
+    // add no load to any of the sequencer's own decisions. Numbering as in
+    // perf_cnt / sw/perf/perf.s; 0 (clocks) and 16 (Chip RAM write waits)
+    // are made in the top level. A step's flags describe the cycle it ends:
+    // in the clock k_step is high the kernel's outputs still show it, and
+    // k_din_sel / k_din_psel / cyc_fetch still belong to it.
+    reg  pv_lat = 1'b0;                        // q was Q_LATCH last clock
+    // pv_dv (declared with the IC KEEP registers): a write's drop of an
+    // entry that held code when DECIDE looked it up, set with that ic_we
+    wire pv_fetch = (k_bs == 2'b00) && !k_skip;
+    wire pv_lend  = pv_lat && (q != Q_LATCH);  // an old-route cycle just ended
+    wire pv_chip  = (a_r[31:21] == 11'd0);
+    initial perf_ev = 20'd0;
+    always @(posedge clk) begin
+        pv_lat       <= (q == Q_LATCH);
+        perf_ev      <= 20'd0;
+        perf_ev[1]   <= k_step;                                  // kernel steps
+        perf_ev[2]   <= k_step && pv_fetch;                      // fetch steps
+        perf_ev[3]   <= k_step && pv_fetch && k_din_psel;        // predicted fetches
+        perf_ev[4]   <= k_step && k_din_sel && cyc_fetch;        // instruction-cache hits
+        perf_ev[5]   <= k_step && k_din_sel && !cyc_fetch;       // data-cache hits
+        perf_ev[6]   <= k_step && internal_step;                 // internal steps
+        perf_ev[7]   <= (q == Q_DDATA) && cyc_fetch;             // SDRAM fetch (direct read)
+        perf_ev[8]   <= (q == Q_DDATA) && !cyc_fetch;            // SDRAM data read (direct)
+        perf_ev[9]   <= pv_lend && cyc_fetch && pv_chip;         // old route: fetch, Chip RAM
+        perf_ev[10]  <= pv_lend && cyc_fetch && !pv_chip;        //   fetch, elsewhere
+        perf_ev[11]  <= pv_lend && !cyc_fetch && eRWn && pv_chip;   // read, Chip RAM
+        perf_ev[12]  <= pv_lend && !cyc_fetch && eRWn && !pv_chip;  //   read, elsewhere
+        perf_ev[13]  <= pv_lend && !eRWn && pv_chip;             //   write, Chip RAM
+        perf_ev[14]  <= pv_lend && !eRWn && !pv_chip;            //   write, elsewhere
+        perf_ev[15]  <= !as_i;                                   // clocks in an old-route cycle
+        perf_ev[17]  <= dec_r && dp_busy && (k_bs == 2'b11) && k_fast;  // fast RAM write waits for the port
+        perf_ev[18]  <= pv_dv && !ic_flush;                      // drops of entries holding code
+        perf_ev[19]  <= ic_we && ic_wt[TAGW-1] && !ic_flush;     // instruction-cache fills
+    end
+`endif
 
 `ifndef YOSYS
     // step 15, sim only: on a predicted fetch, the RAMs' own read of the

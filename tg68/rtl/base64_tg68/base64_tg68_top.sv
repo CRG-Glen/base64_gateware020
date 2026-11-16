@@ -1012,9 +1012,15 @@ module base64_tg68_top #(
     reg tg_halt_n = 1'b1;
     reg tg_br_n = 1'b1;     // step 14: the adapter's BRn, loaded by the write buffer (below)
     always @(posedge clk) tg_halt_n <= (s_halt_n[1] | ~core_ohalted_n) & ~spd_hold;
+`ifdef TG68_PERF
+    wire [19:0] perf_ev_cpu;   // step 18: the adapter's event flags (perf_cnt)
+`endif
     tg68_bus #(.STEP(TG_STEP), .SETTLE(TG_SETTLE), .DIN_SETUP(TG_DIN),
                .ADDR_SETUP(TG_ASU)) cpu (
         .clk      (clk),
+`ifdef TG68_PERF
+        .perf_ev  (perf_ev_cpu),
+`endif
         .enPhi1   (en_phi1),
         .enPhi2   (en_phi2),
         .HALTn    (tg_halt_n),
@@ -1573,6 +1579,12 @@ module base64_tg68_top #(
     always @(posedge clk) core_chip_r <= (core_a[23:21] == 3'b000);
     wire       postable = POST_CHIP && !core_as_n && !core_rw && core_chip_r && !int_win_r;
     wire       wb_acc   = postable && (!core_uds_n || !core_lds_n) && !rt_dtack_lo && !wb_full;
+`ifdef TG68_PERF
+    // step 18: a Chip RAM write that waits because the buffer is full (perf
+    // counter 16), as a registered one-clock flag
+    reg        perf_cw = 1'b0;
+    always @(posedge clk) perf_cw <= postable && wb_full;
+`endif
     // TG68: above 12x one master clock is under 11 ns (8.81 ns at 16x), so
     // the address/data hold past AS negation below takes two (spd_hold2).
     // rt_hold_done = spd_hold2 ? AS delayed 3 : AS delayed 2, as ONE
@@ -2068,6 +2080,26 @@ module base64_tg68_top #(
     //
     // An absolute path here also works and cannot fail, if the project route
     // ever gives trouble.
+`ifdef TG68_PERF
+    // step 18 (test builds only, build.py --perf): the performance counters,
+    // read and controlled through the ROM board's status window. Counter 0
+    // counts clocks; 16 is the Chip RAM write-buffer wait; the rest are the
+    // adapter's (tg68_bus.v, PERFORMANCE COUNTER EVENTS). An Amiga reset
+    // (slave_reset) freezes them.
+    wire        perf_wr;
+    wire [7:0]  perf_cmd;
+    wire [39:0] perf_q;
+    wire [15:0] perf_stat;
+    perf_cnt #(.N(20), .W(40)) u_perf (
+        .clk         (clk),
+        .amiga_reset (slave_reset),
+        .ev          ({perf_ev_cpu[19:17], perf_cw, perf_ev_cpu[15:1], 1'b1}),
+        .cmd_wr      (perf_wr),
+        .cmd         (perf_cmd),
+        .q           (perf_q),
+        .stat        (perf_stat)
+    );
+`endif
     turbomem_zii #(
         .MFG_ID   (16'h144A),
         .PROD_ID  (8'd14),        // see the ID allocation block above
@@ -2086,6 +2118,12 @@ module base64_tg68_top #(
         .spd_smp    (spd_smp),
         .spd_stat   (spd_stat),
         .spd_stat2  ({8'd0, n_swap}),     // step 14: +$F00C
+`ifdef TG68_PERF
+        .perf_wr    (perf_wr),            // step 18: +$F00E, +$F010-$F014
+        .perf_cmd   (perf_cmd),
+        .perf_q     (perf_q),
+        .perf_stat  (perf_stat),
+`endif
         .clk        (clk),
         .reset      (slave_reset),
         .cfgin_n    (ac_chain_n),

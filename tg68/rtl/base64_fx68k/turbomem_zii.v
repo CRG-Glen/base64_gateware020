@@ -180,6 +180,14 @@ module turbomem_zii #(
     output reg  [1:0]  spd_smp = 2'd0,  // 7M sampling: 0 auto, 1 rise, 2 fall
     input  wire [15:0] spd_stat,        // what +$F00A reads
     input  wire [15:0] spd_stat2        // TG68 step 14: what +$F00C reads
+`ifdef TG68_PERF
+    // TG68 step 18 (test builds only): performance counters (perf_cnt.v)
+    ,
+    output reg         perf_wr = 1'b0,  // one-clock pulse: a keyed write to +$F00E
+    output reg  [7:0]  perf_cmd = 8'd0,
+    input  wire [39:0] perf_q,          // the selected counter
+    input  wire [15:0] perf_stat        // what +$F00E reads
+`endif
 );
 
 localparam integer ROM_WORDS = (1 << ROM_AWID);
@@ -359,6 +367,13 @@ always @(posedge clk) rom_q <= rom[a[ROM_AWID:1]];
 //   +$F00C  speed status 2 (step 14), read-only: automatic 7M sample
 //           swaps since power-up (low byte; the top level's spd_stat2)
 //   +$F00E..            reserved, read as zero
+//   (TG68 step 18, test builds with TG68_PERF only: +$F00E performance
+//   counter control, write $5Cxx (perf_cnt.v: xx = 00nnnnnn select counter
+//   n, $40 freeze, $80 run, $C0 clear), read {run, frozen by a
+//   reset, number of counters (6 bits), 0, 0, selected (6 bits)};
+//   +$F010 / +$F012 / +$F014 the selected counter's bits 15:0, 31:16 and
+//   39:32, read-only. Without TG68_PERF A4 is not decoded: $F010 repeats
+//   $F000 as before.)
 //
 // The mapROM control register needs a key. A stray write of 0 is harmless,
 // but a stray write with bit 1 set would switch Kickstart fetches over to an
@@ -384,11 +399,23 @@ assign maprom_active = mr_ctrl[1];
 
 always @(posedge clk) begin
     status_sel <= status_hit;
+`ifdef TG68_PERF
+    if (a[4])
+        status_q <= (a[2:1] == 2'd0) ? perf_q[15:0]
+                  : (a[2:1] == 2'd1) ? perf_q[31:16]
+                  : (a[2:1] == 2'd2) ? {8'd0, perf_q[39:32]} : 16'h0000;
+    else if (a[3])
+        status_q <= (a[2:1] == 2'd0) ? {14'd0, mr_ctrl}
+                  : (a[2:1] == 2'd1) ? spd_stat
+                  : (a[2:1] == 2'd2) ? spd_stat2 : perf_stat;  // TG68 step 18
+    else
+`else
     if (a[3])
         status_q <= (a[2:1] == 2'd0) ? {14'd0, mr_ctrl}
                   : (a[2:1] == 2'd1) ? spd_stat                 // TG68: speed
                   : (a[2:1] == 2'd2) ? spd_stat2 : 16'h0000;   // TG68 step 14
     else
+`endif
         status_q <= status_i[{a[2:1], 4'b0000} +: 16];
 end
 
@@ -424,6 +451,22 @@ always @(posedge clk) begin
         else if (d_in[5:0] == 6'd16) begin spd_wr <= 1'b1; spd_val <= 2'd2; spd_smp <= d_in[7:6]; end
     end
 end
+
+`ifdef TG68_PERF
+// TG68 step 18: the performance counters' control register at +$F00E, keyed
+// like the others ($5C), same strobe shape. A4 low: +$F01E is not it.
+localparam [7:0] PERF_KEY = 8'h5C;
+wire perf_wr_hit = tm_space && status_hit && !ds_n && !rw && (a[4:1] == 4'd7);
+reg  perf_wr_q;
+always @(posedge clk) perf_wr_q <= perf_wr_hit;
+always @(posedge clk) begin
+    perf_wr <= 1'b0;
+    if (perf_wr_hit && !perf_wr_q && d_in[15:8] == PERF_KEY) begin
+        perf_wr  <= 1'b1;
+        perf_cmd <= d_in[7:0];
+    end
+end
+`endif
 
 // ---------------------------------------------------------------------------
 // DTACK for ROM cycles, and the read data hold.

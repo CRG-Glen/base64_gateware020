@@ -332,6 +332,64 @@ module tb;
             endcase
         end
     end
+`ifdef TG68_PERF
+    // step 18: the performance counters (perf_cnt.v). pc(i) reads counter i.
+    function [39:0] pc(input integer i);
+        case (i)
+        0: pc = dut.g_fastmem.u_perf.gc[0].v;   1: pc = dut.g_fastmem.u_perf.gc[1].v;
+        2: pc = dut.g_fastmem.u_perf.gc[2].v;   3: pc = dut.g_fastmem.u_perf.gc[3].v;
+        4: pc = dut.g_fastmem.u_perf.gc[4].v;   5: pc = dut.g_fastmem.u_perf.gc[5].v;
+        6: pc = dut.g_fastmem.u_perf.gc[6].v;   7: pc = dut.g_fastmem.u_perf.gc[7].v;
+        8: pc = dut.g_fastmem.u_perf.gc[8].v;   9: pc = dut.g_fastmem.u_perf.gc[9].v;
+        10: pc = dut.g_fastmem.u_perf.gc[10].v; 11: pc = dut.g_fastmem.u_perf.gc[11].v;
+        12: pc = dut.g_fastmem.u_perf.gc[12].v; 13: pc = dut.g_fastmem.u_perf.gc[13].v;
+        14: pc = dut.g_fastmem.u_perf.gc[14].v; 15: pc = dut.g_fastmem.u_perf.gc[15].v;
+        16: pc = dut.g_fastmem.u_perf.gc[16].v; 17: pc = dut.g_fastmem.u_perf.gc[17].v;
+        18: pc = dut.g_fastmem.u_perf.gc[18].v; 19: pc = dut.g_fastmem.u_perf.gc[19].v;
+        default: pc = 0;
+        endcase
+    endfunction
+    integer pf_bad = 0;
+    // hw against the tb's own count of the same event; tol covers the
+    // window's edges (the tb counts some events a clock or two before the
+    // counter's flag: at CCMP, DWAIT or WAIT rather than at the step)
+    task pchk(input integer i, input [255:0] nm, input integer tb, input integer tol);
+        integer hw;
+        begin
+            hw = pc(i);
+            if (hw - tb > tol || tb - hw > tol) begin
+                pf_bad = pf_bad + 1;
+                $display("FAIL perf counter %0d (%0s): %0d, tb counts %0d", i, nm, hw, tb);
+            end else
+                $display("ok   perf counter %0d (%0s): %0d (tb %0d)", i, nm, hw, tb);
+        end
+    endtask
+`ifdef MEMBENCH
+    // The bench programs do not touch the counters: they run exactly in the
+    // timed window (forced between edges), and the end compares them with
+    // the tb's counters (n_step and friends) and these:
+    integer pt_as = 0, pt_drop = 0, pt_fill = 0;
+    always @(negedge dut.clk) force dut.g_fastmem.u_perf.run = (t0 > 0 && t1 == 0);
+    always @(posedge clk12) if (t0 > 0 && t1 == 0) begin
+        if (!dut.cpu.as_i) pt_as = pt_as + 1;
+        if (dut.cpu.ic_we && !dut.cpu.ic_flush) begin
+            if (dut.cpu.ic_wt[dut.cpu.TAGW-1]) pt_fill = pt_fill + 1;
+            else if (ev_old[dut.cpu.TAGW-1]) pt_drop = pt_drop + 1;   // a drop of an entry holding code
+        end
+    end
+`else
+`ifdef FASTMEM
+    // test_top.s: an Amiga reset at its write to $8F60 (perf_cnt's own
+    // input only: a real one would reset the whole board)
+    integer pf_rst = 0;
+    always @(posedge dut.clk) begin
+        if (dut.cpu.cyc_start && !dut.cpu.eRWn && dut.cpu.a_r == 31'h47B0) pf_rst = 4;
+        if (pf_rst > 0) begin dut.g_fastmem.u_perf.sim_reset = 1'b1; pf_rst = pf_rst - 1; end
+        else dut.g_fastmem.u_perf.sim_reset = 1'b0;
+    end
+`endif
+`endif
+`endif
     reg [3:0]  pb_pq = 0; reg pb_mr = 0;
     always @(posedge dut.clk) begin
         pb_pq <= dut.cpu.q;
@@ -624,6 +682,24 @@ module tb;
         $display("instruction cache (whole run): valid entries dropped by a write %0d, of which held another address %0d; refilled after such a drop %0d",
                  ic_drop, ic_fdrop, ic_refill);
         $display("stall clocks: fast write waits for the port %0d, read waits (CFREE) %0d, chip write waits %0d", st_fw, st_fr, st_cw);
+`ifdef TG68_PERF
+        pchk(0, "clocks", n_clk, 2);
+        pchk(1, "kernel steps", n_step, 2);
+        pchk(2, "fetch steps", sk_f, 2);
+        pchk(3, "predicted fetches", sk_f4, 2);
+        pchk(4, "icache + dcache hits", n_hit - pc(5), 2);
+        pchk(6, "internal steps", sk_i, 2);
+        pchk(7, "SDRAM fetches + data reads", n_dir - pc(8), 2);
+        pchk(9, "old-route cycles (all six)", n_bus - (pc(10) + pc(11) + pc(12) + pc(13) + pc(14)), 2);
+        pchk(15, "old-route clocks", pt_as, 2);
+        pchk(16, "chip write waits", st_cw, 2);
+        pchk(17, "fast write waits", st_fw, 2);
+        pchk(18, "icache drops of code", pt_drop, 2);
+        pchk(19, "icache fills", pt_fill, 2);
+        $display("perf: dcache hits %0d, SDRAM data reads %0d, old route: fetch chip %0d other %0d, read chip %0d other %0d, write chip %0d other %0d",
+                 pc(5), pc(8), pc(9), pc(10), pc(11), pc(12), pc(13), pc(14));
+        if (pf_bad) errors = errors + pf_bad;
+`endif
         $display("per cycle, in 11.75 ns clocks: AS->DTACK %0.1f, DTACK->AS up %0.1f, AS up->next AS %0.1f",
                  sum_as2dt/n_fm/11.746, sum_dt2up/n_fm/11.746, sum_up2as/n_fm/11.746);
         $display("AS->DTACK reads %0d avg %0.1f clk, writes %0d avg %0.1f clk", n_rd, s_rd/n_rd/11.746, n_wr, s_wr/n_wr/11.746);
@@ -774,6 +850,21 @@ module tb;
         // v2.0: 12x -> 16x loads CL3, 16x -> 20x keeps it, 20x -> 12x loads
         // CL2: still 3 (step 13: 16x -> 14x loaded CL2, 14x -> 12x none)
         if (u_sdram.n_mrs != 3) begin $display("FAIL: expected 3 SDRAM mode loads (init, CL3, CL2)"); errors = errors + 1; end
+`endif
+`ifdef TG68_PERF
+        // step 18 (test_top.s): the counters through the registers
+        check(24'h8260, 32'h00001400, "perf: frozen at power-on, 20 counters");
+        check(24'h8268, 32'h00000000, "perf: steps, bits 39:32");
+        check(24'h8274, 32'h00005400, "perf: frozen by an Amiga reset");
+        check(24'h8278, 32'h00009400, "perf: run clears the reset flag");
+        check(24'h827C, 32'h00000000, "perf: cleared");
+        check(24'h8280, 32'h00001401, "perf: frozen, counter 1, wrong key ignored");
+        if (rd32(24'h8264) < 50 || rd32(24'h826C) == 0 || rd32(24'h826C) != rd32(24'h8270)) begin
+            $display("FAIL perf: steps %0d (>= 50 expected), clocks %0d then %0d (frozen: equal, not 0)",
+                     rd32(24'h8264), rd32(24'h826C), rd32(24'h8270));
+            errors = errors + 1;
+        end else
+            $display("ok   perf: %0d kernel steps in the run, %0d clocks, unchanged while frozen", rd32(24'h8264), rd32(24'h826C));
 `endif
         // step 17 (test_top.s, the 8F50 markers)
         check(24'h8230, 32'h0000FA57, "step 17: code kept over writes to its index");

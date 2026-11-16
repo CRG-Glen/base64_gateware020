@@ -10,6 +10,8 @@
 # BENCH_ASD="--defsym SPEED18=1" sim/run.sh bench copy|read|scatter|c   at 20x (SPEED16 too: 16x)
 #   sim/run.sh bench sd                  SD controller, SPI loopback
 # CORE=tg68_020_b0_nobf_smul sim/run.sh bus   tests another core variant
+# PERF=0 sim/run.sh ...      without the step 18 performance counters (the
+#                            normal build); default PERF=1, as build.py --perf
 set -e
 cd "$(dirname "$0")"
 R=../rtl
@@ -19,6 +21,8 @@ mem() { python3 -I -c "
 d=open('$1','rb').read(); d+=bytes(8192-len(d))
 open('$2','w').write('\n'.join('%02x%02x'%(d[i],d[i+1]) for i in range(0,8192,2))+'\n')"; }
 VL="verilator --binary --timing -Wno-fatal -Wno-lint -Wno-style -O2 --top-module tb $VLFLAGS"
+PSRC=; PASD=
+if [ "${PERF:-1}" = 1 ]; then VL="$VL -DTG68_PERF"; PSRC=$R/base64_tg68/perf_cnt.v; PASD="--defsym PERF=1"; fi
 SLAVES="$R/base64_fx68k/autoconfig_zii.v $R/base64_fx68k/fastmem_zii.v $R/base64_fx68k/turbomem_zii.v \
  $R/base64_fx68k/sd_subsystem.v $R/base64_fx68k/sdcard.v $R/base64_fx68k/sdram_ctrl.v $R/base64_fx68k/fifo.v \
  $R/base64_fx68k/shifter.v $R/base64_fx68k/rx_cpu_buf.v $R/base64_fx68k/tx_cpu_buf.v"
@@ -30,11 +34,11 @@ bus)
   ./obj_dir/tb_bus ;;
 top)
   $AS -o tt.o test_top.s && $LD -o tt.elf tt.o 2>/dev/null && $OC tt.elf tt.bin && mem tt.bin rom_top.mem
-  $VL tb_top.sv $R/base64_tg68/base64_tg68_top.sv $R/base64_tg68/clkgen.v $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v $SLAVES -o tb_top > build_top.log 2>&1
+  $VL tb_top.sv $R/base64_tg68/base64_tg68_top.sv $R/base64_tg68/clkgen.v $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v $SLAVES $PSRC -o tb_top > build_top.log 2>&1
   ./obj_dir/tb_top ;;
 fastmem)
-  $AS --defsym FASTMEM=1 -o tf.o test_top.s && $LD -o tf.elf tf.o 2>/dev/null && $OC tf.elf tf.bin && mem tf.bin rom_top_fm.mem
-  $VL -DFASTMEM tb_top.sv sdram_model_checked.v $R/base64_tg68/base64_tg68_top.sv $R/base64_tg68/clkgen.v $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v $SLAVES -o tb_fm > build_fm.log 2>&1
+  $AS --defsym FASTMEM=1 $PASD -o tf.o test_top.s && $LD -o tf.elf tf.o 2>/dev/null && $OC tf.elf tf.bin && mem tf.bin rom_top_fm.mem
+  $VL -DFASTMEM tb_top.sv sdram_model_checked.v $R/base64_tg68/base64_tg68_top.sv $R/base64_tg68/clkgen.v $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v $SLAVES $PSRC -o tb_fm > build_fm.log 2>&1
   ./obj_dir/tb_fm ;;
 bench)
   # run.sh bench [copy|read|scatter]: fast RAM throughput, timed 2nd pass
@@ -61,7 +65,7 @@ bench)
        m68k-linux-gnu-ld -T bench_c.ld -o bc.elf bc.o 2>/dev/null && m68k-linux-gnu-objcopy -O binary bc.elf cimg.bin ;;
   esac
   $AS $ASD $BENCH_ASD -o tm.o $SRC && $LD -o tm.elf tm.o 2>/dev/null && $OC tm.elf tm.bin && mem tm.bin rom_mem.mem
-  $VL -DFASTMEM -DMEMBENCH $D tb_top.sv sdram_model_checked.v $R/base64_tg68/base64_tg68_top.sv $R/base64_tg68/clkgen.v $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v $SLAVES -o tb_bench > build_bench.log 2>&1
+  $VL -DFASTMEM -DMEMBENCH $D tb_top.sv sdram_model_checked.v $R/base64_tg68/base64_tg68_top.sv $R/base64_tg68/clkgen.v $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v $SLAVES $PSRC -o tb_bench > build_bench.log 2>&1
   if [ "$2" = op ]; then ./obj_dir/tb_bench > op.log; grep -v "^OPMARK\|^per cycle\|^AS->DTACK\|^1 KB" op.log; python3 -I gen_op.py report < op.log
   else ./obj_dir/tb_bench | grep -v "^per cycle\|^AS->DTACK"; fi ;;
 esac

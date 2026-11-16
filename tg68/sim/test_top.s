@@ -316,6 +316,60 @@ c17e:   move.l  (%a0)+,(%a1)+
         move.l  %d4,0x8250          | 8250 00000002
         jsr     0x08005502
         move.l  %d4,0x8254          | 8254 00000002
+        .ifdef PERF
+        | -- step 18: the performance counters (perf_cnt.v) through the ROM
+        | board's status window: +$F00E control, +$F010-$F014 the selected
+        | counter (the tb puts the board at $EA0000) --
+        lea     0xEAF00E,%a0
+        moveq   #0,%d0
+        move.w  (%a0),%d0
+        move.l  %d0,0x8260          | 8260 00001400: frozen since power-on, 20 counters
+        move.w  #0x5C80,(%a0)       | run
+        moveq   #49,%d1
+1:      dbra    %d1,1b
+        move.w  #0x5C40,(%a0)       | freeze
+        move.w  #0x5C01,(%a0)       | select 1: kernel steps
+        move.w  2(%a0),%d0          | bits 15:0
+        swap    %d0
+        move.w  4(%a0),%d0          | bits 31:16
+        swap    %d0
+        move.l  %d0,0x8264          | 8264 (the tb compares it with the counter)
+        moveq   #0,%d0
+        move.w  6(%a0),%d0          | bits 39:32
+        move.l  %d0,0x8268          | 8268 00000000
+        move.w  #0x5C00,(%a0)       | select 0: clocks
+        moveq   #0,%d0
+        move.w  2(%a0),%d0
+        move.l  %d0,0x826C          | 826C ...
+        moveq   #9,%d1
+1:      dbra    %d1,1b
+        moveq   #0,%d0
+        move.w  2(%a0),%d0
+        move.l  %d0,0x8270          | 8270 the same: frozen
+        move.w  #0x5C80,(%a0)       | run, then an Amiga reset (the tb pulses
+        move.b  #1,0x8F60           | perf_cnt's reset input at this write)
+        moveq   #9,%d1
+1:      dbra    %d1,1b
+        moveq   #0,%d0
+        move.w  (%a0),%d0
+        move.l  %d0,0x8274          | 8274 00005400: frozen by the reset
+        move.w  #0x5C80,(%a0)       | run again: the reset flag goes
+        moveq   #0,%d0
+        move.w  (%a0),%d0
+        move.l  %d0,0x8278          | 8278 00009400
+        move.w  #0x5C40,(%a0)       | freeze
+        move.w  #0x5CC0,(%a0)       | clear
+        move.w  #0x5D80,(%a0)       | wrong key: ignored
+        move.w  #0x5C01,(%a0)
+        move.w  2(%a0),%d0
+        swap    %d0
+        move.w  4(%a0),%d0
+        or.w    6(%a0),%d0
+        move.l  %d0,0x827C          | 827C 00000000: cleared
+        moveq   #0,%d0
+        move.w  (%a0),%d0
+        move.l  %d0,0x8280          | 8280 00001401: still frozen, counter 1
+        .endif
         | a pair whose second word is NOT cached must not be taken as a pair
         move.l  #0x31323334,0x08000D00  | both words cached
         move.b  #0x99,0x08000D03    | byte write: the second word's entry is dropped

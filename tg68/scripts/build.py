@@ -45,6 +45,10 @@ ap.add_argument('--first-pass', action='store_true',
                 help='stop starting new seeds once one has passed timing')
 ap.add_argument('--keep-sdf', action='store_true',
                 help="keep every seed's .sdf (23 MB each), not only the best one's")
+ap.add_argument('--perf', action='store_true',
+                help='TEST BUILD with the performance counters (step 18, sw/perf): defines '
+                     'TG68_PERF and adds perf_cnt.v; output in build/<cfg>_perf, files '
+                     'base64_tg68_<cfg>_perf*.bit. Without it the netlist is the normal one')
 ap.add_argument('--x16', action='store_true',
                 help='EXPERIMENTAL: for a board whose ICS570B is rewired from x12 to x16 '
                      '(113.5 MHz). Defines TG68_X16, output in build/<cfg>_x16. Overclocked: '
@@ -67,7 +71,7 @@ YOSYS = find_tool('YOSYS', 'yosys', 'yowasp-yosys')
 NEXTPNR = find_tool('NEXTPNR', 'nextpnr-ecp5', 'yowasp-nextpnr-ecp5')
 ECPPACK = os.environ.get('ECPPACK', 'ecppack')
 fm, sd = CFGS[a.cfg]
-name = a.cfg + ('_x16' if a.x16 else '')
+name = a.cfg + ('_x16' if a.x16 else '') + ('_perf' if a.perf else '')
 out = os.path.join(ROOT, 'build', name)
 os.makedirs(out, exist_ok=True)
 for f in ('turbomem.mem', 'sfsd.mem'):        # $readmemh looks in the cwd
@@ -90,12 +94,14 @@ srcs_v = [R('base64_tg68', 'tg68_bus.v'), R('base64_tg68', 'clkgen.v'), R('tg68'
          [R('base64_fx68k', f + '.v') for f in
           ('autoconfig_zii', 'fastmem_zii', 'turbomem_zii', 'sd_subsystem', 'sdcard',
            'sdram_ctrl', 'fifo', 'shifter', 'rx_cpu_buf', 'tx_cpu_buf')]
+if a.perf:
+    srcs_v.append(R('base64_tg68', 'perf_cnt.v'))
 
 if not a.skip_synth:
     print('== yosys  (%s: ENABLE_FASTMEM=%d ENABLE_SD=%d)' % (a.cfg, fm, sd))
     # --x16: every 16x change is under `ifdef TG68_X16, so without it yosys
     # reads exactly the 12x text (and the 12x bitstreams stay reproducible)
-    dfl = '-DTG68_X16 ' if a.x16 else ''
+    dfl = ('-DTG68_X16 ' if a.x16 else '') + ('-DTG68_PERF ' if a.perf else '')
     script = '\n'.join(['read_verilog %s-sv ' % dfl + f for f in srcs_sv] +
                        ['read_verilog %s' % dfl + f for f in srcs_v] + [
         'read_verilog -lib +/ecp5/cells_bb.v',   # BB: the SD card input pins
