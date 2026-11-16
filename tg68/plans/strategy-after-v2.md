@@ -513,7 +513,67 @@ the planner or Glen reads it):
 **Stop and report if** the default build is not byte-identical with the
 option off (the ifdef leaks).
 
-**Log.** (the builder writes here)
+**Log.**
+
+- Built on branch `step18-perf` (from `step17-icache-tag-drop`).
+- RTL, all under `` `ifdef TG68_PERF ``: `rtl/base64_tg68/perf_cnt.v`
+  (20 counters x 40 bits; power-on frozen and zero; `slave_reset` freezes
+  them and sets "frozen by a reset" if they were running; select / freeze /
+  run / clear). **One change to the plan's command set: clear does not
+  start the counters** (`perf CLEAR` sends clear, then run), so a frozen
+  set can be zeroed and checked. Read multiplexer in two registered
+  stages (the one-stage version missed 1T by up to 1.1 ns on the first
+  build). `tg68_bus.v` makes events 1-15 and 17-19 as registered flags
+  from registers and the kernel's step-time outputs (no load on any
+  sequencer decision); counter 18 counts drops of entries that held code
+  when DECIDE looked them up (`pv_dv`, set beside the drop's `ic_we`), not
+  every drop write (1933 in bench c, nearly all of them empty entries).
+  Top level: counter 16 = `postable && wb_full` (a Chip RAM write waiting
+  for buffer room), registered. `turbomem_zii.v`: +$F00E control (key
+  $5C) / stat, +$F010-$F014 the selected counter (A4 decoded only with
+  TG68_PERF). `build.py --perf`: `-DTG68_PERF`, adds `perf_cnt.v`,
+  `build/full_perf/`.
+- Counters: 0 clocks, 1 steps, 2 fetch steps, 3 predicted fetches, 4
+  instruction-cache hit steps, 5 data-cache hit steps, 6 internal steps,
+  7 / 8 direct SDRAM reads (fetch / data), 9-14 old-route cycles (fetch,
+  read, write x Chip RAM / elsewhere), 15 clocks with an old-route cycle
+  in progress, 16 Chip RAM write waits, 17 fast RAM write waits for the
+  port (`st_fw`'s expression), 18 drops of code, 19 instruction-cache
+  fills.
+- `sw/perf/perf.s` (68000, `build.sh`, `ReadMe.txt`): `perf` (freeze,
+  print all with names in decimal, run on if it was running), CLEAR /
+  FREEZE / RUN; reports "no counters" on any other gateware. Tested under
+  vamos with a fake board (`build.sh test`): running, frozen by a reset,
+  no counters, usage, a 40-bit value.
+- Sims: `run.sh` builds with the counters by default (`PERF=0` without).
+  test_top.s (fastmem) reads them through the registers: power-on frozen
+  $1400, steps over a 50-turn loop (153), clocks unchanged while frozen,
+  an Amiga reset (a sim-only pulse on perf_cnt's reset) freezes and flags
+  ($5400), run clears the flag ($9400), clear zeroes, a $5D key is
+  ignored. Every bench at 12x compares 13 counter groups with the tb's own
+  counts (n_clk, n_step, sk_f, sk_f4, n_hit, sk_i, n_dir, n_bus, st_cw,
+  st_fw, and new tb counts of old-route clocks, code drops and fills):
+  **all exact** (tolerance 2 allowed for the window's edges, never used).
+  At 16x / 20x the tb's counters tick on the 12x clock and describe
+  nothing, so only the clock count is checked there (window x 20/12 or
+  16/12: exact).
+- Mutants: counter 2's increment removed: bench c fails (0 against
+  9322). The reset flag not set: fastmem fails (8274 = $1400).
+- Regression, all PASS: bus, top, fastmem with PERF=1 and PERF=0;
+  fastmem CAL_TEST and CAL_DRIFT; S15_DEFAULT=0 and S17_DEFAULT=0; benches
+  c, coff, copy, read, scatter, readoff, chip, wrchip, wrfast, wrmix,
+  sd, op; c and copy with PERF=0; c, copy, read, scatter at 20x; c at 16x.
+  Clock counts identical to step 17 (the counters only watch).
+- **Default build byte-identical to step 17**: `build.py full --seed 10
+  --seeds 1` without `--perf` gives the same plain and `_fast` files as
+  `bitstreams/step17_ickeep/` (`cmp`).
+- Perf build, first netlist (one-stage read multiplexer), seeds 1-12: 7
+  of 12 failed to route (all on the same net, `u_clkgen.g_pll.u_gbuf_CLKI`:
+  the clock multiplexer's output into the DCCA), the other 5 failed
+  timing: the counters' read multiplexer (logic -> logic, to -1.06 ns),
+  and the design's usual tightest 1T paths (`cc_want_k` / `ic_qt_*` ->
+  step decision, `fp_rsel_n` -> cache RAMs, to -3.3 ns). Utilisation
+  12,009 LUT4 (+724), 3,557 FF (+879), 1,029 CCU2C (+400), 35 DP16KD.
 
 ---
 
