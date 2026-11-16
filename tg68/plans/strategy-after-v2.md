@@ -294,7 +294,98 @@ still index drops.
 is not a plain bug in the new code; or the predictor's read
 (`fp_rsel_n`) turns out to share a DECIDE clock of a write cycle.
 
-**Log.** (the builder writes here)
+**Log.**
+
+- Built on branch `step17-icache-tag-drop` (from `main` at 59ff2a7).
+- **One addition to the plan: Chip RAM mirrors.** The motherboard repeats
+  Chip RAM through $000000-$1FFFFF (an A500+'s 1 MB shows twice, 512 KB
+  four times), so `$104100` and `$004100` can be the same word. The index
+  drop covered that by accident (every mirror distance is a multiple of
+  8 KB); a plain tag compare would keep stale code. So for a write in the
+  Chip RAM window, tags that differ only in address bits 19-20 count as
+  the same address (`iw_msk`, `IW_MIR`) and the drop happens. Strictly
+  more conservative than the plan; no other cacheable window repeats.
+  Flagged for the planner, since it is a coherency point the plan did not
+  mention.
+- RTL (`tg68_bus.v`, IC KEEP comment): `iw_t_e/o` loaded under `dec_r`
+  from `ic_tq_e/o`; `iw_dirty` loads `ic_we || iw_we_d` in DECIDE (the
+  RAMs read before they write, so a write landing on the read's edge is
+  not in the tags) and is set by any later `ic_we`; `iw_keep` also needs
+  `!ic_we` (a write landing before the drop would) and `!pf_fill`;
+  `iw_k2` carries the odd bank's keep from `pw_upd` to `pw_upd2`, where
+  only an odd-bank write in that clock (`ic_we && ic_wa[0]`) can still
+  spoil it. Address and tag loads stay unconditional, the keep is only
+  on `ic_we`. Switch `ICKEEP` (`-DS17_DEFAULT=0` = v2.0). All new
+  registers class as adapter ctrl (1T) by name: no classifier change.
+  All exist in the synthesized json (`iw_t_e/o` 14 bits each,
+  `iw_dirty`, `iw_we_d`, `iw_k2`).
+- Sim checks (`tg68_bus.v`, `ifndef YOSYS`): `iw_ra_bad` (the RAMs' read
+  on the edge into every DECIDE clock used `k_addr`'s row: 0 in every
+  sim, so `fp_rsel_n` never shares a DECIDE read), `iw_skip_bad` (two
+  clocks after a skipped drop the entry must not hold the written
+  address or a mirror of it), `iw_skips`, `iw_forced`.
+- Tests (`test_top.s`, fastmem, markers at $8F50, results $8230-$8254;
+  `tb_top.sv` looks at the entries when the marker write starts): (1)
+  code at $08005100 kept over a pair write 8 KB up and a Chip RAM write
+  at its index, run again with no fill, then a write to its immediate
+  drops it; (2) pair writes: second word at cached code's index kept,
+  second word = the code dropped; (3) fast $08009100 vs chip $9100 (tags
+  differ only in the region bits), both ways; (4) a write through the
+  mirror ($109104) drops chip $9104 (the tb's Chip RAM now repeats at
+  $108000 and its write shadow folds bit 20); (5) a fill on the lookup's
+  edge: smc1 at $08005400, its +8..+12 evicted by code 8 KB up, so the
+  storing run's fetch of +8 misses as a pair read whose fill of +10
+  lands on the edge the store's lookup reads; (6) a fill in the decision
+  clock: smc1 at $08005502, the nop after the store an odd word, whose
+  single read's prefetch of the store's target the posted store waits
+  for in DECIDE. 14 entry checks, 10 value checks.
+- Mutants (fastmem):
+  | mutant | caught by |
+  | --- | --- |
+  | (a) keep always 1 | smc tests, stale-hit oracle, `iw_skip_bad` (27), markers 5 and 9 (22 errors) |
+  | (b) compare ignores the region bits | markers 6, 7, 8 (test 3) |
+  | (c) `iw_dirty` stuck at 0 | test 5: storing run 5 not 2, stale hit, `iw_skip_bad` |
+  | (d) no mirror mask | test 4: marker 9, result 8244, stale hit |
+  | (e) `iw_dirty` without `iw_we_d` (the read-edge write) | test 5, as (c) |
+  | (f) no `!ic_we` in `iw_ok` | test 6 (before test 6 it passed) |
+  | (g) no `!pf_fill` | **not testable**: a fill cannot start in a drop's decision clock. A posted write's DECIDE needs the port idle, so no ack can come in DECIDE or the two clocks after (`pf_fill` needs an ack, DDATA2 or `pf_fill_d`, the last two only in the sequencer's own read states); an old-route write also starts with the port idle and issues no request until LATCH. Kept as a guard; `iw_skip_bad` would see it. |
+  | step 17 off (`-DS17_DEFAULT=0`) | with the keep checks enabled, 8 errors (every "kept" check); the tb now skips those checks when `ICKEEP` is 0, so the v2.0 reference passes |
+- Regression, all PASS: bus, top, fastmem; fastmem with `CAL_TEST` and
+  `CAL_DRIFT`; bus/top/fastmem with `S15_DEFAULT=0` and with
+  `S17_DEFAULT=0`; benches c, coff, copy, read, scatter, readoff, chip,
+  wrchip, wrfast, wrmix, sd, op; c, copy, read, scatter at 20x. No SDRAM
+  model violation, no stale hit, `iw_ra_bad` and `iw_skip_bad` 0.
+- Numbers (12x, timed-pass clocks, against section 5):
+  | bench | v2.0 | step 17 | |
+  | --- | --- | --- | --- |
+  | c | 65892 | 65808 | -0.13% |
+  | coff | 120948 | 120948 | |
+  | copy | 9432 | 9384 | -0.5% |
+  | read | 6204 | 6204 | |
+  | scatter | 3756 | 3756 | |
+  | readoff | 11316 | 11316 | |
+  | chip | 31440 | 31440 | |
+  | wrfast | 7464 | 6732 | **-9.8%** |
+  | wrmix | 31572 | 31572 | |
+  | op | 21600 | 21468 | -0.6%, see below |
+  **bench op's rows moved, against the plan's expectation, all of them
+  down**: push + pop of a long 25.88 -> 18.88 clocks, tst.l 5.25 -> 4.75,
+  clr.l (a0) 18.56 -> 18.00, addq.l #1,(a0) 18.62 -> 18.56, movem.l
+  196.88 -> 196.50; every other row identical. The planner moved the
+  bench's data and stack, but the stack's top ($080307FC) still shares an
+  index with the bench's own code ($080047FC): each push dropped a code
+  word. That is the case step 17 removes.
+  Entries of another address dropped: 0 everywhere except bench op (5,
+  all forced by `iw_dirty`: the previous write's drop of an invalid
+  entry dirties the next write's lookup; conservative). `read` and
+  `scatter` kept their 3 entries but did not get faster (the code was not
+  run again after). At 20x (step 17 off / on): c 39804 / 39816 (+12
+  ticks, one 7 MHz bus cycle at the end marker: the timed window is cut
+  by Chip RAM marker writes), copy 6168 / 6120 (-0.8%), read 4032 /
+  4032, scatter 2556 / 2556.
+- Possible refinement, not done: an invalid entry needs no drop either
+  (skip on `!valid` too). It would remove bench op's 5 forced drops;
+  behaviour otherwise identical. Left as the plan wrote it.
 
 ---
 
