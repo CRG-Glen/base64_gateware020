@@ -84,6 +84,7 @@ VLFLAGS=-DS15_DEFAULT=0 sh sim/run.sh ...      # the same with step 15 switched 
 python3 scripts/build.py full --seed 1 --seeds 8   # 4 seeds at a time, build/full/seed<N>/, table in seeds.txt
 python3 scripts/build.py full --skip-synth --seed 9 --seeds 8   # more seeds, same netlist
 python3 scripts/check_timing.py build/full/base64_tg68.sdf --paths 4 [--freq 113.51|141.88]
+python3 scripts/build.py full --perf ...       # step 18 counter test build, build/full_perf/ (sims: PERF=0 for without)
 ```
 
 Toolchain: yowasp-yosys 0.70, yowasp-nextpnr-ecp5 0.11, ecppack

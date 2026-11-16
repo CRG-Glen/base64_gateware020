@@ -829,6 +829,13 @@ Glen's board at x16.
    seeds (`--seeds 16`): the timing margins are thin, and only a seed that
    passes `check_timing.py` outright should be used (step 11's seed 1
    missed by 0.5 ns and failed on hardware).
+4. `--perf` builds the **performance counter test build** (step 18) into
+   `build\full_perf\` (`base64_tg68_full_perf.bit`): the same design plus
+   20 counters that the `perf` command (`sw/perf`, see its ReadMe) reads
+   from the Amiga. Without `--perf` the netlist is exactly the normal one
+   (the counters are under `` `ifdef TG68_PERF ``, and `perf_cnt.v` is
+   only read with the option). In the sims they are on by default
+   (`PERF=0 sh sim/run.sh ...` for the normal build).
 
 **One trap, already handled in `build.py`:** the TG68 kernel and ALU must
 keep their own hierarchy during synthesis (`keep_hierarchy`, then
