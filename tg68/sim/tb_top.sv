@@ -683,6 +683,13 @@ module tb;
                  ic_drop, ic_fdrop, ic_refill);
         $display("stall clocks: fast write waits for the port %0d, read waits (CFREE) %0d, chip write waits %0d", st_fw, st_fr, st_cw);
 `ifdef TG68_PERF
+        // the tb's own counters tick on clk12, so they only describe the
+        // system clock at 12x; at 16x / 20x only the clock count is checked,
+        // against the window scaled by the multiplier
+        if (dut.clk_cur != 2'd0) begin
+            pchk(0, "clocks (window, scaled)", (n_clk * (dut.clk_cur == 2'd2 ? 16 : 20)) / 12, 3);
+            $display("perf: steps %0d, fetch %0d, predicted %0d (not compared away from 12x)", pc(1), pc(2), pc(3));
+        end else begin
         pchk(0, "clocks", n_clk, 2);
         pchk(1, "kernel steps", n_step, 2);
         pchk(2, "fetch steps", sk_f, 2);
@@ -696,6 +703,7 @@ module tb;
         pchk(17, "fast write waits", st_fw, 2);
         pchk(18, "icache drops of code", pt_drop, 2);
         pchk(19, "icache fills", pt_fill, 2);
+        end
         $display("perf: dcache hits %0d, SDRAM data reads %0d, old route: fetch chip %0d other %0d, read chip %0d other %0d, write chip %0d other %0d",
                  pc(5), pc(8), pc(9), pc(10), pc(11), pc(12), pc(13), pc(14));
         if (pf_bad) errors = errors + pf_bad;
