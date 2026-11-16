@@ -402,8 +402,11 @@ is not a plain bug in the new code; or the predictor's read
   numbers moved both ways by up to 7% / 19%, where step 17 cannot change
   anything: spread. New test from Glen, the Frontier "CPU" timedemo: 31.1
   / 41.2 / 57.1 fps average (12x / 16x / 20x), a far bigger spread between
-  speeds than the Amiga-side one; the baseline for the next steps. The
-  self-modifying / trackloaded game (test item 4) was not reported.
+  speeds than the Amiga-side one; the baseline for the next steps.
+  Test item 4 (code the CPU writes and then runs), from ADF under
+  Kickstart 3.x: Eon (The Black Lotus) runs fine. Hardwired (Crionics &
+  The Silents) stops at "this demo don't like axel" on step 17 and on
+  v2.0 alike: the demo's own accelerator check, so no test either way.
 - Possible refinement, not done: an invalid entry needs no drop either
   (skip on `!valid` too). It would remove bench op's 5 forced drops;
   behaviour otherwise identical. Left as the plan wrote it.

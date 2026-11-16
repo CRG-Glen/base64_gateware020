@@ -29,8 +29,8 @@ when to stop and report. Results go in the plan's own log section.
 1. ~~Step 17~~, `step17-icache-tag-drop`: **runs on Glen's A500+ at
    12x, 16x and 20x** (seed 10, `tg68/bitstreams/step17_ickeep/` on that
    branch). Benchmarks as v2.0, as the sim predicted. One addition to
-   the plan (Chip RAM mirrors), see its log. Not reported yet: a
-   self-modifying / trackloaded game. New baseline: Glen's Frontier
+   the plan (Chip RAM mirrors), see its log. Eon (trackloaded demo)
+   runs; Hardwired refuses accelerators on v2.0 too. New baseline: Glen's Frontier
    "CPU" timedemo (31.1 / 41.2 / 57.1 fps).
 2. **Step 18**, `step18-perf` (counters in a test build and the `perf`
    command): ready to build (stacked on 17).
