@@ -407,6 +407,10 @@ is not a plain bug in the new code; or the predictor's read
   Kickstart 3.x: Eon (The Black Lotus) runs fine. Hardwired (Crionics &
   The Silents) stops at "this demo don't like axel" on step 17 and on
   v2.0 alike: the demo's own accelerator check, so no test either way.
+  Desert Dream (Kefrens) runs on both; on both, the 3D ship at the start
+  shows small polygon errors (the same on v2.0, so not step 17; likely
+  the demo's timing on a fast CPU, to be narrowed down by Glen: speed 12
+  vs 20, and under Kickstart 1.3, which leaves the caches off).
 - Possible refinement, not done: an invalid entry needs no drop either
   (skip on `!valid` too). It would remove bench op's 5 forced drops;
   behaviour otherwise identical. Left as the plan wrote it.
