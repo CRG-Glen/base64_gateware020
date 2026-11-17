@@ -574,6 +574,35 @@ option off (the ifdef leaks).
   and the design's usual tightest 1T paths (`cc_want_k` / `ic_qt_*` ->
   step decision, `fp_rsel_n` -> cache RAMs, to -3.3 ns). Utilisation
   12,009 LUT4 (+724), 3,557 FF (+879), 1,029 CCU2C (+400), 35 DP16KD.
+- Second netlist (two-stage read multiplexer), seeds 1-16: **all 16 failed
+  to route** on the same net. The timing report of a router1 diagnostic
+  showed why the multiplexer was slow: yosys built the variable
+  part-select `flat[sel*W +: W]` with a multiplier (4 extra MULT18X18D,
+  19 ns). Rewritten with constant indices (a loop of compares): 10
+  MULT18X18D as the normal build, 12,022 LUT4, 3,757 FF.
+- Third netlist, router2, seeds 1-16: 12 failed to route (all on
+  `u_gbuf_CLKI`), 4 failed timing in the usual classes (clkena -> kernel
+  to -2.10, kernel -> logic -1.19, icache/direct -> logic -0.67). So the
+  multipliers were not what blocked router2.
+- **router1** (new `ROUTER` override in build.py, default still router2;
+  normal builds unchanged), same netlist, seeds 1-16: **all route, 14 of
+  16 pass** (3 and 5 fail: icache/direct -> logic -0.64 / -0.17).
+  Worst 1T slack +0.16 to +1.43 ns, multicycle +2.9 to +6.4 ns. Scored at
+  16x / 20x: seed 2 1.158x / **1.447x** (the lowest; v2.0's seed 10 was
+  1.233x / 1.541x, step 17's 1.266x / 1.582x), 10 1.179 / 1.474, 15
+  1.188 / 1.485, 12 1.205 / 1.507, ... 8 1.302 / 1.627. Shipped seed 2:
+  `bitstreams/step18_perf/` (`_plain`, `_fast`, timing at 12x / 16x /
+  20x, `seeds.txt`, `perf`, `perf_ReadMe.txt`, `speed`, `README.txt` with
+  Glen's workload list).
+- **For the planner: router1 may be the better router for every build.**
+  On this netlist it routed what router2 could not and gave margins no
+  router2 build of this design has had (14 of 16 seeds passing, against
+  2 of 16 for step 17 and 4 of 18 for v2.0; best 20x ratio 1.447x). It has
+  not been tried on the normal netlist, and the four earlier router1
+  trials (with the multipliers) also passed every CPU class. A normal
+  build with `ROUTER=router1` on 16 seeds is a cheap experiment; whether
+  to ship a router1 build is Glen's and the planner's call (it would
+  change the reference flow in CLAUDE.md).
 
 ---
 

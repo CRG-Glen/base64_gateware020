@@ -34,6 +34,7 @@ step's branch (`step15-fetch-predictor` and so on), where they still are.
 
 | Folder | What changed | Status |
 | --- | --- | --- |
+| `bitstreams/step18_perf/` (branch `step18-perf`, never a release) | step 17 + 20 performance counters, read with the `perf` command (in the folder; `perf_ReadMe.txt`): where a program's time goes (cache hits and misses, Chip RAM code fetches, time on the Amiga's bus, write-buffer waits). Otherwise identical to step 17 | Test build, not yet on hardware. Seed 2 (routed with nextpnr's router1): +1.43 / +4.88 ns; 16x / 20x need 1.16× / 1.45× the worst-case model; 14 of seeds 1-16 pass |
 | `bitstreams/step17_ickeep/` (branch `step17-icache-tag-drop`) | v2.0 + a CPU write drops only its own instruction-cache entry (and its Chip RAM mirrors), no longer cached code at other addresses with the same index (8 KB away). Same three speeds | **Runs on hardware at 12x, 16x and 20x**, SD card included. Benchmarks as v2.0 (within 1% caches on): SysInfo 10804 / 14411 / 18029, AIBB 16.69 / 21.13 / 26.32 MB/s, Frontier timedemo 26.4 / 30.9 / 34.1 fps; Frontier CPU timedemo 31.1 / 41.2 / 57.1 fps. Sim: compiled C -0.1% clocks, fast RAM write bursts -9.8%, push + pop -7 clocks. 12x seed 10: +0.82 / +1.43 ns; 16x / 20x need 1.27× / 1.58× the worst-case model; seeds 6 and 10 of 1-16 pass |
 | **v2.0 release** (`bitstreams/exp20x/` on branch `exp-20x`) | step 15b, with the second PLL at 20x (141.9 MHz) in place of 14x: run-time 12x / 16x / 20x (`speed 20`). SDRAM: two more clocks after each refresh at 20x. Built from the 20x experiment, seed 10 | **Runs on hardware at 12x, 16x and 20x** (hours at 20x), SD card included: SysInfo 18024 Dhrystones at 20x (+25% on 16x), AIBB 26.16 MB/s, xSysInfo fast RAM 36.85 MB/s, Frontier timedemo 33.8 fps. 12x: +0.77 / +2.19 ns; 16x / 20x need 1.23× / 1.54× the worst-case model |
 | `bitstreams/exp18x/` (never released) | the 18x experiment: 18x (127.7 MHz) in place of 14x | Ran on hardware: SysInfo 16225 at 18x (+12.9% on 16x). 18x needs 1.42× the model. Not kept: Glen chose 12x / 16x / 20x |
@@ -878,6 +879,13 @@ actually provides:
 (`--seeds N` for more) until it gets `RESULT: PASS`, and writes `timing.txt`. Expect the 1T classes to
 pass by fractions of a ns: the same thin margin the fx68k README warns
 about, on the same −6 speed grade. The supplied bitstreams:
+
+The step 18 perf build (`build.py full --perf`, with `ROUTER=router1`)
+builds as supplied: seed 2, +1.43 / +4.88 ns, 14 of seeds 1-16 pass,
+1.16× / 1.45× the worst-case model at 16x / 20x. With router2, 12 of 16
+seeds could not route the clock multiplexer's output into its global
+buffer (`u_gbuf_CLKI`) and the rest missed timing; router1 routed all 16.
+The normal build is unchanged (router2, byte-identical to step 17).
 
 Step 17 (a write drops only its own instruction-cache entry) builds as
 supplied (runs on hardware at 12x, 16x and 20x):

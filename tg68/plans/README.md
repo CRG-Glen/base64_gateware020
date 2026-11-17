@@ -33,7 +33,10 @@ when to stop and report. Results go in the plan's own log section.
    runs; Hardwired refuses accelerators on v2.0 too. New baseline: Glen's Frontier
    "CPU" timedemo (31.1 / 41.2 / 57.1 fps).
 2. **Step 18**, `step18-perf` (counters in a test build and the `perf`
-   command): ready to build (stacked on 17).
+   command): **built, waiting for Glen's runs** (`tg68/bitstreams/
+   step18_perf/` on that branch, seed 2, routed with router1). Its log
+   has a finding for the planner: router1 passed 14 of 16 seeds where
+   router2 could not route this build at all.
 3. **Step 19**, `step19-barrel`: ready to build (stacked on 18); the
    planner's trial passed no seed in 16, so it has a seed budget and a
    fallback.
