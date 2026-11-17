@@ -79,16 +79,25 @@ module perf_cnt #(
     // multiplexer in one clock missed 1T by up to 1.1 ns on the first perf
     // build): a 4-way pick inside each group of four counters, then a
     // pick among the groups. q is two clocks behind sel; the CPU reads it
-    // many clocks after its select write.
+    // many clocks after its select write. Written with constant indices
+    // only: a variable part-select (flat[sel*W +: W]) made yosys compute
+    // the bit offset with a multiplier (four MULT18X18D, 19 ns).
     localparam integer NG = (N + 3) / 4;
     wire [NG*W-1:0] grp;
+    integer k;
     generate for (g = 0; g < NG; g = g + 1) begin : gg
         reg [W-1:0] r = {W{1'b0}};
-        always @(posedge clk)
-            r <= (g*4 + sel[1:0] < N) ? flat[(g*4 + sel[1:0])*W +: W] : {W{1'b0}};
+        always @(posedge clk) begin
+            r <= {W{1'b0}};
+            for (k = 0; k < 4; k = k + 1)
+                if (sel[1:0] == k && g*4 + k < N) r <= flat[(g*4 + k)*W +: W];
+        end
         assign grp[g*W +: W] = r;
     end endgenerate
-    always @(posedge clk)
-        q <= (sel < N) ? grp[sel[5:2]*W +: W] : {W{1'b0}};
+    always @(posedge clk) begin
+        q <= {W{1'b0}};
+        for (k = 0; k < NG; k = k + 1)
+            if (sel[5:2] == k && sel < N) q <= grp[k*W +: W];
+    end
 endmodule
 `default_nettype wire
