@@ -1,0 +1,17 @@
+seed  result  worst 1T  worst multicycle  worst failing class
+   1  PASS       +0.62             +6.37  
+   2  PASS       +1.43             +4.88  
+   3  FAIL       -0.64             +4.49  icache/direct -> logic -0.64
+   4  PASS       +0.43             +6.34  
+   5  FAIL       -0.17             +5.93  icache/direct -> logic -0.17
+   6  PASS       +0.97             +5.27  
+   7  PASS       +0.19             +2.92  
+   8  PASS       +0.16             +5.11  
+   9  PASS       +0.80             +5.29  
+  10  PASS       +1.24             +4.93  
+  11  PASS       +0.72             +4.33  
+  12  PASS       +1.01             +4.45  
+  13  PASS       +0.86             +5.78  
+  14  PASS       +0.52             +4.56  
+  15  PASS       +1.16             +5.29  
+  16  PASS       +0.54             +4.54  
