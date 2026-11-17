@@ -156,10 +156,12 @@ def nextpnr_cmd(json, seed, log):
             '--json', json, '--lpf', lpf,
             '--textcfg', 'base64_tg68.config', '--sdf', 'base64_tg68.sdf',
             '--report', 'report.json', '--timing-allow-fail',
-            '--router', 'router2',
+            '--router', os.environ.get('ROUTER', 'router2'),
             # static placer + router2 gave the best results here. The static
             # placer needs nextpnr >= 0.7 (any current oss-cad-suite); set
-            # PLACER=heap for an older nextpnr.
+            # PLACER=heap for an older nextpnr. ROUTER=router1: the step 18
+            # perf build, where router2 could not route the clock
+            # multiplexer's output into its DCCA on most seeds (router1 can).
             '--placer', os.environ.get('PLACER', 'static'),
             '--seed', str(seed), '-l', log]
 
