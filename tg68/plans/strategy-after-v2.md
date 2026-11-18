@@ -594,6 +594,50 @@ option off (the ifdef leaks).
   `bitstreams/step18_perf/` (`_plain`, `_fast`, timing at 12x / 16x /
   20x, `seeds.txt`, `perf`, `perf_ReadMe.txt`, `speed`, `README.txt` with
   Glen's workload list).
+- **Glen's first runs** (seed 2; one session per speed, all workloads in
+  a row, ended by a reset): 12x 537 s, 20x 373 s. Shares (counter values
+  in the files Glen sent; `perf_an`-style arithmetic, clocks per kind as
+  4 / 5 / ~9 / measured):
+
+  | | 12x | 20x |
+  | --- | --- | --- |
+  | steps: fetch / internal / data | 46.8 / 35.7 / 17.5% | 45.1 / 38.6 / 16.3% |
+  | fetches: predicted / icache / SDRAM / buffer / bus | 83.5 / 9.6 / 4.1 / 2.8 / 0.0001% | 82.7 / 10.8 / 3.8 / 2.7 / 0.0001% |
+  | time: predicted fetches | 28.0% | 25.5% |
+  | time: internal steps | 25.6% | 26.3% |
+  | time: cache hits (instruction + data) | 10.3% | 10.3% |
+  | time: posted writes, buffer reads | 7.4% | 6.3% |
+  | time: SDRAM misses (fetch + data) | 4.9% | 4.0% |
+  | time: bus cycles (measured) + their setup | 19.7% | 23.4% |
+  | model total | 95.9% | 95.9% |
+  | bus cycles: chip reads / chip writes / other reads, clocks each | 62M / 95M / 32M, 43 | 61M / 85M / 21M, 69 |
+  | Chip write buffer full | 2.64% | 3.84% |
+  | fast RAM write waits | 0.53% | 0.51% |
+  | code dropped by writes, of fills | 2.5% | 2.5% |
+
+  What they decide, by the plan's rules:
+  - **Chip RAM code over the bus: 4,800 fetches in 9 minutes, 0.0005% of
+    the time.** Chip RAM code ran from the instruction cache (or Frontier
+    in this session was not running from Chip RAM; ask Glen). So step 20's
+    Chip RAM case does not apply. What a 16 KB cache could still remove
+    is part of the SDRAM misses: at most ~4-5% of the time, realistically
+    1-2%. **Below the plan's 5% threshold: do not build step 20 now.**
+  - Deeper Chip write buffer (4.5): at most 2.6% (12x) / 3.8% (20x).
+  - Fast RAM write waits (4.2): 0.5%. Drops of code (what is left of 1.2):
+    2.5% of fills, about 0.1% of the time.
+  - The two big shares are the core's own steps: predicted fetches (26-28%,
+    already the 4-clock floor) and internal steps (26%). **Caveat: a
+    stopped TG68 counts as internal steps** (the kernel's STOP keeps
+    stepping with state "01": `TG68KdotC_Kernel.vhd`, `stop`), and busy
+    wait loops (polling custom registers: 32M "other" bus reads) look like
+    work too. These runs mix idle Workbench time, waits and real work, so
+    how much of the 26% the barrel shifter (step 19) or fewer kernel steps
+    (4.8) could take cannot be read off them.
+  - Next measurements (asked of Glen): the Frontier CPU timedemo alone, and
+    SysInfo alone, each between `perf CLEAR` and `perf`, at 20x; and a
+    Workbench idle minute alone (how much of "internal" is STOP).
+  - A possible counter for a later perf build: steps while stopped
+    (kernel `stop`), so idle time separates from work.
 - **For the planner: router1 may be the better router for every build.**
   On this netlist it routed what router2 could not and gave margins no
   router2 build of this design has had (14 of 16 seeds passing, against
