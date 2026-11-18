@@ -33,9 +33,9 @@ when to stop and report. Results go in the plan's own log section.
    runs; Hardwired refuses accelerators on v2.0 too. New baseline: Glen's Frontier
    "CPU" timedemo (31.1 / 41.2 / 57.1 fps).
 2. **Step 18**, `step18-perf` (counters in a test build and the `perf`
-   command): **built; first runs in** (one mixed session per speed: Chip
-   RAM code over the bus is ~0, so step 20 is not worth it now; per-
-   workload runs asked for) (`tg68/bitstreams/
+   command): **built and run** (per-workload numbers in its log: Frontier
+   CPU timedemo bound by the Chip write buffer 5.5%, cache misses 4.9%,
+   internal steps 21.7%; step 20 not worth it now) (`tg68/bitstreams/
    step18_perf/` on that branch, seed 2, routed with router1). Its log
    has a finding for the planner: router1 passed 14 of 16 seeds where
    router2 could not route this build at all.

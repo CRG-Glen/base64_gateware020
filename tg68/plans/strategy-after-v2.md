@@ -638,6 +638,45 @@ option off (the ifdef leaks).
     Workbench idle minute alone (how much of "internal" is STOP).
   - A possible counter for a later perf build: steps while stopped
     (kernel `stop`), so idle time separates from work.
+- **Glen's per-workload runs (20x, seed 2):**
+
+  | | Frontier CPU timedemo | Frontier WHDLoad, intro | SysInfo (with idle) | Workbench idle |
+  | --- | --- | --- | --- | --- |
+  | length | 124 s | 239 s | 33 s | 73 s |
+  | clocks per step | 5.10 | 9.65 | 4.71 | 4.03 |
+  | steps: fetch / internal / data | 52.8 / 27.7 / 19.6% | 45.4 / 38.3 / 16.3% | 11.5 / 86.0 / 2.5% | 0.3 / 99.6 / 0.1% |
+  | fetches: predicted / icache / SDRAM / buffer | 84.2 / 10.8 / 3.0 / 2.1% | 1.6 / 0.2 / 57.4 / 40.5% | 90.4 / 8.1 / 0.9 / 0.6% | |
+  | time: predicted fetches | 34.8% | 0.3% | 8.8% | 0.2% |
+  | time: internal steps | 21.7% | 15.9% | 73.1% | 98.8% |
+  | time: cache hits (i + d) | 13.5% | 0.1% | 2.5% | |
+  | time: posted writes etc. | 9.5% | 3.6% | 0.6% | |
+  | time: SDRAM misses (est. 9 clocks) | 4.9% | 30.8% | 0.3% | |
+  | time: bus cycles + setup | 9.8% | 17.3% | 14.3% | 0.6% |
+  | Chip write buffer full | **5.47%** | 1.76% | 0.43% | 0 |
+  | fast RAM write waits | 0.96% | 0.50% | 0.03% | |
+  | Chip RAM code over the bus | 2,301 fetches | 5.0M (0.3% of fetches) | 9 | 9 |
+  | model total | 95.3% | 77.5% | 99.6% | 99.9% |
+
+  - **Workbench idle is 99.6% internal steps: a stopped TG68 counts as
+    internal steps**, as the kernel source says. SysInfo's 33 s include
+    its idle window, so its split says little; the Frontier CPU timedemo
+    is the clean CPU workload.
+  - **Frontier WHDLoad (the intro) ran with the caches effectively off**:
+    6M data-cache reads against 245M SDRAM data reads, 5.9M instruction
+    fills against 915M SDRAM fetches, 9.65 clocks a step against 5.10 for
+    the timedemo. CACR EI off (or FI set) under WHDLoad or its slave, not a
+    gateware matter; Glen can look for a cache option. (The model's 9
+    clocks per uncached fetch is low for this case: total 77.5%.)
+  - **Frontier CPU timedemo**, what each item could give at most:
+    a deeper Chip RAM write buffer (4.5) **5.5%** (16.3M Chip writes, 78
+    clocks each on the bus: Frontier draws with the CPU); bigger caches
+    (step 20) part of the 4.9% of SDRAM misses (instruction fills 5.9% of
+    fetches), realistically 1.5-2.5%: **still below the 5% rule, step 20
+    not now**; the barrel shifter (step 19) part of 21.7% of internal
+    steps (how much is shifts is not measured; the timedemo itself will
+    show it); fast RAM write waits 1%.
+  - Chip RAM code over the bus is ~0 in every run except WHDLoad's intro
+    (0.3% of fetches).
 - **For the planner: router1 may be the better router for every build.**
   On this netlist it routed what router2 could not and gave margins no
   router2 build of this design has had (14 of 16 seeds passing, against
