@@ -39,7 +39,8 @@ module sd_subsystem #(
     // TG68: bytes of the boot ROM held in EBR. sfsd.mem was a 32 KB image,
     // but its content (DiagArea, bootloader and the sfsd.device hunk file,
     // which ends at byte 16532) was followed by 0xFF padding only, so it is
-    // trimmed to ROM_BYTES = 18432 = 9 EBRs of 2048 x 9 (v2.0: 15). Reads
+    // trimmed to ROM_BYTES = 18432 (8 EBRs: yosys packs 18432 x 8 bits into
+    // 8 x 18 Kbit; v2.0: 15). Reads
     // above it return 0xFF, so every address reads as before.
     // scripts/build.py refuses an sfsd.mem of any other length.
     parameter integer ROM_BYTES = 18432
@@ -110,7 +111,7 @@ always @(posedge clk) begin
 end
 
 // ---------------------------------------------------------------------------
-// 32 KB boot ROM (TG68: the first ROM_BYTES in EBR, 9 blocks), true dual use: read port on the bus
+// 32 KB boot ROM (TG68: the first ROM_BYTES in EBR, 8 blocks), true dual use: read port on the bus
 // address, write port for the optional flash preloader. Initialised at
 // configuration time from sfsd.mem (one 2-digit hex byte per line).
 // NOTE Diamond build trap: like microrom.mem/nanorom.mem, sfsd.mem must be
