@@ -50,6 +50,10 @@ changing RTL: on the new machine, build seed 10 first and compare with
 `bitstreams/exp20x/` on branch `exp-20x` (its timing report says +0.77 ns
 worst 1T; LUT count, the .bit itself).
 
+4. **Cache and write-buffer study** (asked 19 November):
+   `study-caches.md`. Sizes, layout and the Chip RAM write buffer measured
+   in sim; the SD ROM trim it found is built on branch `sdrom-trim`.
+
 Not pushed: this branch exists only in the local clone (the session had
 no GitHub credentials). `git push -u origin v2-clock-dma-compact`.
 
