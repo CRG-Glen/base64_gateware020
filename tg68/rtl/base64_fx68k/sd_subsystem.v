@@ -35,7 +35,14 @@ module sd_subsystem #(
     // the fixed 16x board-mod build; sd_lo_x is the same at run time
     // (step 13, set while the system clock is 16x)
     parameter SD_LO_EXTRA = 0,
-    parameter ROM_INIT_FILE = "sfsd.mem"
+    parameter ROM_INIT_FILE = "sfsd.mem",
+    // TG68: bytes of the boot ROM held in EBR. sfsd.mem was a 32 KB image,
+    // but its content (DiagArea, bootloader and the sfsd.device hunk file,
+    // which ends at byte 16532) was followed by 0xFF padding only, so it is
+    // trimmed to ROM_BYTES = 18432 = 9 EBRs of 2048 x 9 (v2.0: 15). Reads
+    // above it return 0xFF, so every address reads as before.
+    // scripts/build.py refuses an sfsd.mem of any other length.
+    parameter integer ROM_BYTES = 18432
 )(
     input  wire         sd_lo_x,
     input  wire         clk,        // 85.13 MHz core clock
@@ -103,23 +110,30 @@ always @(posedge clk) begin
 end
 
 // ---------------------------------------------------------------------------
-// 32 KB boot ROM in EBR (16 blocks), true dual use: read port on the bus
+// 32 KB boot ROM (TG68: the first ROM_BYTES in EBR, 9 blocks), true dual use: read port on the bus
 // address, write port for the optional flash preloader. Initialised at
 // configuration time from sfsd.mem (one 2-digit hex byte per line).
 // NOTE Diamond build trap: like microrom.mem/nanorom.mem, sfsd.mem must be
 // present in the impl1/ working directory and is deleted by "Clean".
 // ---------------------------------------------------------------------------
-reg [7:0] rom_mem [0:32767];
+// TG68: only the first ROM_BYTES are held (see ROM_BYTES above); the
+// rest of the 32 KB reads as 0xFF, as the image's padding did. rom_hi is
+// registered alongside rom_q and ORed after it, so the EBR's read path is
+// unchanged.
+reg [7:0] rom_mem [0:ROM_BYTES-1];
 initial $readmemh(ROM_INIT_FILE, rom_mem);
 
 reg [7:0] rom_q;
+reg       rom_hi = 1'b0;
 always @(posedge clk) begin
-    if (rom_we)
+    if (rom_we && ({17'd0, rom_waddr} < ROM_BYTES))
         rom_mem[rom_waddr] <= rom_wdata;
 end
 always @(posedge clk) begin
-    rom_q <= rom_mem[a[15:1]];
+    rom_q  <= rom_mem[a[15:1]];
+    rom_hi <= ({17'd0, a[15:1]} >= ROM_BYTES);
 end
+wire [7:0] rom_byte = rom_q | {8{rom_hi}};
 
 // ---------------------------------------------------------------------------
 // SPI SD controller — Niklas Ekström's module, byte-identical source.
@@ -168,6 +182,6 @@ sdcard #(.SD_LO_EXTRA(SD_LO_EXTRA)) sdcontrol(   // TG68: 16x
 // the byte read) and the bootloader's read-longword callback (move.b (a4);
 // addq.l #2,a4 from base+romvec+0xCC0, an odd address) use LDS byte reads.
 // Mirroring also covers even-address reads for monitor peeking/robustness.
-assign d_out = sd_enabled ? sd_data_out : {rom_q, rom_q};
+assign d_out = sd_enabled ? sd_data_out : {rom_byte, rom_byte};   // TG68: rom_byte (ROM_BYTES)
 
 endmodule

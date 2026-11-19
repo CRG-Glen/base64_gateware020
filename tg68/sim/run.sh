@@ -9,6 +9,7 @@
 #   sim/run.sh bench op                  clocks and kernel steps per instruction
 # BENCH_ASD="--defsym SPEED18=1" sim/run.sh bench copy|read|scatter|c   at 20x (SPEED16 too: 16x)
 #   sim/run.sh bench sd                  SD controller, SPI loopback
+#   sim/run.sh sdrom                     SD boot ROM reads as the 32 KB image
 # CORE=tg68_020_b0_nobf_smul sim/run.sh bus   tests another core variant
 set -e
 cd "$(dirname "$0")"
@@ -36,6 +37,11 @@ fastmem)
   $AS --defsym FASTMEM=1 -o tf.o test_top.s && $LD -o tf.elf tf.o 2>/dev/null && $OC tf.elf tf.bin && mem tf.bin rom_top_fm.mem
   $VL -DFASTMEM tb_top.sv sdram_model_checked.v $R/base64_tg68/base64_tg68_top.sv $R/base64_tg68/clkgen.v $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v $SLAVES -o tb_fm > build_fm.log 2>&1
   ./obj_dir/tb_fm ;;
+sdrom)
+  # the SD boot ROM (sd_subsystem.v, ROM_BYTES) reads as the 32 KB image did
+  $VL tb_sdrom.sv $R/base64_fx68k/sd_subsystem.v $R/base64_fx68k/sdcard.v $R/base64_fx68k/shifter.v \
+     $R/base64_fx68k/rx_cpu_buf.v $R/base64_fx68k/tx_cpu_buf.v $R/base64_fx68k/fifo.v -o tb_sdrom > build_sdrom.log 2>&1
+  ./obj_dir/tb_sdrom ;;
 bench)
   # run.sh bench [copy|read|scatter]: fast RAM throughput, timed 2nd pass
   case "${2:-copy}" in

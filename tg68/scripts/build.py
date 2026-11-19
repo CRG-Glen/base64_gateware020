@@ -72,6 +72,20 @@ out = os.path.join(ROOT, 'build', name)
 os.makedirs(out, exist_ok=True)
 for f in ('turbomem.mem', 'sfsd.mem'):        # $readmemh looks in the cwd
     shutil.copy(os.path.join(ROOT, 'rtl', 'base64_fx68k', f), out)
+# sd_subsystem.v holds ROM_BYTES of the SD boot ROM and reads 0xFF above
+# them; sfsd.mem was trimmed to that size (the 32 KB image's tail was 0xFF
+# padding only). A bigger driver needs ROM_BYTES raised, in steps of
+# 2048 = one EBR, and the image padded to it.
+SD_ROM_BYTES = 18432
+with open(os.path.join(ROOT, 'rtl', 'base64_fx68k', 'sfsd.mem')) as fh:
+    _sd = fh.read().split()
+if len(_sd) != SD_ROM_BYTES:
+    sys.exit('sfsd.mem has %d bytes, ROM_BYTES in sd_subsystem.v is %d'
+             % (len(_sd), SD_ROM_BYTES))
+_m = re.search(r'parameter integer ROM_BYTES = (\d+)',
+               open(os.path.join(ROOT, 'rtl', 'base64_fx68k', 'sd_subsystem.v')).read())
+if not _m or int(_m.group(1)) != SD_ROM_BYTES:
+    sys.exit('build.py SD_ROM_BYTES does not match sd_subsystem.v ROM_BYTES')
 
 def run(cmd):
     print('  $ ' + ' '.join(cmd[:3]) + (' ...' if len(cmd) > 3 else ''), flush=True)
