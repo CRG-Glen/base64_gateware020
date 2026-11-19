@@ -29,10 +29,14 @@ Open problem: **the v2.0 baseline did not reproduce** in the session's
 container. `build.py full --seed 10` from `/root/work/base64_gateware020`
 gave 10,772 LUT4 (documented 11,067) and FAIL at 12x (adapter ctrl ->
 logic -1.71 ns); same pinned tool versions. Suspected: synthesis depends
-on the repository's path. A rebuild from `/home/user/base64_gateware020`
-was started and not read. Settle this before changing RTL: on the new
-machine, build seed 10 first and compare with `bitstreams/exp20x/` on
-branch `exp-20x` (LUT count, timing, the .bit itself).
+on the repository's path: **ruled out**, a rebuild from
+`/home/user/base64_gateware020` gave exactly the same (10,772 LUT4, -1.71
+ns). Also ruled out: an RTL difference (`a8c9678` to `main` changes
+comments only). Environment: Python 3.12.3, wasmtime 47.0.1,
+yowasp-runtime 1.96, Verilator 5.020. Cause unknown. Settle this before
+changing RTL: on the new machine, build seed 10 first and compare with
+`bitstreams/exp20x/` on branch `exp-20x` (its timing report says +0.77 ns
+worst 1T; LUT count, the .bit itself).
 
 Not pushed: this branch exists only in the local clone (the session had
 no GitHub credentials). `git push -u origin v2-clock-dma-compact`.
