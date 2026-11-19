@@ -25,7 +25,19 @@ yet; no RTL has changed on this branch.
    after". v2.0 is 11,067 LUT4 of 24k, 35 of 56 block RAMs; a design of
    about 18k LUTs did not route.
 
-Open problem: **the v2.0 baseline did not reproduce** in the session's
+**Settled (19 November 2026): the baseline reproduces on a Mac** (Apple
+silicon, macOS; venv with the pinned yowasp-yosys 0.70.0.0.post1259 and
+yowasp-nextpnr-ecp5 0.11.1.0.post826, Python 3.15.2; ecppack from
+Homebrew prjtrellis 1.4). `build.py full --seed 10 --seeds 1` on this
+branch: 11,116 LUT4, 2,647 FF, PASS, worst 1T +0.77 ns, multicycle +2.19
+ns, 1.233x / 1.541x; the plain .bit is **byte-identical** to
+`bitstreams/exp20x/base64_tg68_full_plain.bit` (SHA1 946fa459...). So
+11,116 LUT4 is v2.0's count (11,067 was step 15b's), and the container's
+result below was its environment, not the source. Sims on the same Mac
+(Verilator 5.054, Homebrew m68k-elf binutils/gcc 16.2 under
+m68k-linux-gnu-* names): bus, top, fastmem, bench sd PASS.
+
+Was an open problem: **the v2.0 baseline did not reproduce** in the session's
 container. `build.py full --seed 10` from `/root/work/base64_gateware020`
 gave 10,772 LUT4 (documented 11,067) and FAIL at 12x (adapter ctrl ->
 logic -1.71 ns); same pinned tool versions. Suspected: synthesis depends
