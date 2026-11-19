@@ -5,6 +5,38 @@ Start every session here. One model plans a step, another builds it (see
 numbers that must not move, the acceptance criteria, the fallbacks and
 when to stop and report. Results go in the plan's own log section.
 
+## Branch `v2-clock-dma-compact` (handoff, 19 November 2026)
+
+Three items, in this order, each with its own plan file. Nothing is built
+yet; no RTL has changed on this branch.
+
+1. **Phase lock to the 7 MHz edge**: `phase-lock-7m.md`. Design written
+   and reviewed, **waiting for the owner's approval**. Open question to
+   the owner: is there an oscilloscope on a v2.0 board (7 MHz edge to /AS
+   at 12x)? If not, the `speed` status line from that board will do. Next
+   after approval: the build plan, then hardware stage 1 (stepping proof).
+2. **DMA access to fast RAM** (another bus master, e.g. a DMA disk
+   controller, reading and writing the accelerator's fast RAM): confirmed
+   as the meaning; no plan yet. First thing to check: `bus_enable` drops
+   when the bus is released (`bus_owned`, top level section 9b), so find
+   out from the Base64 schematic what the bus switches isolate and whether
+   the FPGA can see the bus master's address and strobes at all.
+3. **Compacting for an FPU**: no plan yet; "see what can be done, judge
+   after". v2.0 is 11,067 LUT4 of 24k, 35 of 56 block RAMs; a design of
+   about 18k LUTs did not route.
+
+Open problem: **the v2.0 baseline did not reproduce** in the session's
+container. `build.py full --seed 10` from `/root/work/base64_gateware020`
+gave 10,772 LUT4 (documented 11,067) and FAIL at 12x (adapter ctrl ->
+logic -1.71 ns); same pinned tool versions. Suspected: synthesis depends
+on the repository's path. A rebuild from `/home/user/base64_gateware020`
+was started and not read. Settle this before changing RTL: on the new
+machine, build seed 10 first and compare with `bitstreams/exp20x/` on
+branch `exp-20x` (LUT count, timing, the .bit itself).
+
+Not pushed: this branch exists only in the local clone (the session had
+no GitHub credentials). `git push -u origin v2-clock-dma-compact`.
+
 ## State (updated 16 November 2026, after v2.0)
 
 - `main` = **v2.0**: steps 13 to 15b plus the 20x clock (run-time 12x /
