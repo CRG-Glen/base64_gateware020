@@ -27,9 +27,11 @@ Block RAM (v2.0, from the synthesized netlist, 35 of 56):
 | SD boot ROM (`sd_subsystem.v`, 32 KB) | 15 |
 | fast RAM board ROM (`turbomem_zii.v`, 8 KB, 227 words used) | 4 |
 
-Branch `sdrom-trim` (built from `main`, waiting for a build and Glen's
-test) cuts the SD ROM to 18 KB = 9 EBR: its image was 16,532 bytes of
-content and 0xFF padding. That leaves 29 used, **27 free**. The turbomem
+Branch `sdrom-trim` (from `main`) cuts the SD ROM to 18 KB: its image was
+16,532 bytes of content and 0xFF padding. Built: **28 of 56 EBR** (the ROM
+takes 8: yosys packs 18432 x 8 bits into 8 x 18 Kbit), 11,121 LUT4; 1 of 16
+seeds passes (seed 8: +0.49 ns 1T, 1.263x at 16x, 1.579x at 20x),
+bitstreams in `bitstreams/sdrom_trim/` on that branch. **28 free.** The turbomem
 ROM could go from 4 EBR to 1 the same way (227 words in an 8 KB array):
 not done, not asked.
 
@@ -79,15 +81,15 @@ Two ways to get real numbers, both before building step 20:
    in minutes. Limits: no Chip RAM DMA, no games (vamos is CLI only), so
    it ranks options rather than predicting SysInfo numbers.
 
-## 3. Layout options (block RAM budget, at most 27 EBR free after the SD trim)
+## 3. Layout options (block RAM budget, 28 EBR free after the SD trim)
 
 | layout | I-cache | D-cache | EBR for caches | total EBR | notes |
 | --- | --- | --- | --- | --- | --- |
-| now: tag per word | 8 KB | 8 KB | 16 | 29 | |
-| tag per word, `IC_AW` = 13 | 16 KB | 16 KB | 32 | 45 | step 20 as planned; no new logic; tag 1 bit shorter |
-| tag per word, I 16 KB, D 8 KB | 16 KB | 8 KB | 24 | 37 | needs separate `IC_AW` / `DC_AW` (small change) |
-| **tag per 4-word line + 4 valid bits** (sector cache) | 16 KB | 16 KB | 20 | 33 | tag RAM 2048 x 17 bits = 2 EBR per cache |
-| sector cache | 32 KB | 16 KB | 30 | 43 | the biggest instruction cache that fits |
+| now: tag per word | 8 KB | 8 KB | 16 | 28 | |
+| tag per word, `IC_AW` = 13 | 16 KB | 16 KB | 32 | 44 | step 20 as planned; no new logic; tag 1 bit shorter |
+| tag per word, I 16 KB, D 8 KB | 16 KB | 8 KB | 24 | 36 | needs separate `IC_AW` / `DC_AW` (small change) |
+| **tag per 4-word line + 4 valid bits** (sector cache) | 16 KB | 16 KB | 20 | 32 | tag RAM 2048 x 17 bits = 2 EBR per cache |
+| sector cache | 32 KB | 16 KB | 30 | 42 | the biggest instruction cache that fits |
 
 - **Tag per word wastes half the cache's block RAM.** A sector layout (one
   tag per 4 words, a valid bit per word) keeps today's word-by-word fill
@@ -136,10 +138,10 @@ storage entries, 5-bit pointers) in a scratch worktree only.
 
 ## 5. Suggested order (for the planner)
 
-1. `sdrom-trim` (done, needs a build and Glen's SD test): frees 6 EBR.
+1. `sdrom-trim` (built, needs Glen's SD boot test): frees 7 EBR.
 2. Step 18 (`perf`) as planned, plus the trace-driven model (section 2),
    which can be done without hardware.
-3. Then pick between: 16 KB both caches by `IC_AW` (simplest, 45 EBR), a
-   separate 16 KB I / 8 KB D (37 EBR), or the sector layout (33 to 43
+3. Then pick between: 16 KB both caches by `IC_AW` (simplest, 44 EBR), a
+   separate 16 KB I / 8 KB D (36 EBR), or the sector layout (32 to 42
    EBR, more logic). The model's miss curves decide.
 4. Leave the write buffer at 8 unless the counters say otherwise.
