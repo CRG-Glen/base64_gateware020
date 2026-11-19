@@ -1,0 +1,17 @@
+seed  result  worst 1T  worst multicycle  worst failing class
+   1  FAIL       -0.03             +0.39  clkena -> kernel -0.03
+   2  FAIL       -0.87             +2.50  adapter ctrl -> logic -0.87
+   3  FAIL       -0.47             +0.29  icache/direct -> logic -0.47
+   4  FAIL       -0.44             -0.19  adapter ctrl -> logic -0.44
+   5  FAIL       -0.04             -2.55  kernel -> read-data latch -2.55
+   6  FAIL       -0.45             -1.33  kernel -> logic -1.33
+   7  FAIL       -0.54             +1.94  icache/direct -> logic -0.54
+   8  PASS       +0.49             +3.94  
+   9  FAIL       -1.00             +0.77  icache/direct -> read-data latch -1.00
+  10  FAIL       -0.04             +1.25  adapter ctrl -> logic -0.04
+  11  FAIL       -0.82             +0.84  clkena -> kernel -0.82
+  12  FAIL       -0.03             +2.00  icache/direct -> logic -0.03
+  13  FAIL       -0.73             +2.38  adapter ctrl -> logic -0.73
+  14  FAIL       -0.97             +1.82  adapter ctrl -> logic -0.97
+  15  FAIL       -0.68             +2.67  icache/direct -> logic -0.68
+  16  FAIL       -0.44             +2.18  adapter ctrl -> logic -0.44
