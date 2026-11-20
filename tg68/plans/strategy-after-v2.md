@@ -761,6 +761,68 @@ case).
 
 **Log.** (the builder writes here)
 
+Built 20 November 2026 on macOS (from a second collaborator's Mac; the
+v2.0 seed 10 build reproduces byte for byte there), branch
+`step19-barrel` from `step18-perf`. **Result: the fallback.** No 12x
+seed passed, so `b0` stays the default; the `b1` netlist, the shift
+matrix and the tools are committed.
+
+- **Netlist.** GHDL 4.1.0 (the official `ghdl-gha-ubuntu-22.04-mcode`
+  build in Docker, `ubuntu:22.04`, `linux/amd64`) + `fix_latches.py`
+  with yowasp-yosys: regenerates `tg68_020_b0.v` **byte for byte**, and
+  writes `tg68_020_b1.v` (the VHDL is unchanged since v2.0). +73 LUT4 on
+  v2.0.
+- **Shift matrix** (`sim/shift_test.inc`, called from `test020.s` and
+  `test_top.s`; code at ROM $1100, so $1000-$10FF stays zero for the
+  MapROM tests' real-ROM reads at $F81000/2; results at $9E00): asl asr
+  lsl lsr rol ror roxl roxr x byte/word/long x counts 0 1 2 7 8 15 16 31
+  32 33 63 from a register and #1, #8, on two values (flags all clear /
+  all set on entry), plus one-bit memory shifts; every result and its
+  X N Z V C go into a MULU/ADD checksum, one per op and size (25 values),
+  checked against b0's. **b0 and b1 identical in all 25, in `bus`, `top`
+  and `fastmem`.** Mutant: X and C left out of the checksum -> all 25
+  fail. (Not in `bench *`: those share tb_top's MEMBENCH result block,
+  and their programs do not run the matrix.)
+- **Benches with b1** (`CORE=tg68_020_b1`, PERF=0): **op 21,468 ->
+  18,804 (-12.4 %)**, c 64,992 -> 64,092 (-1.4 %), coff 119,976 ->
+  119,052; copy, read, scatter, chip, wrfast, wrmix unchanged.
+- **Timing with b1: 0 of 48 seeds pass** at 12x. Built on step 18 with two
+  margin changes under it (below), 11,158 LUT4. Near misses: seed 11
+  (-0.02 / -0.01 ns), 30 (-0.03 / +0.76), 16 (-0.09 / +2.58), 3 (-0.14 /
+  -0.08). Failing seeds by class: kernel -> logic 17, icache/direct ->
+  logic 13, adapter ctrl -> logic 7, clkena -> kernel 3, adapter ctrl ->
+  cache RAM 3, others 5. kernel -> kernel (where the shifter is) is not
+  among them. Fallback taken as the plan says; not restructured.
+- **The margin changes tried under it** (not pushed; local branches
+  `old-step17b-on18`, `old-step17c-on18`):
+  (17b) CCMP's 14-bit tag compare done a clock earlier: the edge into
+  CCMP registers two half-tag matches per bank and per cache from the tag
+  RAMs' outputs and the live `k_addr` tag (kernel -> logic, SETTLE), so
+  CCMP keeps an AND and the selects before `step()`; sim check: the
+  precompare equals the old compare in every CCMP. (17c) `sdram_ctrl`'s
+  direct ACTIVATE records `open_row`/`ras_timer` a clock later from
+  `cur_bank`/`cur_row`, out of IDLE's request decision; sim checks from
+  the SDRAM pins (the row each ACTIVE opened = `open_row` for every open
+  bank while IDLE; PRECHARGE >= T_RAS after ACTIVE). Both cycle-identical
+  (every bench unchanged), mutants caught. **On an independent local
+  step 17 they raised the pass rate from 1 of 32 to 6 of 32 (best 1.576x
+  at 20x), and with b1 on top 5 of 48 passed (best 1.586x). On this step
+  17 they do not help: 17b + 17c alone 2 of 32 (seed 19 +0.37 ns,
+  1.301x / 1.627x; seed 8 +0.07, 1.312x / 1.640x), against step 17's own
+  2 of 16 at 1.582x.** Their new paths (tag RAM -> the half matches, 47
+  failing paths; the half matches -> `cnt`, 30) land just outside 1T
+  here. So they are not offered; noted for the planner as tried.
+- **Note (not this step):** on `step18-perf`, `sim/run.sh top` with the
+  default PERF=1 does not compile (`tb_top.sv` reads
+  `dut.g_fastmem.u_perf`, and the `top` bench has no fast RAM).
+  `PERF=0 sim/run.sh top` passes.
+
+**For the planner:** b1 is ready and verified; it needs margin that
+neither the trial nor these two changes found. The failing classes are
+v2.0's (kernel -> logic: the register file -> the fast RAM address
+decode and `k_din`; icache/direct -> logic), not the shifter.
+
+
 ---
 
 ### Step 20: 16 KB caches
