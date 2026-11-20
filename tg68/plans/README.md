@@ -22,9 +22,12 @@ yet; no RTL has changed on this branch.
    Base64 PCB: the FPGA controls the address, strobe and data switches and
    always sees BR/BG/BGACK and can drive DTACK, so the board allows it; it
    is blind during DMA today only because the gateware opens the switches.
-3. **Compacting for an FPU**: no plan yet; "see what can be done, judge
-   after". v2.0 is 11,067 LUT4 of 24k, 35 of 56 block RAMs; a design of
-   about 18k LUTs did not route.
+3. **Compacting for an FPU**: studied, `study-fpu-compact.md`. v2.0 is
+   12,985 of 24,288 placed cells (about 4.5-5k of headroom before the
+   size that did not route); the CPU core is 75 % of it and nothing worth
+   removing. Recommendation: no compaction; an FPU first as an F-line
+   trap handler in software, then (if needed) a memory-mapped FP unit of
+   an estimated 3-5k LUT4. **Questions to the owner** in the study.
 
 **Settled (19 November 2026): the baseline reproduces on a Mac** (Apple
 silicon, macOS; venv with the pinned yowasp-yosys 0.70.0.0.post1259 and
@@ -94,7 +97,11 @@ no GitHub credentials). `git push -u origin v2-clock-dma-compact`.
    command): ready to build (stacked on 17).
 3. **Step 19**, `step19-barrel`: ready to build (stacked on 18); the
    planner's trial passed no seed in 16, so it has a seed budget and a
-   fallback.
+   fallback. **Owner, 20 November 2026: on the backlog, wanted.** Build it
+   on top of 17c: the trial's misses were adapter ctrl -> logic and
+   icache/direct paths, the classes 17b/17c removed. The b1 netlist
+   regenerates on a Mac with GHDL 4.1.0 in Docker (`study-fpu-compact.md`
+   section 6): +73 LUT4 on v2.0.
 4. **Step 20**, 16 KB caches: after Glen's `perf` numbers.
 5. **X22**, 22x experiment: when Glen asks.
 6. The smaller items (section 4 there, and `backlog.md`): each needs a
