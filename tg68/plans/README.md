@@ -78,7 +78,15 @@ no GitHub credentials). `git push -u origin v2-clock-dma-compact`.
 
 ## Next, in order (details: `strategy-after-v2.md`)
 
-1. **Step 17**, `step17-icache-tag-drop`: ready to build.
+1. **Step 17**, `step17-icache-tag-drop`: built (local, 19 November
+   2026), 1 of 32 seeds passed. Two margin steps stacked on it (not
+   planned: **the planner should review them**):
+   `step17b-ccmp-precompare` (the cache tag compare registered at DECIDE)
+   and `step17c-sdram-open-row` (the SDRAM's activate records its row a
+   clock later). Both cycle-identical; with both, 6 of 32 pass, best seed
+   29 at 1.261x / 1.576x. **Waiting for Glen's hardware test** of
+   `bitstreams/step17c_sdram_open_row/` on the 17c branch. Logs: the
+   step 17, 17b and 17c sections of `strategy-after-v2.md` on that branch.
 2. **Step 18**, `step18-perf` (counters in a test build and the `perf`
    command): ready to build (stacked on 17).
 3. **Step 19**, `step19-barrel`: ready to build (stacked on 18); the
