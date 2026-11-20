@@ -82,30 +82,20 @@ no GitHub credentials). `git push -u origin v2-clock-dma-compact`.
 
 ## Next, in order (details: `strategy-after-v2.md`)
 
-1. **Step 17**, `step17-icache-tag-drop`: built (local, 19 November
-   2026), 1 of 32 seeds passed. Two margin steps stacked on it (not
-   planned: **the planner should review them**):
-   `step17b-ccmp-precompare` (the cache tag compare registered at DECIDE)
-   and `step17c-sdram-open-row` (the SDRAM's activate records its row a
-   clock later). Both cycle-identical; with both, 6 of 32 pass, best seed
-   29 at 1.261x / 1.576x. **Waiting for Glen's hardware test** of
-   `bitstreams/step17c_sdram_open_row/` on the 17c branch. Logs: the
-   step 17, 17b and 17c sections of `strategy-after-v2.md` on that branch.
-   `step17d-sdrom-trim` (the SD trim stacked on 17c) also passes 6 of 32,
-   best 1.602x at 20x: no timing gain, so 17c seed 29 stays the one to test.
-2. **Step 18**, `step18-perf` (counters in a test build and the `perf`
-   command): ready to build (stacked on 17).
-3. **Step 19**, `step19-barrel`: ready to build (stacked on 18); the
-   planner's trial passed no seed in 16, so it has a seed budget and a
-   fallback. **Owner, 20 November 2026: on the backlog, wanted.** Build it
-   on top of 17c: the trial's misses were adapter ctrl -> logic and
-   icache/direct paths, the classes 17b/17c removed. The b1 netlist
-   regenerates on a Mac with GHDL 4.1.0 in Docker (`study-fpu-compact.md`
-   section 6): +73 LUT4 on v2.0.
-   **Built 20 November 2026** on 17c (branch `step19-barrel`): shift
-   matrix identical on b0 and b1, `op` -12 %, `c` -1.4 %; 5 of 48 seeds
-   pass, best seed 26 at 1.269x / 1.586x. **Waiting for Glen's hardware
-   test** (`bitstreams/step19_barrel/`; it includes 17-17c).
+(This branch was started from `main` before steps 17 and 18 were
+pushed; **the current queue is the plans index on `step18-perf`**.
+Updated 20 November 2026 to point there.)
+
+1. **Step 17**, `step17-icache-tag-drop` (Glen's): runs on the A500+ at
+   12x, 16x and 20x; see that branch.
+2. **Step 18**, `step18-perf` (Glen's): built, first perf runs done; see
+   that branch.
+3. **Step 19**, `step19-barrel` (from `step18-perf`): built 20 November
+   2026, **fallback**: the b1 netlist and a shift/rotate matrix (b0 = b1
+   in all 25 groups; `op` -12 %, `c` -1.4 % with b1) are committed, but no
+   12x seed in 48 passed, so b0 stays the default. Two margin changes tried
+   under it (tag precompare, SDRAM row record) helped on an independent
+   step 17 but not on Glen's. Details in its log.
 4. **Step 20**, 16 KB caches: after Glen's `perf` numbers.
 5. **X22**, 22x experiment: when Glen asks.
 6. The smaller items (section 4 there, and `backlog.md`): each needs a

@@ -13,7 +13,7 @@ v2.0 (seed 10): 11,116 LUT4, 629 CCU2C, 2,647 FF, 35 of 56 EBR, 10 of 28
 MULT18X18D. **Placed: 12,985 of 24,288 logic cells (53 %).** A design of
 about 18k cells did not route (handoff), so the practical ceiling is
 about 17-18k: **about 4.5-5k cells of headroom**, before timing (12x is
-already marginal; see steps 17b/17c).
+already marginal; see step 19's log on `step19-barrel`).
 
 | block | LUT4 | FF | notes |
 | --- | --- | --- | --- |

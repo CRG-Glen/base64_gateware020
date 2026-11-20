@@ -1,7 +1,8 @@
 # Study: the caches and the Chip RAM write buffer (sizes, layout, where they matter)
 
 Asked for on 19 November 2026 (backlog item). Measured in simulation on
-step 17's RTL (`step17-icache-tag-drop`, commit 602ad96), 12x, macOS
+a step 17 build (an independent local one, clock for clock the same as
+Glen's `step17-icache-tag-drop` on every bench), 12x, macOS
 toolchain (`plans/README.md`). No hardware: the baseboard is not here yet.
 This is a study for the planner, not a step: nothing here is built.
 
