@@ -102,6 +102,10 @@ no GitHub credentials). `git push -u origin v2-clock-dma-compact`.
    icache/direct paths, the classes 17b/17c removed. The b1 netlist
    regenerates on a Mac with GHDL 4.1.0 in Docker (`study-fpu-compact.md`
    section 6): +73 LUT4 on v2.0.
+   **Built 20 November 2026** on 17c (branch `step19-barrel`): shift
+   matrix identical on b0 and b1, `op` -12 %, `c` -1.4 %; 5 of 48 seeds
+   pass, best seed 26 at 1.269x / 1.586x. **Waiting for Glen's hardware
+   test** (`bitstreams/step19_barrel/`; it includes 17-17c).
 4. **Step 20**, 16 KB caches: after Glen's `perf` numbers.
 5. **X22**, 22x experiment: when Glen asks.
 6. The smaller items (section 4 there, and `backlog.md`): each needs a
