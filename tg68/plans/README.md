@@ -16,11 +16,12 @@ yet; no RTL has changed on this branch.
    at 12x)? If not, the `speed` status line from that board will do. Next
    after approval: the build plan, then hardware stage 1 (stepping proof).
 2. **DMA access to fast RAM** (another bus master, e.g. a DMA disk
-   controller, reading and writing the accelerator's fast RAM): confirmed
-   as the meaning; no plan yet. First thing to check: `bus_enable` drops
-   when the bus is released (`bus_owned`, top level section 9b), so find
-   out from the Base64 schematic what the bus switches isolate and whether
-   the FPGA can see the bus master's address and strobes at all.
+   controller, reading and writing the accelerator's fast RAM): plan
+   written, `dma-fastram.md`, **waiting for the owner's answers** (which
+   DMA device, A500+ only or B2000 too, what v2.0 does today). From the
+   Base64 PCB: the FPGA controls the address, strobe and data switches and
+   always sees BR/BG/BGACK and can drive DTACK, so the board allows it; it
+   is blind during DMA today only because the gateware opens the switches.
 3. **Compacting for an FPU**: no plan yet; "see what can be done, judge
    after". v2.0 is 11,067 LUT4 of 24k, 35 of 56 block RAMs; a design of
    about 18k LUTs did not route.
