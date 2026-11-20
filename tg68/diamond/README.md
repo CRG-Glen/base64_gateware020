@@ -28,9 +28,8 @@ diamond/base64_tg68.fdc                (Synplify constraints)
 diamond/base64_tg68_diamond.lpf        (pinout + TRACE multicycle)
 ```
 
-Do **not** add `rtl/tg68/tg68_020_b1.v` (or `_b0.v`). Those are the GHDL-converted
-copies for the open-source flow, and Diamond uses the VHDL instead (with the
-wrapper's defaults: the barrel shifter on from step 19).
+Do **not** add `rtl/tg68/tg68_020_b0.v`. That's the GHDL-converted copy
+for the open-source flow, and Diamond uses the VHDL instead.
 
 `turbomem.mem` and `sfsd.mem` (in `rtl/base64_fx68k/`) must be **project
 members** and present in `impl1/`, exactly as `fx68k/BUILD.md` explains.
