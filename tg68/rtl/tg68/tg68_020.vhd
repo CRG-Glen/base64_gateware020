@@ -1,7 +1,7 @@
 -- tg68_020 : TG68K.C kernel fixed in 68020 mode for Base64.
 -- A thin entity so GHDL can emit a flat Verilog netlist with the generics
 -- folded.  Port names are lower case so Verilog can instantiate this
--- entity under both GHDL and Synplify.  BARREL generic: 1 = barrel shifter (fast shifts, more LUTs).
+-- entity under both GHDL and Synplify.  BARREL generic: 1 = barrel shifter (fast shifts; default from step 19).
 -- BITFIELD generic: 0 drops BFxxx (they then take the illegal-instruction
 -- trap), saving LUTs and, mainly, routing congestion.
 -- MULHW generic: 0 does MULU.L/MULS.L iteratively instead of in the DSP
@@ -20,7 +20,7 @@
 -- clkena_lw3_in for the EA_data/data_write process (see the kernel).
 library ieee; use ieee.std_logic_1164.all; use ieee.numeric_std.all;
 entity tg68_020 is
-  generic (BARREL : integer := 0; BITFIELD : integer := 1; MULHW : integer := 1;
+  generic (BARREL : integer := 1; BITFIELD : integer := 1; MULHW : integer := 1;
            DP32 : integer := 7; CLKLW : integer := 3);
   port (
     clk        : in  std_logic;

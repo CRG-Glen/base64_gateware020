@@ -15,7 +15,7 @@
 set -e
 cd "$(dirname "$0")"
 R=../rtl
-CORE=${CORE:-tg68_020_b0}
+CORE=${CORE:-tg68_020_b1}   # step 19: barrel shifter (CORE=tg68_020_b0: the old one)
 AS="m68k-linux-gnu-as -m68020"; LD="m68k-linux-gnu-ld -Ttext=0"; OC="m68k-linux-gnu-objcopy -O binary"
 mem() { python3 -I -c "
 d=open('$1','rb').read(); d+=bytes(8192-len(d))

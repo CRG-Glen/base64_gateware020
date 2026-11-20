@@ -1228,7 +1228,8 @@ rtl/base64_tg68/
 rtl/tg68/
   TG68K*.vhd                    TG68K.C (m1nl's fork), three changes marked "Base64"
   tg68_020.vhd                  68020-mode wrapper
-  tg68_020_b0.v                 the same, converted to Verilog (what the build uses)
+  tg68_020_b1.v                 the same, converted to Verilog (what the build uses; step 19)
+  tg68_020_b0.v                 the same without the barrel shifter (the fallback, for one step)
 rtl/base64_fx68k/               the fx68k build's slaves; changes marked "TG68:"
                                 (fastmem_zii: direct SDRAM port, BUS_RAM; the
                                 slaves also export their windows for int_win)
@@ -1239,10 +1240,11 @@ sw/maprom/                      maprom command (68000 asm) and its build script
 ### Why the CPU is pre-converted Verilog
 
 TG68K.C is VHDL, and yosys only reads VHDL through the GHDL plugin, which
-oss-cad-suite's Windows build doesn't reliably ship. `tg68_020_b0.v` is
+oss-cad-suite's Windows build doesn't reliably ship. `tg68_020_b1.v` is
 GHDL's synthesis output for the 68020 configuration. 32-bit MUL/DIV,
-bitfields, VBR and 68010+ stack frames are on. The barrel shifter is off:
-it saved nothing measurable in LUTs and isn't needed for function.
+bitfields, VBR and 68010+ stack frames are on, and from step 19 the barrel
+shifter (every shift and rotate in one kernel step; +73 LUT4).
+`tg68_020_b0.v`, without it, stays for one step as the fallback.
 `scripts/gen_tg68.sh` regenerates it (Linux, needs `ghdl` and `yosys`;
 Ubuntu's `ghdl` 4.1.0 package with `YOSYS=yowasp-yosys` reproduces the
 committed netlist byte for byte). Its arguments select variants: barrel

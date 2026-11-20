@@ -645,6 +645,38 @@ module tb;
             errors = errors + 1;
         end else $display("ok   %-24s @%h = %h", what, ad, rd32(ad));
     endtask
+    // step 19: the shift/rotate matrix (shift_test.inc). Expected: the b0
+    // core's results (bit-by-bit shifter, on hardware since v1.0), the same
+    // values as the bus bench; each is the running checksum after a group
+    task check_shifts;
+        begin
+            check(24'h9E00, 32'h34DAAC4B, "shift asl.b");
+            check(24'h9E04, 32'h801984C2, "shift asl.w");
+            check(24'h9E08, 32'h2795DD4F, "shift asl.l");
+            check(24'h9E0C, 32'h2160305B, "shift asr.b");
+            check(24'h9E10, 32'h645732EC, "shift asr.w");
+            check(24'h9E14, 32'h68A1891E, "shift asr.l");
+            check(24'h9E18, 32'h9EC90CBF, "shift lsl.b");
+            check(24'h9E1C, 32'h30ACC68E, "shift lsl.w");
+            check(24'h9E20, 32'h812AFAEB, "shift lsl.l");
+            check(24'h9E24, 32'h0054F7F7, "shift lsr.b");
+            check(24'h9E28, 32'h687006D1, "shift lsr.w");
+            check(24'h9E2C, 32'h0678AB68, "shift lsr.l");
+            check(24'h9E30, 32'h4FBCDB93, "shift rol.b");
+            check(24'h9E34, 32'h5445A3AC, "shift rol.w");
+            check(24'h9E38, 32'hED594387, "shift rol.l");
+            check(24'h9E3C, 32'h397288F0, "shift ror.b");
+            check(24'h9E40, 32'hAF902A03, "shift ror.w");
+            check(24'h9E44, 32'h6CD2CD6D, "shift ror.l");
+            check(24'h9E48, 32'h32549942, "shift roxl.b");
+            check(24'h9E4C, 32'h190E0E6A, "shift roxl.w");
+            check(24'h9E50, 32'hCD9C12B7, "shift roxl.l");
+            check(24'h9E54, 32'h2D3B6C71, "shift roxr.b");
+            check(24'h9E58, 32'h7584DB5F, "shift roxr.w");
+            check(24'h9E5C, 32'hDD466E69, "shift roxr.l");
+            check(24'h9E60, 32'h7A21F495, "shift memory shifts");
+        end
+    endtask
 
 `ifdef SDTEST
     // the SD board as if autoconfigured at $E90000
@@ -940,6 +972,7 @@ module tb;
 `endif
         check(24'h8140, 32'h00000055, "ROM code via cache");
         check(24'h8FF0, 32'h600DC0DE, "done marker");
+        check_shifts;
         if (iacks != 1) begin $display("FAIL IACK count %0d", iacks); errors = errors + 1; end
         if (unmapped)   begin $display("FAIL %0d unmapped accesses reached the MB", unmapped); errors = errors + 1; end
         if (led_r)      begin $display("FAIL red LED (stall)"); errors = errors + 1; end

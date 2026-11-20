@@ -5,7 +5,7 @@
 #                           32-bit immediates, absolute-long addresses; 1 = data only)
 set -e
 cd "$(dirname "$0")/../rtl/tg68"
-B=${1:-0}         # barrel shifter
+B=${1:-1}         # barrel shifter (step 19: on by default)
 BF=${2:-1}        # bitfield instructions
 MH=${3:-1}        # hardware (DSP) multiplier
 OUT=tg68_020_b$B

@@ -58,7 +58,7 @@ Glen uses a larger model to **plan** each step and a smaller one to
 rtl/base64_tg68/   top level (base64_tg68_top.sv), bus adapter (tg68_bus.v),
                    clock generator (clkgen.v)
 rtl/tg68/          TG68K.C VHDL (m1nl's fork, a8e6f38) with FIVE marked
-                   changes, the tg68_020.vhd wrapper, and tg68_020_b0.v, the
+                   changes, the tg68_020.vhd wrapper, and tg68_020_b1.v, the
                    GHDL-converted netlist that is actually built (regenerate:
                    YOSYS=yowasp-yosys sh scripts/gen_tg68.sh, ghdl 4.1.0)
 rtl/base64_fx68k/  copies of the fx68k build's slaves; every change is

@@ -542,6 +542,9 @@ pf2:    dbra    %d1,pf2
 wait:   tst.l   %d3
         beq.s   wait
         move.l  %d3,(%a5)+          | 8120 33333333
+        | step 19: the shift/rotate matrix (shift_test.inc), table at 9E00
+        lea     0x9E00,%a0
+        jsr     shift_test
         move.l  #0x600DC0DE,0x8FF0
 done:   bra.s   done
         .ifdef FASTMEM
@@ -625,3 +628,7 @@ trap0:  move.l  #0x7777,%d2
 irq3:   move.l  #0x33333333,%d3
         move.b  #1,0x8F80           | ack (kept clear of the stack)
         rte
+| step 19: shift/rotate matrix (ROM 1100-1FFF, which nothing else uses;
+| 1000-10FF stays zero: the MapROM tests read the real ROM at F81000/F81002)
+        .org 0x1100
+        .include "shift_test.inc"
