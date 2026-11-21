@@ -677,6 +677,14 @@ option off (the ifdef leaks).
     show it); fast RAM write waits 1%.
   - Chip RAM code over the bus is ~0 in every run except WHDLoad's intro
     (0.3% of fetches).
+- **Router1 on the normal design** (branch `exp-router1`; the step 18
+  normal netlist, which is step 17 byte for byte under router2):
+  **16 of 16 seeds pass** at 12x (router2: 2 of 16), worst 1T +0.36 to
+  +1.53 ns, 20x ratios 1.433 to 1.599 (median ~1.50). Seed 7: +1.53 ns,
+  1.146x / **1.433x**, the best margin this design has had (v2.0 1.541x,
+  step 17 1.582x). Test bitstreams `bitstreams/exp_router1/` (seed 7),
+  waiting for Glen's run. If it behaves as step 17, router1 becomes the
+  default (build.py, CLAUDE.md) and step 19 is built with it.
 - **For the planner: router1 may be the better router for every build.**
   On this netlist it routed what router2 could not and gave margins no
   router2 build of this design has had (14 of 16 seeds passing, against
