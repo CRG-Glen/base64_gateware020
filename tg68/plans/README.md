@@ -65,8 +65,11 @@ when to stop and report. Results go in the plan's own log section.
    predicting the next data address (the word after the last read).
    Measured: about 1% (bench c 1.2%). A branch-target table for jumps
    nets only 0.8% (it costs the sequential prediction) and is not
-   planned. **Planned; waiting for Glen's go-ahead.**
-8. **X22**, 22x experiment: when Glen asks.
+   planned. **Parked** (Glen: about 1% is not worth the timing risk).
+8. **`exp-22x`** (`exp22x.md`): 22x (156 MHz), and four speeds in one
+   build (12x pin; 16x and 20x sharing one PLL; 22x on the other).
+   Building. Then the same from the Amiga's 7 MHz clock (`exp-7m-pll`
+   stage 1 was built from v2.0 and never tested).
 9. The smaller items (section 4 there, and `backlog.md`): each needs a
    plan from the planner first.
 
