@@ -39,15 +39,15 @@ when to stop and report. Results go in the plan's own log section.
    step18_perf/` on that branch, seed 2, routed with router1). Its log
    has a finding for the planner: router1 passed 14 of 16 seeds where
    router2 could not route this build at all.
-3. **Step 19**, `step19-barrel`: ready to build (stacked on 18); the
-   planner's trial passed no seed in 16, so it has a seed budget and a
-   fallback.
-4. **`exp-router1`**: step 17's design routed with router1: 16 of 16
+3. **`exp-router1`**: step 17's design routed with router1: 16 of 16
    seeds pass, seed 7 1.433x at 20x (best yet). **Runs on Glen's board at
-   all speeds, hours at 20x; router1 is now the default.** Then **step 19** (the barrel shifter, `step19-barrel`: built by a
-   second collaborator, 0 of 48 seeds with router2): rebuilt with router1,
-   **14 of 16 pass**, seed 2 1.459x at 20x; **waiting for Glen's test**.
-   (Step 20 and a deeper write buffer: not worth it, see step 18's log.)
+   all speeds, hours at 20x; router1 is now the default flow.**
+4. **Step 19**, `step19-barrel` (the barrel shifter; built by a second
+   collaborator, 0 of 48 seeds with router2, fallback taken; then
+   `exp-router1` merged in and rebuilt with router1): **14 of 16 seeds
+   pass**, seed 2 1.459x at 20x. **Waiting for Glen's test**
+   (`tg68/bitstreams/step19_barrel/`). Step 20 and a deeper write buffer:
+   not worth it (step 18's log).
 5. **Step 20**, 16 KB caches: after Glen's `perf` numbers.
 6. **X22**, 22x experiment: when Glen asks.
 7. The smaller items (section 4 there, and `backlog.md`): each needs a
