@@ -61,8 +61,13 @@ when to stop and report. Results go in the plan's own log section.
    timing). bench c -0.45%; SysInfo is the number it is for. 15 of 16
    seeds pass, seed 14 1.470x at 20x; **runs on Glen's board at all
    speeds: SysInfo +3.6%** (15b's loss was real).
-7. **X22**, 22x experiment: when Glen asks.
-8. The smaller items (section 4 there, and `backlog.md`): each needs a
+7. **Step 22** (`step22-dpred.md`): data-cache hits in 4 clocks by
+   predicting the next data address (the word after the last read).
+   Measured: about 1% (bench c 1.2%). A branch-target table for jumps
+   nets only 0.8% (it costs the sequential prediction) and is not
+   planned. **Planned; waiting for Glen's go-ahead.**
+8. **X22**, 22x experiment: when Glen asks.
+9. The smaller items (section 4 there, and `backlog.md`): each needs a
    plan from the planner first.
 
 ## How v2.0 was reached (history)
