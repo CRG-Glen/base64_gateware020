@@ -876,7 +876,13 @@ module tb;
         check(24'h81D4, 32'h0000170C, "speed: 12x at power-on, rising");
         check(24'h81D8, 32'h00000710, "speed: 16x");
         check(24'h81E0, 32'h00000714, "speed: 20x");   // v2.0
+`ifdef TG68_PLL7M
+        // fed from the 7 MHz clock the unused rising sample can report a
+        // move at 22x (bit 14), as it does at 16x / 20x on hardware
+        checkm(24'h8288, 32'h00000716, 32'h00003FFF, "speed: 22x (7 MHz PLL input)");
+`else
         check(24'h8288, 32'h00000716, "speed: 22x");   // exp-22x
+`endif
         check(24'h81E8, 32'h0000170C, "speed: back to 12x, rising");
         check(24'h81F0, 32'h0000170C, "speed: unkeyed / invalid writes ignored");
         check(24'h81F4, 32'h0000170C, "speed: 12x, rising 7M stream forced");

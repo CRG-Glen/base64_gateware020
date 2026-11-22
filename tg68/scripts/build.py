@@ -49,6 +49,9 @@ ap.add_argument('--perf', action='store_true',
                 help='TEST BUILD with the performance counters (step 18, sw/perf): defines '
                      'TG68_PERF and adds perf_cnt.v; output in build/<cfg>_perf, files '
                      'base64_tg68_<cfg>_perf*.bit. Without it the netlist is the normal one')
+ap.add_argument('--pll7m', action='store_true',
+                help='EXPERIMENT (exp-22x): both PLLs take the Amiga\'s 7.09 MHz clock instead '
+                     'of the 12x pin; defines TG68_PLL7M, output in build/<cfg>_7m')
 ap.add_argument('--x16', action='store_true',
                 help='EXPERIMENTAL: for a board whose ICS570B is rewired from x12 to x16 '
                      '(113.5 MHz). Defines TG68_X16, output in build/<cfg>_x16. Overclocked: '
@@ -71,7 +74,7 @@ YOSYS = find_tool('YOSYS', 'yosys', 'yowasp-yosys')
 NEXTPNR = find_tool('NEXTPNR', 'nextpnr-ecp5', 'yowasp-nextpnr-ecp5')
 ECPPACK = os.environ.get('ECPPACK', 'ecppack')
 fm, sd = CFGS[a.cfg]
-name = a.cfg + ('_x16' if a.x16 else '') + ('_perf' if a.perf else '')
+name = a.cfg + ('_x16' if a.x16 else '') + ('_perf' if a.perf else '') + ('_7m' if a.pll7m else '')
 out = os.path.join(ROOT, 'build', name)
 os.makedirs(out, exist_ok=True)
 for f in ('turbomem.mem', 'sfsd.mem'):        # $readmemh looks in the cwd
@@ -101,7 +104,7 @@ if not a.skip_synth:
     print('== yosys  (%s: ENABLE_FASTMEM=%d ENABLE_SD=%d)' % (a.cfg, fm, sd))
     # --x16: every 16x change is under `ifdef TG68_X16, so without it yosys
     # reads exactly the 12x text (and the 12x bitstreams stay reproducible)
-    dfl = ('-DTG68_X16 ' if a.x16 else '') + ('-DTG68_PERF ' if a.perf else '')
+    dfl = ('-DTG68_X16 ' if a.x16 else '') + ('-DTG68_PERF ' if a.perf else '') + ('-DTG68_PLL7M ' if a.pll7m else '')
     script = '\n'.join(['read_verilog %s-sv ' % dfl + f for f in srcs_sv] +
                        ['read_verilog %s' % dfl + f for f in srcs_v] + [
         'read_verilog -lib +/ecp5/cells_bb.v',   # BB: the SD card input pins
