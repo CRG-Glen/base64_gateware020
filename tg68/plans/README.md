@@ -44,8 +44,9 @@ when to stop and report. Results go in the plan's own log section.
    fallback.
 4. **`exp-router1`**: step 17's design routed with router1: 16 of 16
    seeds pass, seed 7 1.433x at 20x (best yet). **Runs on Glen's board at
-   all speeds, hours at 20x; router1 is now the default.** Then step 19 (the barrel shifter: built on `step19-barrel` by
-   a second collaborator, 0 of 48 seeds with router2) again with router1.
+   all speeds, hours at 20x; router1 is now the default.** Then **step 19** (the barrel shifter, `step19-barrel`: built by a
+   second collaborator, 0 of 48 seeds with router2): rebuilt with router1,
+   **14 of 16 pass**, seed 2 1.459x at 20x; **waiting for Glen's test**.
    (Step 20 and a deeper write buffer: not worth it, see step 18's log.)
 5. **Step 20**, 16 KB caches: after Glen's `perf` numbers.
 6. **X22**, 22x experiment: when Glen asks.

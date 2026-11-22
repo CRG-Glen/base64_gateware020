@@ -826,7 +826,24 @@ matrix and the tools are committed.
   `PERF=0 sim/run.sh top` passes.
 
 **For the planner:** b1 is ready and verified; it needs margin that
-neither the trial nor these two changes found. The failing classes are
+neither the trial nor these two changes found.
+
+**Rebuilt with router1** (after `exp-router1` made router1 the default;
+`exp-router1` merged into this branch, b1 the default core again in
+`build.py` and `sim/run.sh`):
+- Regression, all PASS (b1 unless said): bus, top, fastmem; top PERF=0;
+  bus/top/fastmem with b0; fastmem CAL_TEST, CAL_DRIFT; S15_DEFAULT=0,
+  S17_DEFAULT=0; benches c, coff, copy, read, scatter, readoff, chip,
+  wrchip, wrfast, wrmix, sd, op; c and copy at 20x. The shift matrix's 25
+  checksums identical everywhere. Benches: c 65,808 -> 64,920 (-1.3%),
+  op 21,468 -> 18,804 (-12.4%), copy unchanged; c at 20x 39,816 ->
+  39,240 (-1.4%). 11,358 LUT4, 2,678 FF, 10 MULT18X18D.
+- **Timing: 14 of 16 seeds pass** (router2: 0 of 48). 5 and 8 miss by
+  0.12 / 0.06 ns. Seed 2: +1.48 / +4.03 ns, **1.167x / 1.459x** at 16x /
+  20x (exp-router1's seed 7: 1.146x / 1.433x); then 9 (1.489x), 6
+  (1.504x), 12 (1.513x) ... 15 (1.648x). Shipped seed 2:
+  `bitstreams/step19_barrel/`, waiting for Glen's test (the Frontier CPU
+  timedemo against exp-router1, back to back). The failing classes are
 v2.0's (kernel -> logic: the register file -> the fast RAM address
 decode and `k_din`; icache/direct -> logic), not the shifter.
 
