@@ -231,6 +231,8 @@ steps up to 18 were router2: `ROUTER=router2` rebuilds them byte for byte).
   CPU timedemo +7%. Not merged.
 - `step20-wr4` (word/byte writes in 4 clocks, seed 11, on step 19) runs on
   Glen's board at all speeds: Frontier CPU timedemo +1.4%. Not merged.
+- `step21-fpair` (32-bit operands as one pair again, seed 14, on step 20)
+  runs on Glen's board at all speeds: SysInfo +3.6% (19239 at 20x).
 - New work branches from `main`. What to build next, in order, with the
   measurements behind it: `plans/strategy-after-v2.md`.
 

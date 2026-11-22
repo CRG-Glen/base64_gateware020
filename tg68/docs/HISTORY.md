@@ -459,6 +459,9 @@ style. `README.md` is the user-facing version of the same material.
 | step 20 at 12x (WR4, seed 11) | 11117 / 5360 | 16.69 / 8.50 |
 | step 20 at 16x (seed 11) | 14838 / 6415 | 21.13 / 10.37 |
 | step 20 at 20x (seed 11) | 18566 / 7442 | 26.32 / 12.69 |
+| step 21 at 12x (pairs in the predictor, seed 14) | 11521 / 5360 | 16.69 / 8.50 |
+| step 21 at 16x (seed 14) | 15383 / 5978 | 21.13 / 10.18 |
+| step 21 at 20x (seed 14) | 19239 / 7673 | 26.32 / 13.20 |
 
 - AIBB MemTest did not move from step 6 to step 7 (pairs only come from
   cache hits; MemTest's reads miss and its writes are 16-bit). Step 8's
@@ -523,6 +526,19 @@ style. `README.md` is the user-facing version of the same material.
   more sensitive to the CPU): 10.9 / 92.8 / 31.1, 14.5 / 128.6 / 41.2,
   18.2 / 154.8 / 57.1 fps (min / max / average, 12x / 16x / 20x). No
   v2.0 number to compare with; the baseline for the next steps.
+- **32-bit operands as one pair again (step 21, branch step21-fpair,
+  seed 14; router1):** `FPAIR`: the predictor leaves a fetch the kernel
+  offers as an aligned pair (`k_pcand`) to the normal lookup, and predicts
+  2 words on after it: step 15's behaviour, which 15b's change A removed
+  for timing. With 15b's split DECIDE and router1 it costs nothing: 15 of
+  16 seeds pass, seed 14 1.176x / 1.470x. Sim: bench c -0.45%. **Runs on
+  Glen's A500+ at all three speeds: SysInfo 11521 / 5360, 15383 / 5978,
+  19239 / 7673 (+3.6% caches on at every speed)**, which settles 15b's
+  open question (its -3.4% was real); AIBB 16.69 / 8.50, 21.13 / 10.18,
+  26.32 / 13.20; xSysInfo 18958 / 10012 (23.73 / 21.17 MB/s), 25099 /
+  11794 (29.58 / 26.24), 31280 / 14550 (36.87 / 32.78); SD 2.0 / 2.2 /
+  2.7; Frontier timedemo 27.8 / 32.1 / 35.1, CPU timedemo 33.7 / 44.8 /
+  56.1 fps (as step 20).
 - **Word and byte writes in 4 clocks (step 20, branch step20-wr4, seed 11;
   router1):** `WR4` on (built in step 15, off since for timing): a posted
   non-pair write to fast RAM steps at DECIDE. Planned and built by the

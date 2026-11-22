@@ -73,3 +73,7 @@ from registers a step earlier.
   4 1.488x. No cost against step 20 (seed 11, 1.491x): the pair test fits
   with router1 and the split DECIDE. Shipped seed 14:
   `bitstreams/step21_fpair/`, waiting for Glen's test.
+- **Glen's test: runs at 12x, 16x and 20x.** SysInfo caches on 11521 /
+  15383 / 19239 (+3.6% on step 20 at every speed; step 15 had 11179 /
+  14925 without the barrel shifter). Frontier timedemos and AIBB as step
+  20.
