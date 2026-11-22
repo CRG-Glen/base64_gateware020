@@ -450,6 +450,9 @@ style. `README.md` is the user-facing version of the same material.
 | step 17 at 12x (seed 10) | 10804 / 4462 | 16.69 / 8.14 |
 | step 17 at 16x (seed 10) | 14411 / 6462 | 21.13 / 10.61 |
 | step 17 at 20x (seed 10) | 18029 / 7095 | 26.32 / 12.69 |
+| exp-router1 at 12x (step 17, router1, seed 7) | 10804 / 4774 | 16.68 / 8.14 |
+| exp-router1 at 16x (seed 7) | 14416 / 5924 | 21.13 / 10.18 |
+| exp-router1 at 20x (seed 7) | 18028 / 6910 | 26.32 / 12.69 |
 
 - AIBB MemTest did not move from step 6 to step 7 (pairs only come from
   cache hits; MemTest's reads miss and its writes are 16-bit). Step 8's
@@ -514,6 +517,16 @@ style. `README.md` is the user-facing version of the same material.
   more sensitive to the CPU): 10.9 / 92.8 / 31.1, 14.5 / 128.6 / 41.2,
   18.2 / 154.8 / 57.1 fps (min / max / average, 12x / 16x / 20x). No
   v2.0 number to compare with; the baseline for the next steps.
+- **exp-router1** (step 17's netlist placed and routed with nextpnr's
+  router1, branch `exp-router1`): 16 of 16 seeds pass at 12x (router2 2 of
+  16), seed 7 +1.53 ns, 1.146x / 1.433x at 16x / 20x. **Runs on Glen's
+  A500+ at all three speeds, hours at 20x**, results as step 17: SysInfo
+  10804 / 4774, 14416 / 5924, 18028 / 6910; AIBB 16.68 / 8.14, 21.13 /
+  10.18, 26.32 / 12.69; xSysInfo 18213 / 9294 (23.70 / 21.14 MB/s), 24771
+  / 11465 (29.57 / 26.18), 30968 / 14116 (36.83 / 32.74); SD 2.0 / 2.2 /
+  2.7 MB/s; Frontier timedemo 26.4 / 30.9 / 34.0 fps, CPU timedemo 31.1 /
+  41.2 / 51.7 fps (20x: step 17 gave 57.1 with the same logic; to be
+  re-run back to back). Router1 is the default flow from here.
 - **v2.0 release** (14.11.2026): main gets steps 13 to 15b and the 20x
   clock; speeds 12x / 16x / 20x (Glen: 14x and 18x not a big enough
   step). The released bitstream is the `exp-20x` seed 10 file Glen
