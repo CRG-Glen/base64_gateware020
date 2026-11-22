@@ -70,9 +70,20 @@ when to stop and report. Results go in the plan's own log section.
    build (12x pin; 16x and 20x sharing one PLL; 22x on the other).
    Built: 16 of 16 seeds pass, seed 15 1.646x at 22x; **waiting for
    Glen's test**, with the 7 MHz-fed build (`--pll7m`, seed 12, 1.596x
-   at 22x) beside it. Then the same from the Amiga's 7 MHz clock (`exp-7m-pll`
+   at 22x) beside it.
+9. **Next step after Glen's 22x test: burst cache fills** (Glen's choice).
+   A miss fills a line of 4 or 8 words (SDRAM burst, both cache banks a
+   clock) while the CPU carries on with the first word; today a miss
+   brings one pair (32 bits) and a one-word prefetch. Expected: sequential
+   fast RAM reads (AIBB MemTest, xSysInfo fast RAM, new code) perhaps
+   +20-40%; Frontier perhaps 2-3% (its misses cost ~5%, step 18). Nothing
+   with the caches off or for Chip RAM. **Measure first** (how many misses
+   a 4- or 8-word line would turn into hits, bench c and the memory
+   benches), then plan: SDRAM controller bursts, writes during a fill, an
+   access to the line while it fills. The fast RAM path is already
+   synchronous (the direct port, step 3); the Amiga's bus cannot be. Then the same from the Amiga's 7 MHz clock (`exp-7m-pll`
    stage 1 was built from v2.0 and never tested).
-9. The smaller items (section 4 there, and `backlog.md`): each needs a
+10. The smaller items (section 4 there, and `backlog.md`): each needs a
    plan from the planner first.
 
 ## How v2.0 was reached (history)
