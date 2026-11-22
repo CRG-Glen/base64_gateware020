@@ -90,7 +90,9 @@ python3 scripts/build.py full --perf ...       # step 18 counter test build, bui
 Toolchain: yowasp-yosys 0.70, yowasp-nextpnr-ecp5 0.11, ecppack
 (fpga-trellis), Verilator 5.020, binutils and gcc for m68k-linux-gnu.
 Synthesis: `synth_ecp5 -abc9`, keep_hierarchy on the TG68 modules, then
-flatten. nextpnr: `--placer static --router router2`.
+flatten. nextpnr: `--placer static --router router1` (from exp-router1:
+16 of 16 seeds pass against router2's 2 of 16, more 20x margin; v2.0 and
+steps up to 18 were router2: `ROUTER=router2` rebuilds them byte for byte).
 **ecppack stays plain by default**; `--compress --freq 38.8` gives the
 `_fast` files. `--spimode dual-spi --freq 62` never loaded on this module.
 
@@ -221,6 +223,9 @@ flatten. nextpnr: `--placer static --router router2`.
 - `step17-icache-tag-drop` (a write drops only its own instruction-cache
   entry) runs on Glen's A500+ at all three speeds, seed 10; benchmarks as
   v2.0. Not merged. Step 18 stacks on it.
+- `exp-router1` (step 17's design routed with router1, seed 7, 1.433x at
+  20x) runs on Glen's board at all speeds, hours at 20x: router1 is the
+  default flow from here. Step 19 builds on it.
 - New work branches from `main`. What to build next, in order, with the
   measurements behind it: `plans/strategy-after-v2.md`.
 

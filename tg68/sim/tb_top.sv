@@ -333,6 +333,7 @@ module tb;
         end
     end
 `ifdef TG68_PERF
+`ifdef FASTMEM   // (the top bench has no fast RAM, so no counters to read)
     // step 18: the performance counters (perf_cnt.v). pc(i) reads counter i.
     function [39:0] pc(input integer i);
         case (i)
@@ -387,6 +388,7 @@ module tb;
         if (pf_rst > 0) begin dut.g_fastmem.u_perf.sim_reset = 1'b1; pf_rst = pf_rst - 1; end
         else dut.g_fastmem.u_perf.sim_reset = 1'b0;
     end
+`endif
 `endif
 `endif
 `endif

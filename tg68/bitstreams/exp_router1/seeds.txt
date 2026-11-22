@@ -1,0 +1,18 @@
+router1, step 17 design (step 18 normal netlist, = step 17 byte for byte with router2)
+seed  12x   worst 1T  ratio 16x  ratio 20x
+   1  PASS   +1.01    1.205      1.507
+   2  PASS   +0.36    1.279      1.599
+   3  PASS   +0.78    1.232      1.539
+   4  PASS   +1.18    1.197      1.496
+   5  PASS   +0.73    1.236      1.546
+   6  PASS   +1.06    1.199      1.499
+   7  PASS   +1.53    1.146      1.433
+   8  PASS   +1.10    1.195      1.494
+   9  PASS   +0.82    1.226      1.532
+  10  PASS   +0.74    1.236      1.545
+  11  PASS   +0.87    1.220      1.526
+  12  PASS   +0.72    1.238      1.548
+  13  PASS   +1.10    1.195      1.494
+  14  PASS   +1.05    1.201      1.501
+  15  PASS   +1.37    1.165      1.455
+  16  PASS   +1.29    1.199      1.498
