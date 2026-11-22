@@ -101,5 +101,7 @@ timedemos, a warm run at 20x.
   +1.24 ns. Lowest 20x ratios: seed 11 +1.24 ns, 1.193x / **1.491x**;
   seed 2 1.533x; seed 1 1.545x. Step 19's seed 2 was 1.167x / 1.459x:
   WR4 costs about 0.03x at 20x (`k_fast` in the step decision), inside
-  the plan's 1.55x. Shipped seed 11: `bitstreams/step20_wr4/`, waiting
-  for Glen's test.
+  the plan's 1.55x. Shipped seed 11: `bitstreams/step20_wr4/`.
+- **Glen's test: runs at 12x, 16x and 20x, stable.** SysInfo as step 19;
+  Frontier CPU timedemo 33.7 / 44.8 / 56.0 fps (+1.2 / +1.6 / +1.4%);
+  xSysInfo caches on +2.1 / +4.4 / +0.4%.

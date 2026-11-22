@@ -456,6 +456,9 @@ style. `README.md` is the user-facing version of the same material.
 | step 19 at 12x (barrel shifter, router1, seed 2) | 11118 / 5361 | 16.69 / 8.49 |
 | step 19 at 16x (seed 2) | 14844 / 5992 | 21.13 / 10.38 |
 | step 19 at 20x (seed 2) | 18566 / 7394 | 26.32 / 12.69 |
+| step 20 at 12x (WR4, seed 11) | 11117 / 5360 | 16.69 / 8.50 |
+| step 20 at 16x (seed 11) | 14838 / 6415 | 21.13 / 10.37 |
+| step 20 at 20x (seed 11) | 18566 / 7442 | 26.32 / 12.69 |
 
 - AIBB MemTest did not move from step 6 to step 7 (pairs only come from
   cache hits; MemTest's reads miss and its writes are 16-bit). Step 8's
@@ -520,6 +523,17 @@ style. `README.md` is the user-facing version of the same material.
   more sensitive to the CPU): 10.9 / 92.8 / 31.1, 14.5 / 128.6 / 41.2,
   18.2 / 154.8 / 57.1 fps (min / max / average, 12x / 16x / 20x). No
   v2.0 number to compare with; the baseline for the next steps.
+- **Word and byte writes in 4 clocks (step 20, branch step20-wr4, seed 11;
+  router1):** `WR4` on (built in step 15, off since for timing): a posted
+  non-pair write to fast RAM steps at DECIDE. Planned and built by the
+  same model (`plans/step20-wr4.md`). Sim: bench c -1.1%. 16 of 16 seeds
+  pass, seed 11 1.193x / 1.491x. **Runs on Glen's A500+ at all three
+  speeds**, stable: SysInfo 11117 / 5360, 14838 / 6415, 18566 / 7442
+  (as step 19); AIBB 16.69 / 8.50, 21.13 / 10.37, 26.32 / 12.69; xSysInfo
+  18750 / 9628 (23.70 / 21.12 MB/s), 25127 / 11793 (29.55 / 26.22), 31258
+  / 15575 (36.88 / 32.76); SD 2.0 / 2.2 / 2.7; Frontier timedemo 27.8 /
+  32.1 / 35.0 fps, CPU timedemo 33.7 / 44.8 / 56.0 fps (+1.2 / +1.6 /
+  +1.4% on step 19).
 - **Barrel shifter (step 19, branch step19-barrel, seed 2; router1):** the
   kernel netlist `tg68_020_b1.v` (BarrelShifter => 1, no VHDL change):
   every shift and rotate in one step. Built first by a second

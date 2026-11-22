@@ -51,7 +51,8 @@ when to stop and report. Results go in the plan's own log section.
    not worth it (step 18's log).
 5. **Step 20**, `step20-wr4` (`step20-wr4.md`): word and byte writes to
    fast RAM in 4 clocks. Built, 16 of 16 seeds pass, seed 11 1.491x at
-   20x; **waiting for Glen's test**. (The 16 KB caches that the strategy
+   20x; **runs on Glen's board at all speeds** (Frontier CPU timedemo
+   +1.2 to +1.6%). (The 16 KB caches that the strategy
    called step 20 are shelved: step 18's numbers.) Next of the small
    CPU-side items: 32-bit operands as one pair again (backlog speed 5 /
    strategy 4.1), then data-cache hits in 4 clocks.

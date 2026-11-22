@@ -229,6 +229,8 @@ steps up to 18 were router2: `ROUTER=router2` rebuilds them byte for byte).
 - `step19-barrel` (the barrel shifter, router1, seed 2; includes 17, 18,
   exp-router1) runs on Glen's board at all speeds: SysInfo +3%, Frontier
   CPU timedemo +7%. Not merged.
+- `step20-wr4` (word/byte writes in 4 clocks, seed 11, on step 19) runs on
+  Glen's board at all speeds: Frontier CPU timedemo +1.4%. Not merged.
 - New work branches from `main`. What to build next, in order, with the
   measurements behind it: `plans/strategy-after-v2.md`.
 
