@@ -1,0 +1,17 @@
+seed  result  worst 1T  worst multicycle  worst failing class
+   1  PASS       +0.67             +4.13  
+   2  PASS       +0.93             +4.50  
+   3  PASS       +0.78             +2.78  
+   4  PASS       +1.18             +4.83  
+   5  PASS       +0.91             +2.56  
+   6  PASS       +0.08             +4.92  
+   7  PASS       +0.63             +2.76  
+   8  PASS       +0.27             +3.07  
+   9  PASS       +0.78             +3.87  
+  10  PASS       +0.79             +3.09  
+  11  PASS       +1.13             +5.22  
+  12  PASS       +1.41             +4.20  
+  13  PASS       +0.20             +4.77  
+  14  PASS       +0.90             +4.09  
+  15  PASS       +0.94             +2.23  
+  16  PASS       +0.37             +3.08  
