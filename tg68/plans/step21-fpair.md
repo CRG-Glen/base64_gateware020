@@ -61,3 +61,10 @@ from registers a step earlier.
   (as step 15; 15b's change A had lowered the 6), `fn32` passes.
 - Mutants: (a) bench c FAIL: 0 pairs, 75 sequential fetches unpredicted;
   (b) bench c FAIL: 75 pairs, 75 unpredicted.
+- Regression: bus, top, fastmem; top PERF=0; CAL_TEST, CAL_DRIFT;
+  S15_DEFAULT=0, S17_DEFAULT=0, FPAIR_DEFAULT=0 (each bus, top, fastmem);
+  benches c, coff, copy, read, scatter, readoff, chip, wrchip, wrfast,
+  wrmix, sd, op; c and copy at 20x: all PASS once the new bench c check
+  was limited to 12x with the caches on. (As first written it failed
+  bench coff, where the predictor is off, and bench c at 20x, where the
+  tb's step-gap counters tick on the 12x clock. The design was right.)

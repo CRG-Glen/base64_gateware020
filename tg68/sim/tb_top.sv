@@ -756,8 +756,11 @@ module tb;
         check(24'h811C, 32'h000000F1, "SPI loopback bytes");
 `elsif BENCH_C
         // step 21: with FPAIR the instruction-stream pairs come back, and the
-        // prediction after one is right (no sequential fetch in 5 clocks)
-        if ((dut.cpu.FPAIR != 0) != (sk_fpair > 0) || sk_f5seq != 0) begin
+        // prediction after one is right (no sequential fetch in 5 clocks).
+        // Only with the caches on (bench coff: no predictor) and at 12x (the
+        // sk_ counters time steps on clk12)
+        if (dut.cpu.ic_on && dut.clk_cur == 2'd0
+            && ((dut.cpu.FPAIR != 0) != (sk_fpair > 0) || sk_f5seq != 0)) begin
             $display("FAIL FPAIR %0d: %0d instruction-stream pairs, %0d sequential fetches not predicted", dut.cpu.FPAIR, sk_fpair, sk_f5seq);
             errors = errors + 1;
         end
