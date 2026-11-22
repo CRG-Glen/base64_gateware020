@@ -143,8 +143,9 @@ STATIC = re.compile(r'^(g_(fastmem|sd)\.u_\w+\.(maprom_active|maprom_load|config
                     # next request) before anything uses them. yosys merges
                     # spd, ph_top and ph_half into spd_hold2/spd_lox.
                     # NOT cl3_now: the sequencer reacts to it the next clock.
-                    # (v2.0: spd_rfc, the SDRAM's tRFC + 2 at 20x, likewise)
-                    r'|spd|ph_top|ph_half|ms_top|spd_hold2|spd_lox|spd_rfc|clk_sel'
+                    # (v2.0: spd_rfc, the SDRAM's tRFC + 2 at 20x, likewise;
+                    # exp-22x: spd_xl, tRP + 1 and tRFC + 1 more at 22x)
+                    r'|spd|ph_top|ph_half|ms_top|spd_hold2|spd_lox|spd_rfc|spd_xl|clk_sel'
                     r'|g_sdram\.u_sdram\.cas_lat_r|g_sd\.u_sd\.\w*lo_x\w*)(_|\[|$)')
 # Instruction cache RAM and its registers: ordinary single-cycle logic, but
 # listed separately because a cache hit loads k_din one clock after ic_qd,

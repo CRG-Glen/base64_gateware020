@@ -356,7 +356,8 @@ always @(posedge clk) rom_q <= rom[a[ROM_AWID:1]];
 //   +$F006  ms to boot         read-only
 //   +$F008  mapROM control     READ/WRITE
 //   +$F00A  speed (step 13)    READ/WRITE, key $5B:
-//           write $5B0C / $5B10 / $5B14 asks for 12x / 16x / 20x (v2.0;
+//           write $5B0C / $5B10 / $5B14 / $5B16 asks for 12x / 16x / 20x /
+//           22x (22x: exp-22x; 12/16/20: v2.0;
 //           before it $5B0E was 14x, which is no longer taken) (the top
 //           level switches when the CPU and both buses are idle, and
 //           recalibrates its 7M capture; the speed in force just
@@ -449,6 +450,8 @@ always @(posedge clk) begin
         // TG68 v2.0: 20 ($5B14) takes speed code 1 (14x until v2.0); 14 is not taken
         else if (d_in[5:0] == 6'd20) begin spd_wr <= 1'b1; spd_val <= 2'd1; spd_smp <= d_in[7:6]; end
         else if (d_in[5:0] == 6'd16) begin spd_wr <= 1'b1; spd_val <= 2'd2; spd_smp <= d_in[7:6]; end
+        // TG68 exp-22x: 22 ($5B16) is 22x, speed code 3
+        else if (d_in[5:0] == 6'd22) begin spd_wr <= 1'b1; spd_val <= 2'd3; spd_smp <= d_in[7:6]; end
     end
 end
 

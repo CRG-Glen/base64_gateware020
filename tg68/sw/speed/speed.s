@@ -1,12 +1,16 @@
 | speed -- show or change the Base64 TG68 system clock while running.
 |
-| 1.4 (v2.0 gateware): 12x, 16x and 20x. The gateware's speed code 1 and
-| its PLL lock bit (bit 8) were 14x before v2.0 and are 20x from v2.0.
+| 1.5 (exp-22x gateware): 12x, 16x, 20x and 22x; 22 is offered when the
+| gateware reports its PLL locked (board+$F00C bit 8; older gateware reads
+| 0 there and says nothing about 22). 1.4 (v2.0): 12x, 16x and 20x. The
+| gateware's speed code 1 and its PLL lock bit (bit 8) were 14x before
+| v2.0 and are 20x from v2.0.
 |
 |   speed             report the clock in force, change nothing
 |   speed 12          85.1 MHz, the ICS570B's own clock (power-on default)
 |   speed 20          141.9 MHz, from the FPGA's PLL
-|   speed 16          113.5 MHz, from the FPGA's other PLL
+|   speed 16          113.5 MHz, from the FPGA's PLL
+|   speed 22          156.1 MHz, from the FPGA's other PLL (exp-22x)
 |   speed 16 RISE     the same, with the 7 MHz sample forced to the rising
 |   speed 16 FALL     or falling clock edge (normally calibrated: see below)
 |
@@ -149,6 +153,8 @@ _start:
         cmp.w   #20,%d2                     | v2.0: 20 in place of 14
         beq.s   7f
         cmp.w   #16,%d2
+        beq.s   7f
+        cmp.w   #22,%d2                     | exp-22x
         bne     usage
 7:      move.w  %d2,%d6
         | then RISE or FALL, optional (only the first letter counts)
@@ -212,6 +218,9 @@ args_done:
         move.w  #0x0003,SPD_REG+2(%a2)      | three automatic swaps
 .else
         move.w  #0x070C,SPD_REG(%a2)
+.ifdef TEST22
+        move.w  #0x0100,SPD_REG+2(%a2)      | exp-22x: the 22x PLL locked
+.endif
 .endif
 .endif
 .else
@@ -271,10 +280,17 @@ args_done:
         bsr     puts
         bra     close_exp
 6:      cmp.w   #16,%d6
-        bne.s   7f
+        bne.s   61f
         btst    #B_LOCK16,%d5
         bne.s   7f
         lea     m_nolock16(%pc),%a0
+        bsr     puts
+        bra     close_exp
+61:     cmp.w   #22,%d6                     | exp-22x: board+$F00C bit 8
+        bne.s   7f
+        btst    #0,SPD_REG+2(%a2)           | (bit 8 of the word = bit 0 of its high byte)
+        bne.s   7f
+        lea     m_nolock22(%pc),%a0
         bsr     puts
         bra     close_exp
 7:      move.w  %d4,%d0
@@ -336,6 +352,9 @@ report:
         lea     m_x16(%pc),%a0
         cmp.b   #16,%d5
         beq.s   1f
+        lea     m_x22(%pc),%a0
+        cmp.b   #22,%d5
+        beq.s   1f
         lea     m_xunk(%pc),%a0
 1:      bsr     puts
         btst    #B_SWITCH,%d5
@@ -349,8 +368,12 @@ report:
         lea     m_a16(%pc),%a0
         bsr     puts
 3:      btst    #B_LOCK14,%d5               | (bit 8: the 20x PLL from v2.0)
-        beq.s   4f
+        beq.s   31f
         lea     m_a14(%pc),%a0
+        bsr     puts
+31:     btst    #0,SPD_REG+2(%a2)           | exp-22x: the 22x PLL (+$F00C bit 8)
+        beq.s   4f
+        lea     m_a22(%pc),%a0
         bsr     puts
 4:      lea     m_nl(%pc),%a0
         bsr     puts
@@ -441,8 +464,8 @@ puthexn:
 | ---- text ------------------------------------------------------------------
 dosname:    .asciz  "dos.library"
 expname:    .asciz  "expansion.library"
-verstag:    .asciz  "$VER: speed 1.4 (14.11.2026) Base64"
-m_usage:    .asciz  "Usage: speed               show the clock in force\n       speed 12            85.1 MHz (power-on default)\n       speed 16           113.5 MHz\n       speed 20           141.9 MHz\n       speed <n> RISE|FALL  force the 7 MHz sampling edge\nThe speed stays over a reset; a power cycle returns to 12.\nThe speed in force again: recalibrate the 7 MHz capture.\n"
+verstag:    .asciz  "$VER: speed 1.5 (24.11.2026) Base64"
+m_usage:    .asciz  "Usage: speed               show the clock in force\n       speed 12            85.1 MHz (power-on default)\n       speed 16           113.5 MHz\n       speed 20           141.9 MHz\n       speed 22           156.1 MHz (if the gateware has it)\n       speed <n> RISE|FALL  force the 7 MHz sampling edge\nThe speed stays over a reset; a power cycle returns to 12.\nThe speed in force again: recalibrate the 7 MHz capture.\n"
 m_noexp:    .asciz  "cannot open expansion.library\n"
 m_noboard:  .asciz  "No Base64 AutoConfig ROM board found (5194/14).\n"
 m_nowin:    .asciz  "Board found, but no status window - gateware is too old.\n"
@@ -450,16 +473,19 @@ m_noswitch: .asciz  "This gateware cannot change the clock while running\n(the f
 m_recal:    .asciz  "Same speed: recalibrating the 7 MHz capture.\n"
 m_nolock14: .asciz  "The 20x PLL is not locked: speed not changed.\n"
 m_nolock16: .asciz  "The 16x PLL is not locked: speed not changed.\n"
+m_nolock22: .asciz  "This gateware has no 22x, or its PLL is not locked: speed not changed.\n"
 m_timeout:  .asciz  "The gateware did not finish the switch.\n"
 m_speed:    .asciz  "System clock: "
 m_x12:      .asciz  "12x  85.1 MHz\n"
 m_x14:      .asciz  "20x 141.9 MHz\n"
 m_x16:      .asciz  "16x 113.5 MHz\n"
+m_x22:      .asciz  "22x 156.1 MHz\n"
 m_xunk:     .asciz  "unknown\n"
 m_avail:    .asciz  "Available:    "
 m_a12:      .asciz  " 12"
 m_a14:      .asciz  " 20"
 m_a16:      .asciz  " 16"
+m_a22:      .asciz  " 22"
 m_smp:      .asciz  "7 MHz sample: "
 m_rise:     .asciz  "rising edge\n"
 m_fall:     .asciz  "falling edge\n"

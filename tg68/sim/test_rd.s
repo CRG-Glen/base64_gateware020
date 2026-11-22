@@ -12,7 +12,11 @@ start:
         .ifdef SPEED16
         move.w  #0x5B10,0xEAF00A
         .else
+        .ifdef SPEED22
+        move.w  #0x5B16,0xEAF00A    | exp-22x: 22x
+        .else
         move.w  #0x5B14,0xEAF00A
+        .endif
         .endif
 9:      move.w  0xEAF00A,%d0
         btst    #11,%d0
@@ -20,7 +24,11 @@ start:
         .ifdef SPEED16
         cmp.b   #0x10,%d0
         .else
+        .ifdef SPEED22
+        cmp.b   #0x16,%d0
+        .else
         cmp.b   #0x14,%d0
+        .endif
         .endif
         bne.s   9b
         .endif

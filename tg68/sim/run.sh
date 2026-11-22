@@ -8,6 +8,7 @@
 #   sim/run.sh bench c|coff              compiled C from fast RAM (caches on|off)
 #   sim/run.sh bench op                  clocks and kernel steps per instruction
 # BENCH_ASD="--defsym SPEED18=1" sim/run.sh bench copy|read|scatter|c   at 20x (SPEED16 too: 16x)
+#   (exp-22x: --defsym SPEED18=1 --defsym SPEED22=1: at 22x)
 #   sim/run.sh bench sd                  SD controller, SPI loopback
 # CORE=tg68_020_b0_nobf_smul sim/run.sh bus   tests another core variant
 # PERF=0 sim/run.sh ...      without the step 18 performance counters (the

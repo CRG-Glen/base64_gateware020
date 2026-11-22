@@ -32,64 +32,74 @@ module clkgen #(
     parameter integer ENABLE = 1
 )(
     input  wire       clk_in,     // 12x from the ICS570B (pin L1)
-    input  wire [1:0] sel,        // 0 12x, 1 14x, 2 16x
+    input  wire [1:0] sel,        // 0 12x, 1 20x (named 14 since step 13), 2 16x, 3 22x
     output wire       clk,        // the system clock
-    output wire       lock14,
-    output wire       lock16,
-    output wire [1:0] cur         // the source running now (0 1 2)
+    output wire       lock14,     // PLL A (20x and 16x)
+    output wire       lock16,     // = lock14 since exp-22x (16x is PLL A's CLKOS)
+    output wire       lock22,     // PLL B (22x, exp-22x)
+    output wire [1:0] cur         // the source running now (0 1 2 3)
 );
 generate if (ENABLE == 0) begin : g_fixed
     assign clk = clk_in;
     assign lock14 = 1'b0;
     assign lock16 = 1'b0;
+    assign lock22 = 1'b0;
     assign cur = 2'd0;
 end else begin : g_pll
     wire c12 = clk_in;
-    wire c14, c16;
+    wire c14, c16, c22;
 `ifdef YOSYS
+    // exp-22x: PLL A (VCO 567.5 MHz) makes 20x on CLKOP (/4, its feedback)
+    // and 16x on CLKOS (/5); PLL B (VCO 624.3 MHz) makes 22x (85.13 x 11/6)
     (* FREQUENCY_PIN_CLKI="85.13" *)
     (* FREQUENCY_PIN_CLKOP="141.88" *)
+    (* FREQUENCY_PIN_CLKOS="113.507" *)
     (* ICP_CURRENT="12" *) (* LPF_RESISTOR="8" *) (* MFG_ENABLE_FILTEROPAMP="1" *) (* MFG_GMCREF_SEL="2" *)
     EHXPLLL #(
         .PLLRST_ENA("DISABLED"), .INTFB_WAKE("DISABLED"), .STDBY_ENABLE("DISABLED"),
         .DPHASE_SOURCE("DISABLED"), .OUTDIVIDER_MUXA("DIVA"), .OUTDIVIDER_MUXB("DIVB"),
         .OUTDIVIDER_MUXC("DIVC"), .OUTDIVIDER_MUXD("DIVD"),
         .CLKI_DIV(3), .CLKOP_ENABLE("ENABLED"), .CLKOP_DIV(4),
-        .CLKOP_CPHASE(3), .CLKOP_FPHASE(0), .FEEDBK_PATH("CLKOP"), .CLKFB_DIV(5)
+        .CLKOP_CPHASE(3), .CLKOP_FPHASE(0), .FEEDBK_PATH("CLKOP"), .CLKFB_DIV(5),
+        .CLKOS_ENABLE("ENABLED"), .CLKOS_DIV(5), .CLKOS_CPHASE(4), .CLKOS_FPHASE(0)
     ) u_pll14 (
-        .RST(1'b0), .STDBY(1'b0), .CLKI(c12), .CLKOP(c14), .CLKFB(c14), .CLKINTFB(),
+        .RST(1'b0), .STDBY(1'b0), .CLKI(c12), .CLKOP(c14), .CLKOS(c16), .CLKFB(c14), .CLKINTFB(),
         .PHASESEL0(1'b0), .PHASESEL1(1'b0), .PHASEDIR(1'b1), .PHASESTEP(1'b1),
         .PHASELOADREG(1'b1), .PLLWAKESYNC(1'b0), .ENCLKOP(1'b0), .LOCK(lock14)
     );
     (* FREQUENCY_PIN_CLKI="85.13" *)
-    (* FREQUENCY_PIN_CLKOP="113.507" *)
+    (* FREQUENCY_PIN_CLKOP="156.07" *)
     (* ICP_CURRENT="12" *) (* LPF_RESISTOR="8" *) (* MFG_ENABLE_FILTEROPAMP="1" *) (* MFG_GMCREF_SEL="2" *)
     EHXPLLL #(
         .PLLRST_ENA("DISABLED"), .INTFB_WAKE("DISABLED"), .STDBY_ENABLE("DISABLED"),
         .DPHASE_SOURCE("DISABLED"), .OUTDIVIDER_MUXA("DIVA"), .OUTDIVIDER_MUXB("DIVB"),
         .OUTDIVIDER_MUXC("DIVC"), .OUTDIVIDER_MUXD("DIVD"),
-        .CLKI_DIV(9), .CLKOP_ENABLE("ENABLED"), .CLKOP_DIV(6),
-        .CLKOP_CPHASE(3), .CLKOP_FPHASE(0), .FEEDBK_PATH("CLKOP"), .CLKFB_DIV(12)
-    ) u_pll16 (
-        .RST(1'b0), .STDBY(1'b0), .CLKI(c12), .CLKOP(c16), .CLKFB(c16), .CLKINTFB(),
+        .CLKI_DIV(6), .CLKOP_ENABLE("ENABLED"), .CLKOP_DIV(4),
+        .CLKOP_CPHASE(3), .CLKOP_FPHASE(0), .FEEDBK_PATH("CLKOP"), .CLKFB_DIV(11)
+    ) u_pll22 (
+        .RST(1'b0), .STDBY(1'b0), .CLKI(c12), .CLKOP(c22), .CLKFB(c22), .CLKINTFB(),
         .PHASESEL0(1'b0), .PHASESEL1(1'b0), .PHASEDIR(1'b1), .PHASESTEP(1'b1),
-        .PHASELOADREG(1'b1), .PLLWAKESYNC(1'b0), .ENCLKOP(1'b0), .LOCK(lock16)
+        .PHASELOADREG(1'b1), .PLLWAKESYNC(1'b0), .ENCLKOP(1'b0), .LOCK(lock22)
     );
+    assign lock16 = lock14;
 `else
     // simulation: N output cycles per 12 input cycles, re-phased every 12
     pll_model #(.N(20)) u_pll14 (.clk_in(c12), .clk_out(c14), .lock(lock14));   // v2.0: 20x
     pll_model #(.N(16)) u_pll16 (.clk_in(c12), .clk_out(c16), .lock(lock16));
+    pll_model #(.N(22)) u_pll22 (.clk_in(c12), .clk_out(c22), .lock(lock22));   // exp-22x
 `endif
     // the glitch-free switch: one enable per source, changed on that
     // source's falling edge; on only once the others are seen off
     reg s12 = 1'b1, e12 = 1'b1;   // power-on: 12x
     reg s14 = 1'b0, e14 = 1'b0;
     reg s16 = 1'b0, e16 = 1'b0;
-    always @(negedge c12) begin s12 <= (sel == 2'd0) && !e14 && !e16; e12 <= s12; end
-    always @(negedge c14) begin s14 <= (sel == 2'd1) && !e12 && !e16; e14 <= s14; end
-    always @(negedge c16) begin s16 <= (sel == 2'd2) && !e12 && !e14; e16 <= s16; end
-    wire mux = (c12 & e12) | (c14 & e14) | (c16 & e16);
-    assign cur = e16 ? 2'd2 : e14 ? 2'd1 : 2'd0;
+    reg s22 = 1'b0, e22 = 1'b0;   // exp-22x
+    always @(negedge c12) begin s12 <= (sel == 2'd0) && !e14 && !e16 && !e22; e12 <= s12; end
+    always @(negedge c14) begin s14 <= (sel == 2'd1) && !e12 && !e16 && !e22; e14 <= s14; end
+    always @(negedge c16) begin s16 <= (sel == 2'd2) && !e12 && !e14 && !e22; e16 <= s16; end
+    always @(negedge c22) begin s22 <= (sel == 2'd3) && !e12 && !e14 && !e16; e22 <= s22; end
+    wire mux = (c12 & e12) | (c14 & e14) | (c16 & e16) | (c22 & e22);
+    assign cur = e22 ? 2'd3 : e16 ? 2'd2 : e14 ? 2'd1 : 2'd0;
 `ifdef YOSYS
     DCCA u_gbuf (.CLKI(mux), .CE(1'b1), .CLKO(clk));
 `elsif CAL_DRIFT

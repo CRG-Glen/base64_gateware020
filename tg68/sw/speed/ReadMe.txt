@@ -1,9 +1,11 @@
-speed 1.4 -- Base64 TG68 system clock (v2.0 gateware)
+speed 1.5 -- Base64 TG68 system clock (v2.0 and exp-22x gateware)
 
   speed             show the clock in force
   speed 12          85.1 MHz, the board's own clock (power-on default)
   speed 16         113.5 MHz
   speed 20         141.9 MHz
+  speed 22         156.1 MHz (exp-22x gateware only; offered only when
+                   that gateware reports its PLL locked)
   speed 20 RISE     the same, 7 MHz sampled on the rising clock edge
   speed 20 FALL     ... or on the falling edge (normally calibrated)
 

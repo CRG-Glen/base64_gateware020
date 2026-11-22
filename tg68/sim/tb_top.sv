@@ -509,7 +509,7 @@ module tb;
         if (dut.clk_cur != cur_d && dut.clk_cur == dut.clk_sel) begin
             n_switch = n_switch + 1;
             $display("%0t: system clock now %0s", $time,
-                     dut.clk_cur == 2'd2 ? "16x" : dut.clk_cur == 2'd1 ? "14x" : "12x");
+                     dut.clk_cur == 2'd3 ? "22x" : dut.clk_cur == 2'd2 ? "16x" : dut.clk_cur == 2'd1 ? "20x" : "12x");
         end
         cur_d <= dut.clk_cur;
     end
@@ -721,7 +721,7 @@ module tb;
         // system clock at 12x; at 16x / 20x only the clock count is checked,
         // against the window scaled by the multiplier
         if (dut.clk_cur != 2'd0) begin
-            pchk(0, "clocks (window, scaled)", (n_clk * (dut.clk_cur == 2'd2 ? 16 : 20)) / 12, 3);
+            pchk(0, "clocks (window, scaled)", (n_clk * (dut.clk_cur == 2'd3 ? 22 : dut.clk_cur == 2'd2 ? 16 : 20)) / 12, 3);
             $display("perf: steps %0d, fetch %0d, predicted %0d (not compared away from 12x)", pc(1), pc(2), pc(3));
         end else begin
         pchk(0, "clocks", n_clk, 2);
@@ -849,6 +849,7 @@ module tb;
         checkm(24'h81D4, 32'h0000470C, 32'h00007FFF, "speed: 12x after the drift");
         checkm(24'h81D8, 32'h00004710, 32'h00007FFF, "speed: 16x, falling stream");
         checkm(24'h81E0, 32'h00004714, 32'h00007FFF, "speed: 20x, falling stream");   // v2.0
+        checkm(24'h8288, 32'h00004716, 32'h00007FFF, "speed: 22x, falling stream");   // exp-22x
         checkm(24'h81E8, 32'h0000470C, 32'h00007FFF, "speed: back to 12x, falling");
         checkm(24'h81F0, 32'h0000470C, 32'h00007FFF, "speed: unkeyed / invalid ignored");
         checkm(24'h81F4, 32'h0000570C, 32'h00007FFF, "speed: 12x, rising forced");
@@ -862,6 +863,7 @@ module tb;
         check(24'h81D4, 32'h0000370C, "speed: 12x at power-on, rising 7M stream");
         check(24'h81D8, 32'h00000710, "speed: 16x, falling stream");
         check(24'h81E0, 32'h00000714, "speed: 20x, falling stream");   // v2.0
+        check(24'h8288, 32'h00000716, "speed: 22x, falling stream");   // exp-22x
         check(24'h81E8, 32'h0000370C, "speed: back to 12x, rising stream");
         check(24'h81F0, 32'h0000370C, "speed: unkeyed / invalid writes ignored");
         check(24'h81F4, 32'h0000370C, "speed: 12x, rising forced");
@@ -874,6 +876,7 @@ module tb;
         check(24'h81D4, 32'h0000170C, "speed: 12x at power-on, rising");
         check(24'h81D8, 32'h00000710, "speed: 16x");
         check(24'h81E0, 32'h00000714, "speed: 20x");   // v2.0
+        check(24'h8288, 32'h00000716, "speed: 22x");   // exp-22x
         check(24'h81E8, 32'h0000170C, "speed: back to 12x, rising");
         check(24'h81F0, 32'h0000170C, "speed: unkeyed / invalid writes ignored");
         check(24'h81F4, 32'h0000170C, "speed: 12x, rising 7M stream forced");
@@ -883,6 +886,8 @@ module tb;
 `endif
         check(24'h81DC, 32'hACF1E135, "speed: memory traffic at 16x");
         check(24'h81E4, 32'hACF1E135, "speed: memory traffic at 20x");
+        check(24'h8284, 32'hACF1E135, "speed: memory traffic at 22x");   // exp-22x
+        check(24'h828C, 32'h00000100, "speed: the 22x PLL locked");
         check(24'h81EC, 32'hACF1E135, "speed: memory traffic at 12x");
         check(24'h81FC, 32'hACF1E135, "speed: memory traffic after a recalibration");
         // step 15: code that overwrites the instruction 0, 1 or 2 words
@@ -901,7 +906,7 @@ module tb;
         if (dut.ph_slip) begin $display("FAIL: the 7M aligner slipped"); errors = errors + 1; end
         if (!dut.ph_locked) begin $display("FAIL: the 7M aligner is not locked"); errors = errors + 1; end
         $display("clock switches: %0d; SDRAM mode loads: %0d", n_switch, u_sdram.n_mrs);
-        if (n_switch != 3) begin $display("FAIL: expected 3 clock switches"); errors = errors + 1; end
+        if (n_switch != 4) begin $display("FAIL: expected 4 clock switches (16x, 20x, 22x, 12x)"); errors = errors + 1; end
         // v2.0: 12x -> 16x loads CL3, 16x -> 20x keeps it, 20x -> 12x loads
         // CL2: still 3 (step 13: 16x -> 14x loaded CL2, 14x -> 12x none)
         if (u_sdram.n_mrs != 3) begin $display("FAIL: expected 3 SDRAM mode loads (init, CL3, CL2)"); errors = errors + 1; end

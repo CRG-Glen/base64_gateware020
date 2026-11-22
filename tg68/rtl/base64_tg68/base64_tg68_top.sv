@@ -295,7 +295,7 @@ module base64_tg68_top #(
     // glitch-free switch (clkgen.v). Power-on: 12x, the pin's own clock. The
     // 16x board-mod build (TG68_X16) has no PLLs: clk is the pin.
     reg  [1:0] clk_sel = 2'd0;
-    wire       pll_lock14, pll_lock16;
+    wire       pll_lock14, pll_lock16, pll_lock22;   // exp-22x: lock22
     wire [1:0] clk_cur;
     wire       clk;
     clkgen #(
@@ -305,7 +305,7 @@ module base64_tg68_top #(
         .ENABLE(1)
 `endif
     ) u_clkgen (.clk_in(clk_12x), .sel(clk_sel), .clk(clk),
-                .lock14(pll_lock14), .lock16(pll_lock16), .cur(clk_cur));
+                .lock14(pll_lock14), .lock16(pll_lock16), .lock22(pll_lock22), .cur(clk_cur));
 
     // Master clocks per emulated CPU clock period, and the phi2 offset.
     // Sized localparams throughout: part-selecting an `integer` parameter is
@@ -362,6 +362,7 @@ module base64_tg68_top #(
     wire        spd_hold2 = 1'b1;      // 2-clock rt_ hold after AS
     wire        spd_lox   = 1'b0;      // (the SD stretch is SD_LO_EXTRA there)
     wire        spd_rfc   = 1'b0;
+    wire        spd_xl    = 1'b0;
 `else
     reg  [4:0]  ph_top    = 5'd11;
     reg  [4:0]  ph_half   = 5'd6;
@@ -369,17 +370,20 @@ module base64_tg68_top #(
     reg         spd_hold2 = 1'b0;
     reg         spd_lox   = 1'b0;
     reg         spd_rfc   = 1'b0;   // v2.0: SDRAM tRFC + 2 at 20x
+    reg         spd_xl    = 1'b0;   // exp-22x: SDRAM tRP + 1, tRFC + 1 more at 22x
     always @(posedge clk) begin
-        // v2.0: speed code 1 is 20x (until v2.0 14x: 13 / 7 / 99318)
-        ph_top    <= (spd == 2'd2) ? 5'd15 : (spd == 2'd1) ? 5'd19 : 5'd11;
-        ph_half   <= (spd == 2'd2) ? 5'd8  : (spd == 2'd1) ? 5'd10 : 5'd6;
-        // 1 ms: 85.13 / 99.32 / 113.51 MHz
-        ms_top    <= (spd == 2'd2) ? 18'd113507 : (spd == 2'd1) ? 18'd141858 : 18'd85129;
+        // v2.0: speed code 1 is 20x (until v2.0 14x: 13 / 7 / 99318);
+        // exp-22x: speed code 3 is 22x
+        ph_top    <= (spd == 2'd3) ? 5'd21 : (spd == 2'd2) ? 5'd15 : (spd == 2'd1) ? 5'd19 : 5'd11;
+        ph_half   <= (spd == 2'd3) ? 5'd11 : (spd == 2'd2) ? 5'd8  : (spd == 2'd1) ? 5'd10 : 5'd6;
+        // 1 ms: 85.13 / 141.86 / 113.51 / 156.07 MHz
+        ms_top    <= (spd == 2'd3) ? 18'd156070 : (spd == 2'd2) ? 18'd113507 : (spd == 2'd1) ? 18'd141858 : 18'd85129;
         // address/data hold past AS: 1 clock (11.75 ns) at 12x, 2 above
         spd_hold2 <= (spd != 2'd0);
         // SD clock: stretch the low half at 16x (see shifter.v)
-        spd_lox   <= (spd != 2'd0);     // v2.0: 16x and 20x
-        spd_rfc   <= (spd == 2'd1);     // v2.0: SDRAM tRFC + 2 clocks at 20x
+        spd_lox   <= (spd != 2'd0);     // v2.0: 16x and 20x (exp-22x: and 22x)
+        spd_rfc   <= (spd == 2'd1) || (spd == 2'd3);   // SDRAM tRFC + 2 clocks at 20x (v2.0) and 22x
+        spd_xl    <= (spd == 2'd3);     // exp-22x
     end
 `endif
     localparam [4:0] MC4    = CLK_MULT[4:0] / CPU_MULT;      // 2,3,4,6,12
@@ -1795,7 +1799,7 @@ module base64_tg68_top #(
     assign spd_stat = {ph_slip, 7'd0, 8'd16};   // fixed 16x, no switching
 `else
     wire       sp_ok  = (spd_val == 2'd0) || (spd_val == 2'd1 && pll_lock14)
-                     || (spd_val == 2'd2 && pll_lock16);
+                     || (spd_val == 2'd2 && pll_lock16) || (spd_val == 2'd3 && pll_lock22);
     wire       sp_quiet = cpu_cyc_idle && !wb_busy && core_as_n && rt_as_n;
     //  15 aligner slipped since the last calibration   14/13 the rising /
     //  falling 7M stream moved since then   12 the rising stream in use
@@ -1803,7 +1807,7 @@ module base64_tg68_top #(
     //  7-0 multiplier in force
     assign spd_stat = {ph_slip, cal_jr, cal_jf, smp_r, sp != SP_IDLE, 1'b1,
                        pll_lock16, pll_lock14,
-                       (spd == 2'd2) ? 8'd16 : (spd == 2'd1) ? 8'd20 : 8'd12};   // v2.0: 12 / 16 / 20
+                       (spd == 2'd3) ? 8'd22 : (spd == 2'd2) ? 8'd16 : (spd == 2'd1) ? 8'd20 : 8'd12};   // 12 / 16 / 20 / 22
     always @(posedge clk) begin
         cal_go  <= 1'b0;
         swap_go <= 1'b0;
@@ -2117,7 +2121,7 @@ module base64_tg68_top #(
         .spd_val    (spd_val),
         .spd_smp    (spd_smp),
         .spd_stat   (spd_stat),
-        .spd_stat2  ({8'd0, n_swap}),     // step 14: +$F00C
+        .spd_stat2  ({7'd0, pll_lock22, n_swap}),     // step 14: +$F00C (exp-22x: bit 8 = 22x PLL locked)
 `ifdef TG68_PERF
         .perf_wr    (perf_wr),            // step 18: +$F00E, +$F010-$F014
         .perf_cmd   (perf_cmd),
@@ -2287,6 +2291,7 @@ module base64_tg68_top #(
         // TG68 step 13: the speed switch's CAS latency change
         .cfg_req (sdram_cfg_req), .cfg_cl3 (sdram_cfg_cl3), .cl3_now (sdram_cl3),
         .rfc_long (spd_rfc),              // v2.0: tRFC + 2 at 20x
+        .xl22     (spd_xl),               // exp-22x: tRP + 1, tRFC + 3 at 22x
         .ack (sd_ack), .ack_early (sd_ack_early),
         .rdata_live (sd_rdata_live), .rdata (sd_rdata), .ready (sd_ready),
         .sdram_a (sdram_a), .sdram_ba (sdram_ba), .sdram_dq (sdram_dq),

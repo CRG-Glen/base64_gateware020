@@ -509,6 +509,16 @@ pf2:    dbra    %d1,pf2
         moveq   #0,%d0
         move.w  0xEAF00A,%d0
         move.l  %d0,0x81E0          | 81E0 00000714 (20x)
+        move.w  #0x5B16,0xEAF00A    | -> 22x (exp-22x)
+        bsr     spdchk
+        move.l  %d3,0x8284          | 8284 ACF1E135
+        moveq   #0,%d0
+        move.w  0xEAF00A,%d0
+        move.l  %d0,0x8288          | 8288 00000716 (22x)
+        moveq   #0,%d0
+        move.w  0xEAF00C,%d0
+        and.w   #0x0100,%d0
+        move.l  %d0,0x828C          | 828C 00000100: the 22x PLL locked
         move.w  #0x5B0C,0xEAF00A    | -> 12x
         bsr     spdchk
         move.l  %d3,0x81EC          | 81EC ACF1E135
