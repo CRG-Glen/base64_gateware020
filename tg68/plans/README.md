@@ -56,8 +56,11 @@ when to stop and report. Results go in the plan's own log section.
    called step 20 are shelved: step 18's numbers.) Next of the small
    CPU-side items: 32-bit operands as one pair again (backlog speed 5 /
    strategy 4.1), then data-cache hits in 4 clocks.
-6. **X22**, 22x experiment: when Glen asks.
-7. The smaller items (section 4 there, and `backlog.md`): each needs a
+6. **Step 21**, `step21-fpair` (`step21-fpair.md`): 32-bit operands as
+   one pair again (step 15's predictor behaviour, which 15b removed for
+   timing). bench c -0.45%; SysInfo is the number it is for. Building.
+7. **X22**, 22x experiment: when Glen asks.
+8. The smaller items (section 4 there, and `backlog.md`): each needs a
    plan from the planner first.
 
 ## How v2.0 was reached (history)

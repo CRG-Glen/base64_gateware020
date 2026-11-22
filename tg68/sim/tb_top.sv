@@ -755,6 +755,12 @@ module tb;
         check(24'h8118, 32'h00000102, "SPI loopback first word");
         check(24'h811C, 32'h000000F1, "SPI loopback bytes");
 `elsif BENCH_C
+        // step 21: with FPAIR the instruction-stream pairs come back, and the
+        // prediction after one is right (no sequential fetch in 5 clocks)
+        if ((dut.cpu.FPAIR != 0) != (sk_fpair > 0) || sk_f5seq != 0) begin
+            $display("FAIL FPAIR %0d: %0d instruction-stream pairs, %0d sequential fetches not predicted", dut.cpu.FPAIR, sk_fpair, sk_f5seq);
+            errors = errors + 1;
+        end
         // step 20: with WR4 single posted writes step in 4 clocks
         if ((dut.cpu.WR4 != 0) != (sk_w4 > 0)) begin
             $display("FAIL WR4 %0d but %0d single writes in 4 clocks", dut.cpu.WR4, sk_w4); errors = errors + 1;

@@ -55,6 +55,11 @@
 `ifndef WR4_DEFAULT
 `define WR4_DEFAULT 1
 `endif
+// step 21's switch default (sim: VLFLAGS=-DFPAIR_DEFAULT=0: the predictor
+// answers a fetch the kernel offers as a pair with one word, as since 15b)
+`ifndef FPAIR_DEFAULT
+`define FPAIR_DEFAULT 1
+`endif
 
 module tg68_bus #(
     parameter integer STEP       = 4,  // min clocks between clkena pulses
@@ -90,6 +95,10 @@ module tg68_bus #(
                                        // the step decision missed 1T under router2); on from step
                                        // 20 (router1)
     // Step 17 (1 = on; 0 = as v2.0):
+    // Step 21 (1 = on; 0 = as step 20):
+    parameter integer FPAIR      = `FPAIR_DEFAULT, // the predictor leaves a fetch the kernel
+                                       // offers as an aligned pair to the normal lookup
+                                       // (one 5-clock pair, not two 4-clock words)
     parameter integer ICKEEP     = `S17_DEFAULT,  // a write keeps another address's
                                        // instruction-cache entry (IC KEEP, below)
     parameter integer BARREL     = 0   // documentation only: which netlist
@@ -706,10 +715,9 @@ module tg68_bus #(
     // read on, fp_v after. The flush also turns ic_on off at once.
     // Anything else DECIDE does with a bus or data cycle drops fp_v and the
     // select; the next step reads the same fp_a again. A predicted fetch is
-    // always a single word, also when the kernel offers a pair (step 15b:
-    // the pair test, on the kernel's latest output long_cand, sat in front
-    // of every register DECIDE loads); pairs still come from the normal
-    // lookup when there is no prediction.
+    // always a single word; a fetch the kernel offers as an aligned pair
+    // goes to the normal lookup instead (step 21, k_pcand below: step 15
+    // had it, 15b took it out for timing).
     // fp_ac is a second copy of fp_a for the address compare in fp_hit
     // alone. fp_v is cleared on the edge the two load and is set again no
     // sooner than 3 clocks later (E3 of the next step), so fp_ac has two
@@ -729,8 +737,18 @@ module tg68_bus #(
     // that after fp_hit0, as it does for a bus cycle, so the bus-state
     // registers enter the decision once (through fp_hit and again through
     // "not fp_hit" they missed 1T by 0.4-0.9 ns on four seeds of five).
+    // STEP 21: a fetch the kernel offers as an aligned pair (a 32-bit
+    // immediate or absolute address, k_pcand) is left to the normal lookup,
+    // which answers both words in one 5-clock step, against two predicted
+    // 4-clock words; and the next prediction is then 2 words on. Step 15
+    // had this; 15b took it out because k_long_cand, the kernel's slowest
+    // output, then gated every register DECIDE loaded (kernel -> logic
+    // missed on 4 of 9 seeds). Since 15b's DECIDE split only the fetch
+    // branch sees fp_hit0, and router1 (exp-router1) gave every build more
+    // margin, so step 21 puts it back (FPAIR; -DFPAIR_DEFAULT=0 for 15b's).
+    wire        k_pcand = (FPAIR != 0) && (DP32_ACK != 0) && k_long_cand && !k_addr[1];
     wire        fp_hit0 = (FPRED != 0) && fp_v && ic_on && (k_bs == 2'b00) && !k_skip
-                          && (k_addr[31:1] == fp_ac);
+                          && (k_addr[31:1] == fp_ac) && !k_pcand;
     wire        fp_hit  = fp_hit0 && BGn && BGACKn && BRn && HALTn;
 
     // ------------------------------------------------------------------
@@ -956,8 +974,8 @@ module tg68_bus #(
         // the next fetch address, from every DECIDE clock of a fetch (the
         // kernel's outputs are final there); fp_v goes with it
         if (dec_r && k_bs == 2'b00 && !k_skip) begin
-            fp_a  <= k_addr[31:1] + 31'd1;
-            fp_ac <= k_addr[31:1] + 31'd1;
+            fp_a  <= k_addr[31:1] + (k_pcand ? 31'd2 : 31'd1);   // step 21: + 2 after a pair
+            fp_ac <= k_addr[31:1] + (k_pcand ? 31'd2 : 31'd1);
             fp_v  <= 1'b0;
         end
 
