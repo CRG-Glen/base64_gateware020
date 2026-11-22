@@ -69,7 +69,8 @@ when to stop and report. Results go in the plan's own log section.
 8. **`exp-22x`** (`exp22x.md`): 22x (156 MHz), and four speeds in one
    build (12x pin; 16x and 20x sharing one PLL; 22x on the other).
    Built: 16 of 16 seeds pass, seed 15 1.646x at 22x; **waiting for
-   Glen's test**. The 7 MHz-fed build (`--pll7m`) is building. Then the same from the Amiga's 7 MHz clock (`exp-7m-pll`
+   Glen's test**, with the 7 MHz-fed build (`--pll7m`, seed 12, 1.596x
+   at 22x) beside it. Then the same from the Amiga's 7 MHz clock (`exp-7m-pll`
    stage 1 was built from v2.0 and never tested).
 9. The smaller items (section 4 there, and `backlog.md`): each needs a
    plan from the planner first.

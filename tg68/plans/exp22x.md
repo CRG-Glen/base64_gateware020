@@ -76,3 +76,6 @@ the usual set at all four speeds.
   3 1.652x, 9 1.659x. The head (after `--pll7m` was added) synthesizes to
   the same netlist (17,956 cells, identical). Shipped seed 15:
   `bitstreams/exp_22x/`.
+- `--pll7m` build (same netlist otherwise), seeds 1-16: **16 of 16 pass**.
+  Seed 12: +1.41 ns, 1.161x / 1.451x / **1.596x** at 16x / 20x / 22x; 4
+  1.631x; 11 1.638x. Shipped seed 12: `bitstreams/exp_22x_7m/`.
