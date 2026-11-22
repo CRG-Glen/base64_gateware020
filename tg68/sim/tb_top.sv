@@ -755,6 +755,10 @@ module tb;
         check(24'h8118, 32'h00000102, "SPI loopback first word");
         check(24'h811C, 32'h000000F1, "SPI loopback bytes");
 `elsif BENCH_C
+        // step 20: with WR4 single posted writes step in 4 clocks
+        if ((dut.cpu.WR4 != 0) != (sk_w4 > 0)) begin
+            $display("FAIL WR4 %0d but %0d single writes in 4 clocks", dut.cpu.WR4, sk_w4); errors = errors + 1;
+        end
         check(24'h8100, 32'h05364511, "C workload checksum, pass 1");
         check(24'h8104, 32'h61FEF797, "C workload checksum, pass 2");
 `elsif BENCH_COPY

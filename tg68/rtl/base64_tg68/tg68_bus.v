@@ -50,6 +50,11 @@
 `ifndef S17_DEFAULT
 `define S17_DEFAULT 1
 `endif
+// step 20's switch default (sim: VLFLAGS=-DWR4_DEFAULT=0: a posted word or
+// byte write goes on to FINISH, 5 clocks, as up to step 19)
+`ifndef WR4_DEFAULT
+`define WR4_DEFAULT 1
+`endif
 
 module tg68_bus #(
     parameter integer STEP       = 4,  // min clocks between clkena pulses
@@ -80,9 +85,10 @@ module tg68_bus #(
     parameter integer RD11       = 1,  // pair prefetch + one-clock-shorter direct read
     // Step 15 switches (1 = on; 0 = as step 14):
     parameter integer FPRED      = `S15_DEFAULT,  // FETCH PREDICTOR: a sequential fetch hit in 4 clocks
-    parameter integer WR4        = 0,  // a posted word/byte write steps at DECIDE (4 clocks):
-                                       // works (sim: 1% on compiled C) but puts the fast RAM
-                                       // decode in the step decision; off for timing
+    parameter integer WR4        = `WR4_DEFAULT,  // a posted word/byte write steps at DECIDE (4 clocks):
+                                       // step 15 built it and left it off (the fast RAM decode in
+                                       // the step decision missed 1T under router2); on from step
+                                       // 20 (router1)
     // Step 17 (1 = on; 0 = as v2.0):
     parameter integer ICKEEP     = `S17_DEFAULT,  // a write keeps another address's
                                        // instruction-cache entry (IC KEEP, below)
