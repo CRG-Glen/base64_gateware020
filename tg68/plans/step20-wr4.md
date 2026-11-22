@@ -85,4 +85,15 @@ timedemos, a warm run at 20x.
 
 ## Log
 
-(the builder writes here)
+- `WR4` = `` `WR4_DEFAULT `` (1). tb_top.sv: bench c fails if WR4 and
+  "single writes in 4 clocks" disagree (746 with WR4, 0 without).
+- Regression, all PASS: bus, top, fastmem; top PERF=0; fastmem CAL_TEST,
+  CAL_DRIFT; S15_DEFAULT=0, S17_DEFAULT=0, WR4_DEFAULT=0 (bus, top,
+  fastmem each); benches c, coff, copy, read, scatter, readoff, chip,
+  wrchip, wrfast, wrmix, sd, op; c and copy at 20x.
+- Numbers: bench c 64,920 -> 64,188 (-1.13%), op 18,804 -> 18,720;
+  others unchanged.
+- Mutants: (a) WR4 steps pair writes too: fastmem and bench c fail
+  (`ks_chg`: long_ack changed in the clock before the kernel sampled it,
+  and `k_clkena_lw` against the kernel's formula); (b) the predictor's
+  select cleared on a WR4 step: fastmem and bench c fail (`ks_chg`).
