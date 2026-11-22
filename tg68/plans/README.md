@@ -58,7 +58,8 @@ when to stop and report. Results go in the plan's own log section.
    strategy 4.1), then data-cache hits in 4 clocks.
 6. **Step 21**, `step21-fpair` (`step21-fpair.md`): 32-bit operands as
    one pair again (step 15's predictor behaviour, which 15b removed for
-   timing). bench c -0.45%; SysInfo is the number it is for. Building.
+   timing). bench c -0.45%; SysInfo is the number it is for. 15 of 16
+   seeds pass, seed 14 1.470x at 20x; **waiting for Glen's test**.
 7. **X22**, 22x experiment: when Glen asks.
 8. The smaller items (section 4 there, and `backlog.md`): each needs a
    plan from the planner first.

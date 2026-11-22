@@ -68,3 +68,8 @@ from registers a step earlier.
   was limited to 12x with the caches on. (As first written it failed
   bench coff, where the predictor is off, and bench c at 20x, where the
   tb's step-gap counters tick on the 12x clock. The design was right.)
+- Timing (router1, seeds 1-16): **15 of 16 pass** (seed 5 -0.01 ns).
+  Lowest 20x ratios: seed 14 +1.28 ns, 1.176x / **1.470x**; 13 1.478x;
+  4 1.488x. No cost against step 20 (seed 11, 1.491x): the pair test fits
+  with router1 and the split DECIDE. Shipped seed 14:
+  `bitstreams/step21_fpair/`, waiting for Glen's test.
