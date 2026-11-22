@@ -45,7 +45,8 @@ when to stop and report. Results go in the plan's own log section.
 4. **Step 19**, `step19-barrel` (the barrel shifter; built by a second
    collaborator, 0 of 48 seeds with router2, fallback taken; then
    `exp-router1` merged in and rebuilt with router1): **14 of 16 seeds
-   pass**, seed 2 1.459x at 20x. **Waiting for Glen's test**
+   pass**, seed 2 1.459x at 20x. **Runs on Glen's board at all speeds**:
+   SysInfo +3%, Frontier CPU timedemo +7% at every speed; long run to come
    (`tg68/bitstreams/step19_barrel/`). Step 20 and a deeper write buffer:
    not worth it (step 18's log).
 5. **Step 20**, 16 KB caches: after Glen's `perf` numbers.

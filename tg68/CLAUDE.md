@@ -225,7 +225,10 @@ steps up to 18 were router2: `ROUTER=router2` rebuilds them byte for byte).
   v2.0. Not merged. Step 18 stacks on it.
 - `exp-router1` (step 17's design routed with router1, seed 7, 1.433x at
   20x) runs on Glen's board at all speeds, hours at 20x: router1 is the
-  default flow from here. Step 19 builds on it.
+  default flow from here.
+- `step19-barrel` (the barrel shifter, router1, seed 2; includes 17, 18,
+  exp-router1) runs on Glen's board at all speeds: SysInfo +3%, Frontier
+  CPU timedemo +7%. Not merged.
 - New work branches from `main`. What to build next, in order, with the
   measurements behind it: `plans/strategy-after-v2.md`.
 

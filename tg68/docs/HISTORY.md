@@ -453,6 +453,9 @@ style. `README.md` is the user-facing version of the same material.
 | exp-router1 at 12x (step 17, router1, seed 7) | 10804 / 4774 | 16.68 / 8.14 |
 | exp-router1 at 16x (seed 7) | 14416 / 5924 | 21.13 / 10.18 |
 | exp-router1 at 20x (seed 7) | 18028 / 6910 | 26.32 / 12.69 |
+| step 19 at 12x (barrel shifter, router1, seed 2) | 11118 / 5361 | 16.69 / 8.49 |
+| step 19 at 16x (seed 2) | 14844 / 5992 | 21.13 / 10.38 |
+| step 19 at 20x (seed 2) | 18566 / 7394 | 26.32 / 12.69 |
 
 - AIBB MemTest did not move from step 6 to step 7 (pairs only come from
   cache hits; MemTest's reads miss and its writes are 16-bit). Step 8's
@@ -517,6 +520,21 @@ style. `README.md` is the user-facing version of the same material.
   more sensitive to the CPU): 10.9 / 92.8 / 31.1, 14.5 / 128.6 / 41.2,
   18.2 / 154.8 / 57.1 fps (min / max / average, 12x / 16x / 20x). No
   v2.0 number to compare with; the baseline for the next steps.
+- **Barrel shifter (step 19, branch step19-barrel, seed 2; router1):** the
+  kernel netlist `tg68_020_b1.v` (BarrelShifter => 1, no VHDL change):
+  every shift and rotate in one step. Built first by a second
+  collaborator (shift/rotate matrix `sim/shift_test.inc`, identical on b0
+  and b1; 0 of 48 seeds with router2, fallback), then rebuilt with
+  router1: 14 of 16 pass, seed 2 +1.48 ns, 1.167x / 1.459x. Sim: bench c
+  -1.3%, op -12.4%. **Runs on Glen's A500+ at 12x, 16x and 20x**: SysInfo
+  11118 / 5361, 14844 / 5992, 18566 / 7394 (+3% caches on over
+  exp-router1); AIBB 16.69 / 8.49, 21.13 / 10.38, 26.32 / 12.69; xSysInfo
+  18373 / 9392 (23.70 / 21.15 MB/s), 24073 / 12140 (29.58 / 26.20), 31132
+  / 15397 (36.87 / 32.75); SD 2.0 / 2.2 / 2.7 MB/s; Frontier timedemo
+  27.7 / 32.0 / 35.0 fps, **CPU timedemo 33.3 / 44.1 / 55.2 fps (+7.1 /
+  +7.0 / +6.8%)**. (Glen wrote SysInfo 12x as 111118; 11.60 MIPS gives
+  11118.) The 20x CPU timedemo's 51.7 on exp-router1 against step 17's
+  57.1: with +7% at every speed here, 57.1 looks the outlier.
 - **exp-router1** (step 17's netlist placed and routed with nextpnr's
   router1, branch `exp-router1`): 16 of 16 seeds pass at 12x (router2 2 of
   16), seed 7 +1.53 ns, 1.146x / 1.433x at 16x / 20x. **Runs on Glen's
