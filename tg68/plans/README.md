@@ -49,7 +49,12 @@ when to stop and report. Results go in the plan's own log section.
    SysInfo +3%, Frontier CPU timedemo +7% at every speed; long run to come
    (`tg68/bitstreams/step19_barrel/`). Step 20 and a deeper write buffer:
    not worth it (step 18's log).
-5. **Step 20**, 16 KB caches: after Glen's `perf` numbers.
+5. **Step 20**, `step20-wr4` (`step20-wr4.md`): word and byte writes to
+   fast RAM in 4 clocks. Built, 16 of 16 seeds pass, seed 11 1.491x at
+   20x; **waiting for Glen's test**. (The 16 KB caches that the strategy
+   called step 20 are shelved: step 18's numbers.) Next of the small
+   CPU-side items: 32-bit operands as one pair again (backlog speed 5 /
+   strategy 4.1), then data-cache hits in 4 clocks.
 6. **X22**, 22x experiment: when Glen asks.
 7. The smaller items (section 4 there, and `backlog.md`): each needs a
    plan from the planner first.
