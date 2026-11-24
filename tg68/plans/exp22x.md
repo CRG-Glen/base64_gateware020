@@ -103,7 +103,8 @@ the usual set at all four speeds.
 - **Open point:** `speed` after the 22x benchmarks reported both 7M
   samples moved since the calibration (bits 14 and 13; bit 13 is the
   falling sample, the one in use), bit 15 (aligner slip) clear. The
-  register was $6716 (Glen confirmed; "22x 156.1 MHz"). Asked: the
-  automatic swap count line, and
+  register was $6716 (Glen confirmed; "22x 156.1 MHz"). No automatic
+  swap line: the stream in use moved, but never the AUTO_N (4) times
+  that trigger a swap, so only occasionally. Asked:
   the pin-fed build at 22x for comparison (is the movement the 7 MHz
   PLL input's jitter at x88, or 22x's own thinner capture margin).
