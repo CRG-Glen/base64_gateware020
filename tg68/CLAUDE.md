@@ -233,6 +233,9 @@ steps up to 18 were router2: `ROUTER=router2` rebuilds them byte for byte).
   Glen's board at all speeds: Frontier CPU timedemo +1.4%. Not merged.
 - `step21-fpair` (32-bit operands as one pair again, seed 14, on step 20)
   runs on Glen's board at all speeds: SysInfo +3.6% (19239 at 20x).
+- `exp-22x` (12x / 16x / 20x / 22x in one build; `--pll7m` feeds the PLLs
+  from the Amiga's 7 MHz): the 7 MHz-fed build runs at 22x on Glen's
+  board (1.60x the model). Next: burst cache fills (plans/README.md).
 - New work branches from `main`. What to build next, in order, with the
   measurements behind it: `plans/strategy-after-v2.md`.
 

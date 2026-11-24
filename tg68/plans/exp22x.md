@@ -1,6 +1,6 @@
 # Experiment: 22x (156.07 MHz), and 12x / 16x / 20x / 22x in one build
 
-Status: **built, waiting for Glen's test**. Branch `exp-22x`, from `step21-fpair`. Planned and
+Status: **the 7 MHz-fed build runs at 22x on Glen's A500+** (benchmarks to come). Branch `exp-22x`, from `step21-fpair`. Planned and
 built by the same model. Glen: "If 22x works I'd ideally like to package
 12x, 16x, 20x and 22x", from the current clock or from the Amiga's 7 MHz.
 
@@ -79,3 +79,9 @@ the usual set at all four speeds.
 - `--pll7m` build (same netlist otherwise), seeds 1-16: **16 of 16 pass**.
   Seed 12: +1.41 ns, 1.161x / 1.451x / **1.596x** at 16x / 20x / 22x; 4
   1.631x; 11 1.638x. Shipped seed 12: `bitstreams/exp_22x_7m/`.
+- **Glen: the 7 MHz-fed build (seed 12, 1.596x at 22x) has run
+  successfully for some time at 22x.** So 22x works on his board (the
+  furthest past the worst-case model yet: 1.60x, against 1.58x before),
+  and the PLLs run from the Amiga's 7.09 MHz, below their rated 8 MHz
+  input (the question exp-7m-pll was built for). Benchmarks at the four
+  speeds, and the pin-fed build, not reported yet.

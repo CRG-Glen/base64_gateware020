@@ -526,6 +526,15 @@ style. `README.md` is the user-facing version of the same material.
   more sensitive to the CPU): 10.9 / 92.8 / 31.1, 14.5 / 128.6 / 41.2,
   18.2 / 154.8 / 57.1 fps (min / max / average, 12x / 16x / 20x). No
   v2.0 number to compare with; the baseline for the next steps.
+- **22x and four speeds (exp-22x, experiment):** 12x (pin), 16x and 20x
+  from one PLL (VCO 567.5 MHz, /5 and /4), 22x (156.07 MHz) from the
+  other; speed code 3, `$5B16`, `speed` 1.5; SDRAM tRP + 1 and tRFC + 1
+  more at 22x (`spd_xl`). `--pll7m` feeds both PLLs from the Amiga's
+  7.09 MHz clock (A x80, B x88). 16 of 16 seeds pass both ways. **The
+  7 MHz-fed build (seed 12: 1.161x / 1.451x / 1.596x at 16x / 20x / 22x)
+  runs at 22x on Glen's A500+ for a long run**: 22x works, and the PLLs
+  run below their rated 8 MHz input. Sim: 22x 8.9% faster than 20x.
+  Benchmarks to come. Details: plans/exp22x.md.
 - **32-bit operands as one pair again (step 21, branch step21-fpair,
   seed 14; router1):** `FPAIR`: the predictor leaves a fetch the kernel
   offers as an aligned pair (`k_pcand`) to the normal lookup, and predicts
