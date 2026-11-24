@@ -1,6 +1,6 @@
 # Experiment: 22x (156.07 MHz), and 12x / 16x / 20x / 22x in one build
 
-Status: **the 7 MHz-fed build runs at 22x on Glen's A500+**, benchmarked; one open point (the 7M sample in use moved at 22x). Branch `exp-22x`, from `step21-fpair`. Planned and
+Status: **both builds run at 22x on Glen's A500+**, benchmarked; they behave the same (the 7M sample note applies to both). Branch `exp-22x`, from `step21-fpair`. Planned and
 built by the same model. Glen: "If 22x works I'd ideally like to package
 12x, 16x, 20x and 22x", from the current clock or from the Amiga's 7 MHz.
 
@@ -108,3 +108,10 @@ the usual set at all four speeds.
   that trigger a swap, so only occasionally. Asked:
   the pin-fed build at 22x for comparison (is the movement the 7 MHz
   PLL input's jitter at x88, or 22x's own thinner capture margin).
+- **Pin-fed build (seed 15) at 22x** (Glen): SysInfo 21163 / 22.09 MIPS
+  (the 7 MHz-fed build: 21165); after a demo `speed` reports the same as
+  the 7 MHz-fed build: both 7M samples moved, $6716, no slip, no swap.
+  So the occasional movement of the sample in use is 22x's own (3.2 ns
+  between the system clock's edges), not the 7 MHz PLL input: the two
+  clock sources behave the same. The PLL also runs from 7.09 MHz, below
+  its rated 8 MHz input, with no visible difference.
