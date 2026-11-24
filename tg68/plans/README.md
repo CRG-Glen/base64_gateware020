@@ -70,7 +70,9 @@ when to stop and report. Results go in the plan's own log section.
    build (12x pin; 16x and 20x sharing one PLL; 22x on the other).
    Built: 16 of 16 seeds pass, seed 15 1.646x at 22x; the 7 MHz-fed build
    (`--pll7m`, seed 12, 1.596x at 22x) **runs at 22x on Glen's board,
-   for some time** (benchmarks to come; the pin-fed build not tried yet).
+   for some time: SysInfo 21165 (+10% on 20x), Frontier CPU timedemo
+   +9.6%**; 12x-20x as step 21. Open: the 7M sample in use moved at 22x
+   (no slip); the pin-fed build at 22x for comparison.
 9. **Next step after Glen's 22x test: burst cache fills** (Glen's choice).
    A miss fills a line of 4 or 8 words (SDRAM burst, both cache banks a
    clock) while the CPU carries on with the first word; today a miss

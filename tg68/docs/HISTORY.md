@@ -462,6 +462,10 @@ style. `README.md` is the user-facing version of the same material.
 | step 21 at 12x (pairs in the predictor, seed 14) | 11521 / 5360 | 16.69 / 8.50 |
 | step 21 at 16x (seed 14) | 15383 / 5978 | 21.13 / 10.18 |
 | step 21 at 20x (seed 14) | 19239 / 7673 | 26.32 / 13.20 |
+| exp-22x 7 MHz-fed at 12x (seed 12) | 11526 / 5223 | 16.69 / 8.33 |
+| exp-22x 7 MHz-fed at 16x | 15379 / 6528 | 21.13 / 10.39 |
+| exp-22x 7 MHz-fed at 20x | 19238 / 8145 | 26.32 / 12.94 |
+| exp-22x 7 MHz-fed at 22x (experiment) | 21165 / 9032 | 28.90 / 13.86 |
 
 - AIBB MemTest did not move from step 6 to step 7 (pairs only come from
   cache hits; MemTest's reads miss and its writes are 16-bit). Step 8's
@@ -534,7 +538,14 @@ style. `README.md` is the user-facing version of the same material.
   7 MHz-fed build (seed 12: 1.161x / 1.451x / 1.596x at 16x / 20x / 22x)
   runs at 22x on Glen's A500+ for a long run**: 22x works, and the PLLs
   run below their rated 8 MHz input. Sim: 22x 8.9% faster than 20x.
-  Benchmarks to come. Details: plans/exp22x.md.
+  Glen's benchmarks (7 MHz-fed, seed 12): 12x / 16x / 20x as step 21
+  (SysInfo 11526 / 15379 / 19238); **22x: SysInfo 21165 / 9032 (22.09
+  MIPS, +10.0% on 20x)**, AIBB 28.90 / 13.86, xSysInfo 34472 / 15929
+  (19.61 / 9.06 MIPS), fast RAM 40.36 / 35.74 MB/s, SD 3.0 MB/s, Frontier
+  timedemo 16.1 / 76.8 / 36.1 fps (+3.1%), CPU timedemo 21.8 / 173.8 /
+  61.4 fps (+9.6%). `speed` after the 22x run: both 7M samples had moved
+  since the calibration (bits 13 and 14; the falling one is in use), the
+  aligner had not slipped (bit 15 clear). Details: plans/exp22x.md.
 - **32-bit operands as one pair again (step 21, branch step21-fpair,
   seed 14; router1):** `FPAIR`: the predictor leaves a fetch the kernel
   offers as an aligned pair (`k_pcand`) to the normal lookup, and predicts

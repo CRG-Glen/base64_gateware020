@@ -1,6 +1,6 @@
 # Experiment: 22x (156.07 MHz), and 12x / 16x / 20x / 22x in one build
 
-Status: **the 7 MHz-fed build runs at 22x on Glen's A500+** (benchmarks to come). Branch `exp-22x`, from `step21-fpair`. Planned and
+Status: **the 7 MHz-fed build runs at 22x on Glen's A500+**, benchmarked; one open point (the 7M sample in use moved at 22x). Branch `exp-22x`, from `step21-fpair`. Planned and
 built by the same model. Glen: "If 22x works I'd ideally like to package
 12x, 16x, 20x and 22x", from the current clock or from the Amiga's 7 MHz.
 
@@ -85,3 +85,25 @@ the usual set at all four speeds.
   and the PLLs run from the Amiga's 7.09 MHz, below their rated 8 MHz
   input (the question exp-7m-pll was built for). Benchmarks at the four
   speeds, and the pin-fed build, not reported yet.
+- **Glen's benchmarks, 7 MHz-fed build, seed 12** (caches on / off):
+
+  | | 12x | 16x | 20x | 22x |
+  | --- | --- | --- | --- | --- |
+  | SysInfo | 11526 / 5223 | 15379 / 6528 | 19238 / 8145 | **21165 / 9032** |
+  | AIBB MemTest MB/s | 16.69 / 8.33 | 21.13 / 10.39 | 26.32 / 12.94 | 28.90 / 13.86 |
+  | xSysInfo | 18958 / 9949 | 25115 / 12141 | 31336 / 15252 | 34472 / 15929 |
+  | xSysInfo fast RAM MB/s | 23.71 / 21.17 | 29.58 / 26.22 | 36.87 / 32.78 | 40.36 / 35.74 |
+  | SD MB/s | 2.0 | 2.2 | 2.7 | 3.0 |
+  | Frontier timedemo avg fps | 27.8 | 32.1 | 35.0 | 36.1 |
+  | Frontier CPU timedemo avg fps | 33.8 | 44.8 | 56.0 | 61.4 |
+
+  12x / 16x / 20x equal step 21's (16x from the shared PLL and the 7 MHz
+  input change nothing); 22x over 20x: SysInfo +10.0%, CPU timedemo
+  +9.6%, fast RAM +9.5%, SD +11%, Amiga timedemo +3.1%.
+- **Open point:** `speed` after the 22x benchmarks reported both 7M
+  samples moved since the calibration (bits 14 and 13; bit 13 is the
+  falling sample, the one in use), bit 15 (aligner slip) clear. Glen
+  wrote the register as $6717; the low byte cannot be $17 (23), so
+  probably $6716: asked. Asked too: the automatic swap count line, and
+  the pin-fed build at 22x for comparison (is the movement the 7 MHz
+  PLL input's jitter at x88, or 22x's own thinner capture margin).
