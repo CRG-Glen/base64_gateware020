@@ -102,8 +102,8 @@ the usual set at all four speeds.
   +9.6%, fast RAM +9.5%, SD +11%, Amiga timedemo +3.1%.
 - **Open point:** `speed` after the 22x benchmarks reported both 7M
   samples moved since the calibration (bits 14 and 13; bit 13 is the
-  falling sample, the one in use), bit 15 (aligner slip) clear. Glen
-  wrote the register as $6717; the low byte cannot be $17 (23), so
-  probably $6716: asked. Asked too: the automatic swap count line, and
+  falling sample, the one in use), bit 15 (aligner slip) clear. The
+  register was $6716 (Glen confirmed; "22x 156.1 MHz"). Asked: the
+  automatic swap count line, and
   the pin-fed build at 22x for comparison (is the movement the 7 MHz
   PLL input's jitter at x88, or 22x's own thinner capture margin).
