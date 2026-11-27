@@ -1021,7 +1021,7 @@ module base64_tg68_top #(
     reg tg_br_n = 1'b1;     // step 14: the adapter's BRn, loaded by the write buffer (below)
     always @(posedge clk) tg_halt_n <= (s_halt_n[1] | ~core_ohalted_n) & ~spd_hold;
 `ifdef TG68_PERF
-    wire [19:0] perf_ev_cpu;   // step 18: the adapter's event flags (perf_cnt)
+    wire [23:0] perf_ev_cpu;   // step 18: the adapter's event flags (perf_cnt)
 `endif
     tg68_bus #(.STEP(TG_STEP), .SETTLE(TG_SETTLE), .DIN_SETUP(TG_DIN),
                .ADDR_SETUP(TG_ASU)) cpu (
@@ -2098,10 +2098,10 @@ module base64_tg68_top #(
     wire [7:0]  perf_cmd;
     wire [39:0] perf_q;
     wire [15:0] perf_stat;
-    perf_cnt #(.N(20), .W(40)) u_perf (
+    perf_cnt #(.N(24), .W(40)) u_perf (
         .clk         (clk),
         .amiga_reset (slave_reset),
-        .ev          ({perf_ev_cpu[19:17], perf_cw, perf_ev_cpu[15:1], 1'b1}),
+        .ev          ({perf_ev_cpu[23:17], perf_cw, perf_ev_cpu[15:1], 1'b1}),
         .cmd_wr      (perf_wr),
         .cmd         (perf_cmd),
         .q           (perf_q),

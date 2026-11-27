@@ -347,6 +347,8 @@ module tb;
         14: pc = dut.g_fastmem.u_perf.gc[14].v; 15: pc = dut.g_fastmem.u_perf.gc[15].v;
         16: pc = dut.g_fastmem.u_perf.gc[16].v; 17: pc = dut.g_fastmem.u_perf.gc[17].v;
         18: pc = dut.g_fastmem.u_perf.gc[18].v; 19: pc = dut.g_fastmem.u_perf.gc[19].v;
+        20: pc = dut.g_fastmem.u_perf.gc[20].v; 21: pc = dut.g_fastmem.u_perf.gc[21].v;
+        22: pc = dut.g_fastmem.u_perf.gc[22].v; 23: pc = dut.g_fastmem.u_perf.gc[23].v;
         default: pc = 0;
         endcase
     endfunction
@@ -370,6 +372,44 @@ module tb;
     // timed window (forced between edges), and the end compares them with
     // the tb's counters (n_step and friends) and these:
     integer pt_as = 0, pt_drop = 0, pt_fill = 0;
+    // step 23: misses in the same 4- / 8-word line as the previous miss of
+    // their kind (fetch / data), from the byte address, on a word no cache
+    // write with another tag has hit since (that forgets the word)
+    integer pt_sl [0:3]; integer pti; initial for (pti = 0; pti < 4; pti = pti + 1) pt_sl[pti] = 0;
+    reg [31:0] pt_fa = 0, pt_da = 0, pt_wb; reg [dut.cpu.TAGW-1:0] pt_ft = 0, pt_dt = 0;
+    reg pt_fk [0:7]; reg pt_dk [0:7];     // word k of the line still whole
+    initial for (pti = 0; pti < 8; pti = pti + 1) begin pt_fk[pti] = 0; pt_dk[pti] = 0; end
+    wire pt_miss = dut.cpu.q == 4'd10 && dut.cpu.ic_ok && (dut.cpu.cyc_fetch ? dut.cpu.ic_on : dut.cpu.dc_on);
+    reg [31:0] pt_a;
+    always @(posedge clk12) begin
+        pt_a = {dut.cpu.a_r, 1'b0};
+        if (pt_miss && dut.cpu.cyc_fetch) begin
+            if (t0 > 0 && t1 == 0 && pt_fk[(pt_a / 2) % 8]) begin
+                if (pt_a / 8  == pt_fa / 8)  pt_sl[0] = pt_sl[0] + 1;
+                if (pt_a / 16 == pt_fa / 16) pt_sl[1] = pt_sl[1] + 1;
+            end
+            pt_fa = pt_a; pt_ft = dut.cpu.tag_of(dut.cpu.a_r);
+            for (pti = 0; pti < 8; pti = pti + 1) pt_fk[pti] = 1;
+        end else if (dut.cpu.ic_flush) begin
+            for (pti = 0; pti < 8; pti = pti + 1) pt_fk[pti] = 0;
+        end else if (dut.cpu.ic_we && dut.cpu.ic_wt != pt_ft) begin
+            pt_wb = {dut.cpu.ic_wa, 1'b0};             // byte offset in the 8 KB
+            if (pt_wb / 16 == (pt_fa % 8192) / 16) pt_fk[(pt_wb / 2) % 8] = 0;
+        end
+        if (pt_miss && !dut.cpu.cyc_fetch) begin
+            if (t0 > 0 && t1 == 0 && pt_dk[(pt_a / 2) % 8]) begin
+                if (pt_a / 8  == pt_da / 8)  pt_sl[2] = pt_sl[2] + 1;
+                if (pt_a / 16 == pt_da / 16) pt_sl[3] = pt_sl[3] + 1;
+            end
+            pt_da = pt_a; pt_dt = dut.cpu.tag_of(dut.cpu.a_r);
+            for (pti = 0; pti < 8; pti = pti + 1) pt_dk[pti] = 1;
+        end else if (dut.cpu.ic_flush) begin
+            for (pti = 0; pti < 8; pti = pti + 1) pt_dk[pti] = 0;
+        end else if (dut.cpu.dc_we && dut.cpu.dc_wt != pt_dt) begin
+            pt_wb = {dut.cpu.dc_wa, 1'b0};
+            if (pt_wb / 16 == (pt_da % 8192) / 16) pt_dk[(pt_wb / 2) % 8] = 0;
+        end
+    end
     always @(negedge dut.clk) force dut.g_fastmem.u_perf.run = (t0 > 0 && t1 == 0);
     always @(posedge clk12) if (t0 > 0 && t1 == 0) begin
         if (!dut.cpu.as_i) pt_as = pt_as + 1;
@@ -792,6 +832,10 @@ module tb;
         pchk(17, "fast write waits", st_fw, 2);
         pchk(18, "icache drops of code", pt_drop, 2);
         pchk(19, "icache fills", pt_fill, 2);
+        pchk(20, "fetch misses, same 4-word line", pt_sl[0], 1);
+        pchk(21, "fetch misses, same 8-word line", pt_sl[1], 1);
+        pchk(22, "data misses, same 4-word line", pt_sl[2], 1);
+        pchk(23, "data misses, same 8-word line", pt_sl[3], 1);
         end
         $display("perf: dcache hits %0d, SDRAM data reads %0d, old route: fetch chip %0d other %0d, read chip %0d other %0d, write chip %0d other %0d",
                  pc(5), pc(8), pc(9), pc(10), pc(11), pc(12), pc(13), pc(14));
@@ -976,12 +1020,12 @@ module tb;
 `endif
 `ifdef TG68_PERF
         // step 18 (test_top.s): the counters through the registers
-        check(24'h8260, 32'h00001400, "perf: frozen at power-on, 20 counters");
+        check(24'h8260, 32'h00001800, "perf: frozen at power-on, 24 counters");
         check(24'h8268, 32'h00000000, "perf: steps, bits 39:32");
-        check(24'h8274, 32'h00005400, "perf: frozen by an Amiga reset");
-        check(24'h8278, 32'h00009400, "perf: run clears the reset flag");
+        check(24'h8274, 32'h00005800, "perf: frozen by an Amiga reset");
+        check(24'h8278, 32'h00009800, "perf: run clears the reset flag");
         check(24'h827C, 32'h00000000, "perf: cleared");
-        check(24'h8280, 32'h00001401, "perf: frozen, counter 1, wrong key ignored");
+        check(24'h8280, 32'h00001801, "perf: frozen, counter 1, wrong key ignored");
         if (rd32(24'h8264) < 50 || rd32(24'h826C) == 0 || rd32(24'h826C) != rd32(24'h8270)) begin
             $display("FAIL perf: steps %0d (>= 50 expected), clocks %0d then %0d (frozen: equal, not 0)",
                      rd32(24'h8264), rd32(24'h826C), rd32(24'h8270));

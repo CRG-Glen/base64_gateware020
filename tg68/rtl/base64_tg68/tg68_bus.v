@@ -106,7 +106,7 @@ module tg68_bus #(
     input  wire        clk,
 `ifdef TG68_PERF
     // step 18 (test builds only): one-clock event flags for perf_cnt.v
-    output reg  [19:0] perf_ev,
+    output reg  [23:0] perf_ev,
 `endif
     input  wire        enPhi1,     // unused, kept for drop-in compatibility
     input  wire        enPhi2,     // unused
@@ -1540,10 +1540,36 @@ module tg68_bus #(
     wire pv_fetch = (k_bs == 2'b00) && !k_skip;
     wire pv_lend  = pv_lat && (q != Q_LATCH);  // an old-route cycle just ended
     wire pv_chip  = (a_r[31:21] == 11'd0);
-    initial perf_ev = 20'd0;
+    // step 23 (measurement): a cached fast RAM / MapROM miss (DDATA, cache
+    // on, cacheable) in the same aligned 4- or 8-word line as the previous
+    // such miss of its kind (fetch or data), on a word nothing else has been
+    // written over in its cache since (a fill from another address, a drop,
+    // the flush: a cache write with another tag clears that word's bit):
+    // what a line fill of that length would have caught. Repeated conflict
+    // misses (two addresses 8 KB apart taking turns) are not counted.
+    wire        pv_miss = (q == Q_DDATA) && ic_ok && (cyc_fetch ? ic_on : dc_on);
+    reg  [31:3] pv_fl = 29'd0, pv_dl = 29'd0;  // the previous miss's 4-word line
+    reg  [TAGW-1:0] pv_ft = {TAGW{1'b0}}, pv_dt = {TAGW{1'b0}};   // and its tag
+    reg  [7:0]  pv_fm = 8'd0, pv_dm = 8'd0;    // its 8-word line's words still whole
+    wire        pv_fo = ic_we && (ic_wa[IC_AW-1:3] == pv_fl[IC_AW:4]) && (ic_wt != pv_ft);
+    wire        pv_do = dc_we && (dc_wa[IC_AW-1:3] == pv_dl[IC_AW:4]) && (dc_wt != pv_dt);
+    wire        pv_fw = pv_fm[a_r[3:1]], pv_dw = pv_dm[a_r[3:1]];
+    initial perf_ev = 24'd0;
     always @(posedge clk) begin
         pv_lat       <= (q == Q_LATCH);
-        perf_ev      <= 20'd0;
+        perf_ev      <= 24'd0;
+        if (pv_miss && cyc_fetch) begin
+            pv_fl <= a_r[31:3]; pv_ft <= tag_of(a_r); pv_fm <= 8'hFF;
+        end else if (ic_flush) pv_fm <= 8'd0;
+        else if (pv_fo)        pv_fm[ic_wa[2:0]] <= 1'b0;
+        if (pv_miss && !cyc_fetch) begin
+            pv_dl <= a_r[31:3]; pv_dt <= tag_of(a_r); pv_dm <= 8'hFF;
+        end else if (ic_flush) pv_dm <= 8'd0;
+        else if (pv_do)        pv_dm[dc_wa[2:0]] <= 1'b0;
+        perf_ev[20]  <= pv_miss &&  cyc_fetch && pv_fw && (a_r[31:3] == pv_fl);         // fetch miss, same 4-word line
+        perf_ev[21]  <= pv_miss &&  cyc_fetch && pv_fw && (a_r[31:4] == pv_fl[31:4]);   //   same 8-word line
+        perf_ev[22]  <= pv_miss && !cyc_fetch && pv_dw && (a_r[31:3] == pv_dl);         // data miss, same 4-word line
+        perf_ev[23]  <= pv_miss && !cyc_fetch && pv_dw && (a_r[31:4] == pv_dl[31:4]);   //   same 8-word line
         perf_ev[1]   <= k_step;                                  // kernel steps
         perf_ev[2]   <= k_step && pv_fetch;                      // fetch steps
         perf_ev[3]   <= k_step && pv_fetch && k_din_psel;        // predicted fetches

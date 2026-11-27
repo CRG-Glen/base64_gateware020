@@ -323,7 +323,7 @@ c17e:   move.l  (%a0)+,(%a1)+
         lea     0xEAF00E,%a0
         moveq   #0,%d0
         move.w  (%a0),%d0
-        move.l  %d0,0x8260          | 8260 00001400: frozen since power-on, 20 counters
+        move.l  %d0,0x8260          | 8260 00001800: frozen since power-on, 24 counters
         move.w  #0x5C80,(%a0)       | run
         moveq   #49,%d1
 1:      dbra    %d1,1b
@@ -352,11 +352,11 @@ c17e:   move.l  (%a0)+,(%a1)+
 1:      dbra    %d1,1b
         moveq   #0,%d0
         move.w  (%a0),%d0
-        move.l  %d0,0x8274          | 8274 00005400: frozen by the reset
+        move.l  %d0,0x8274          | 8274 00005800: frozen by the reset
         move.w  #0x5C80,(%a0)       | run again: the reset flag goes
         moveq   #0,%d0
         move.w  (%a0),%d0
-        move.l  %d0,0x8278          | 8278 00009400
+        move.l  %d0,0x8278          | 8278 00009800
         move.w  #0x5C40,(%a0)       | freeze
         move.w  #0x5CC0,(%a0)       | clear
         move.w  #0x5D80,(%a0)       | wrong key: ignored
@@ -368,7 +368,7 @@ c17e:   move.l  (%a0)+,(%a1)+
         move.l  %d0,0x827C          | 827C 00000000: cleared
         moveq   #0,%d0
         move.w  (%a0),%d0
-        move.l  %d0,0x8280          | 8280 00001401: still frozen, counter 1
+        move.l  %d0,0x8280          | 8280 00001801: still frozen, counter 1
         .endif
         | a pair whose second word is NOT cached must not be taken as a pair
         move.l  #0x31323334,0x08000D00  | both words cached

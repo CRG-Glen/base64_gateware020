@@ -1,4 +1,4 @@
-perf 1.0 -- Base64 TG68 performance counters (step 18 test builds only)
+perf 1.1 -- Base64 TG68 performance counters (step 18 test builds only)
 
   perf              print the counters; if they were running they run on
   perf CLEAR        zero them and start them
@@ -28,6 +28,15 @@ count, from the moment you start them:
   18 code dropped by writes         instruction-cache entries holding code
                                     that a CPU write threw out
   19 instruction-cache fills
+  20 fetch misses, same 4-word line   step 23 measurement (perf 1.1, step
+  21 fetch misses, same 8-word line   23 builds): misses (7, 8) in the same
+  22 data misses, same 4-word line    aligned 8- or 16-byte line as the
+  23 data misses, same 8-word line    previous miss of the same kind; a
+                                      burst fill of that length would have
+                                      caught at least these. (perf 1.1 reads
+                                      the number of counters from the
+                                      gateware, so it works with step 18's
+                                      20-counter builds too.)
 
 Typical use:
 

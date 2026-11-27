@@ -118,7 +118,7 @@ args_done:
         | ---- find the AutoConfig ROM board ----
 .ifdef TEST
         | test build (vamos): a fake board in RAM whose registers are plain
-        | memory: 20 counters, running, every one reading 78187493530
+        | memory: 24 counters, running, every one reading 78187493530
         lea     fakeboard(%pc),%a3
         move.l  %a3,%a2
         add.l   #0xF000,%a2
@@ -128,9 +128,9 @@ args_done:
         move.w  #0x0000,PERF_REG(%a2)
 .else
 .ifdef TESTRST
-        move.w  #0x5403,PERF_REG(%a2)       | frozen by a reset, counter 3
+        move.w  #0x5803,PERF_REG(%a2)       | frozen by a reset, counter 3
 .else
-        move.w  #0x9400,PERF_REG(%a2)
+        move.w  #0x9800,PERF_REG(%a2)
 .endif
 .endif
         move.w  #0x789A,PERF_LO(%a2)
@@ -332,7 +332,7 @@ putdec:
 | ---- text ------------------------------------------------------------------
 dosname:    .asciz  "dos.library"
 expname:    .asciz  "expansion.library"
-verstag:    .asciz  "$VER: perf 1.0 (17.11.2026) Base64"
+verstag:    .asciz  "$VER: perf 1.1 (27.11.2026) Base64"
 m_usage:    .asciz  "Usage: perf          print the counters (they run on if they were running)\n       perf CLEAR    zero them and start them\n       perf FREEZE   stop them\n       perf RUN      start them\n"
 m_noexp:    .asciz  "cannot open expansion.library\n"
 m_noboard:  .asciz  "No Base64 AutoConfig ROM board found (5194/14).\n"
@@ -374,6 +374,10 @@ names:      .asciz  "clocks"
             .asciz  "clocks waiting: fast RAM write"
             .asciz  "code dropped by writes"
             .asciz  "instruction-cache fills"
+            .asciz  "fetch misses, same 4-word line as last"
+            .asciz  "fetch misses, same 8-word line as last"
+            .asciz  "data misses, same 4-word line as last"
+            .asciz  "data misses, same 8-word line as last"
             .asciz  ""
         .balign 4
 vars:   .space  48
