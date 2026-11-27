@@ -76,7 +76,14 @@ when to stop and report. Results go in the plan's own log section.
    and then at 22x (no slip): 22x's own. Over a longer session the
    7 MHz-fed build swapped streams once by itself (step 14's automatic
    swap, as designed); no difference shown between the clock sources.
-9. **Next step after Glen's 22x test: burst cache fills** (Glen's choice).
+9. **Step 23**, `step23-burst` (`step23-burst.md`): burst cache fills
+   (Glen's choice). **Parked after measuring**: Glen's counter runs at
+   20x give 0.8-1.3% on Frontier, under 0.7% elsewhere, 0 for EON (caches
+   off). Found on the way: **the SDRAM data pin -> register paths are not
+   timed** and decide 22x (seed 7 froze on the switch, seed 4 halfway
+   through Frontier; the exp_22x builds, with faster pins, ran;
+   `scripts/sdram_pins.py`). Next: step 24.
+   Original note:
    A miss fills a line of 4 or 8 words (SDRAM burst, both cache banks a
    clock) while the CPU carries on with the first word; today a miss
    brings one pair (32 bits) and a one-word prefetch. Expected: sequential
@@ -88,7 +95,13 @@ when to stop and report. Results go in the plan's own log section.
    access to the line while it fills. The fast RAM path is already
    synchronous (the direct port, step 3); the Amiga's bus cannot be. Then the same from the Amiga's 7 MHz clock (`exp-7m-pll`
    stage 1 was built from v2.0 and never tested).
-10. The smaller items (section 4 there, and `backlog.md`): each needs a
+10. **Step 24**, `step24-sdram-io` (`step24-sdram-io.md`): **planned,
+    next.** The SDRAM read data sampled by an IDDR in each data pin's I/O
+    cell, on the falling edge (the middle of the data window at 22x), with
+    one more clock on SDRAM reads at 22x only; 12x-20x unchanged. Goal:
+    22x that no seed can break (step 23: the unchecked pin paths decided
+    which builds ran). 24b after it: the SDRAM outputs into the I/O cells.
+11. The smaller items (section 4 there, and `backlog.md`): each needs a
    plan from the planner first.
 
 ## How v2.0 was reached (history)
