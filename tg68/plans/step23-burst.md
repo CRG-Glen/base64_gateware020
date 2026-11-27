@@ -101,7 +101,7 @@ time, step 18).
 - **Glen: seed 4 runs at 22x** (seed 7, same netlist, crashed at once).
   Seed 4's checked logic is worse (1.61x against 1.57x), its SDRAM pins
   better: the SDRAM data pin -> register paths decide 22x. Seed 7 has
-  five pins above 4.79 ns (worst 5.01); seed 4 and exp_22x seed 15 have
+  three pins above 4.79 ns (worst 5.01); seed 4 and exp_22x seed 15 have
   none. `scripts/sdram_pins.py` measures them from the SDF. Until the
   checker covers them, a 22x build's seed is picked by this too (and
   build.py keeps only the best seed's SDF: rebuild a seed with
@@ -117,7 +117,7 @@ time, step 18).
   | exp_22x_7m seed 12 | ran for a long time | 1.60x | 3.49 / 4.47 | 0 | 2.73 / 3.54 |
   | exp_22x seed 15 | ran the benchmarks | 1.65x | 3.93 / 4.79 | 3 | 2.62 / 3.10 |
   | step23 seed 4 | crashed mid-Frontier | 1.61x | 4.20 / 4.79 | 6 | 3.17 / 3.65 |
-  | step23 seed 7 | crashed on the switch | 1.57x | 4.40 / 5.01 | 7 | 3.15 / 3.81 |
+  | step23 seed 7 | crashed on the switch | 1.57x | 4.40 / 5.01 | 6 | 3.15 / 3.81 |
 
   The checked logic does not order them; the SDRAM read pin paths do,
   exactly. Address / command outputs: no pattern (seed 15 worst 3.64,

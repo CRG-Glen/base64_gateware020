@@ -186,6 +186,17 @@ def summary(timing_text, freq=86.0):
     ratio = max((n * T - sl) / (n * T) for c, n, sl in rows)
     return w1, wm, (bad if bad[2] < 0 else None), ratio
 
+def ratio_at(timing_text, freq):
+    """the worst delay/budget ratio at freq, from a report made at another
+    clock: each class's budget less its slack is its delay with setup (the
+    delays do not depend on the clock), over the budget at freq. Equals
+    check_timing.py --freq <freq> on the same SDF (step 24: checked to
+    0.001)."""
+    T0 = 1000.0 / float(re.search(r'at ([\d.]+) MHz', timing_text).group(1))
+    T = 1000.0 / freq
+    rows = [(int(n), float(sl)) for c, n, d, sl in ROW.findall(timing_text)]
+    return max((n * T0 - sl) / (n * T) for n, sl in rows)
+
 def ecppack(config, bit, extra):
     run([ECPPACK] + extra + [config, bit])
 
@@ -254,7 +265,9 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as ex:
             print('   seed %d: %s' % (seed, err or ('PASS' if ok else 'fail')), flush=True)
 
 # ---- the table ---------------------------------------------------------------
-lines = ['seed  result  worst 1T  worst multicycle  worst failing class']
+PINROW = re.compile(r'^sdram data pins, (setup|hold)\s+limit\s+[\d.]+\s+worst\s+([\d.]+)', re.M)
+TOP = 156.07                     # exp-22x: the fastest speed, 22x (156.07 MHz)
+lines = ['seed  result  worst 1T  worst multicycle  22x ratio  pins setup / hold  worst failing class']
 best = None
 for seed in sorted(results):
     ok, err = results[seed]
@@ -266,10 +279,17 @@ for seed in sorted(results):
         lines.append('%4d  ERROR   timing.txt has no class table' % seed)
         continue
     w1, wm, bad, _ = sm
-    lines.append('%4d  %-6s  %+8.2f  %+16.2f  %s' % (seed, 'PASS' if ok else 'FAIL', w1, wm,
-                 '%s %+.2f' % (bad[0], bad[2]) if bad else ''))
-    if ok and (best is None or w1 > best[1]):
-        best = (seed, w1)
+    txt = open(os.path.join(out, 'seed%d' % seed, 'timing.txt')).read()
+    r22 = ratio_at(txt, TOP)
+    pins = dict(PINROW.findall(txt))
+    lines.append('%4d  %-6s  %+8.2f  %+16.2f  %8.3fx  %6s / %-6s  %s' % (seed, 'PASS' if ok else 'FAIL', w1, wm, r22,
+                 pins.get('setup', '-'), pins.get('hold', '-'),
+                 '%s %+.2f' % (bad[0], bad[2]) if bad else ('sdram pins' if not ok else '')))
+    # step 24: the passing seed with the lowest 22x ratio (rule 4; until
+    # step 24 the best was the largest 1T slack, and the 22x ratio was
+    # scored by hand)
+    if ok and (best is None or r22 < best[2]):
+        best = (seed, w1, r22)
 table = '\n'.join(lines)
 print('== seeds\n' + table)
 open(os.path.join(out, 'seeds.txt'), 'w').write(table + '\n')
@@ -286,10 +306,10 @@ if best is None:
 
 seed = best[0]
 d = os.path.join(out, 'seed%d' % seed)
-print('== best seed: %d (worst 1T slack %+.2f ns)' % (seed, best[1]))
+print('== best seed: %d (lowest 22x ratio %.3fx; worst 1T slack %+.2f ns)' % (seed, best[2], best[1]))
 # 16x and 20x: the same build scored by the worst delay/budget ratio (it
 # cannot pass the worst-case model there; see README "Timing")
-for freq, tag in ((113.51, '16x'), (141.88, '20x')):   # v2.0: 12x / 16x / 20x
+for freq, tag in ((113.51, '16x'), (141.88, '20x'), (TOP, '22x')):   # exp-22x: 12x / 16x / 20x / 22x
     t = subprocess.run([sys.executable, CHECK, 'base64_tg68.sdf', '--freq', str(freq), '--paths', '6'],
                        cwd=d, capture_output=True, text=True)
     open(os.path.join(d, 'timing_at%s.txt' % tag), 'w').write(t.stdout)
