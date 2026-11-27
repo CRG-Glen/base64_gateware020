@@ -75,3 +75,26 @@ time, step 18).
   wrongly at first): best seed 7, +1.58 ns, 1.14x / **1.42x** / 1.57x at
   16x / 20x / 22x (exp_22x seed 15: 1.20x / 1.50x / 1.65x). Shipped:
   `bitstreams/step23_perf/`. Waiting for Glen's numbers.
+- **Glen's runs (20x)**, misses a 4 / 8-word fill catches (fetch; data),
+  and time saved at ~5 clocks a caught miss: Frontier CPU timedemo 41 /
+  62%; 14 / 21% -> 0.8 / 1.3%; xSysInfo 38 / 57%; 46 / 69% -> 0.4 /
+  0.65%; AIBB 40 / 61%; 24 / 38% -> 0.2 / 0.3%; SysInfo ~0; EON (Black
+  Lotus) ~0: it runs with the caches off (3.6G fetches, 2.1G SDRAM
+  fetches, 44% of its time in misses). Even counting every miss as caught,
+  Frontier gains at most ~3% (misses are 5.2% of its time). **Line fills
+  are not worth the design (SDRAM bursts, fills while the CPU runs on,
+  writes into a line being filled) for 1-1.5%.** Recommend parking step
+  23.
+- **22x crashes on this build (seed 7)**, at once on the switch; 20x
+  runs. It is pin-fed (no --pll7m), like exp_22x seed 15, which runs at
+  22x. The checked logic is better than seed 15's (1.57x against 1.65x).
+  Not checked by check_timing.py: SDRAM data pin -> register (rdata_live
+  = sdram_dq straight into k_din_dw / dp_q / cache data, no input
+  register at the pin). Measured from the SDF (pad output -> FF D +
+  setup, max over the FFs each pin reaches): seed 15 mean 3.93 / worst
+  4.79 ns; seed 7 4.40 / 5.01; seed 4 4.19 / 4.79. A diagnosis build from
+  seed 4 (worse logic, 1.61x, better pins): `bitstreams/step23_perf_seed4/`.
+  If it runs at 22x the pin paths are the cause, and the fix is
+  structural: the pin paths need a class in the checker (with the SDRAM's
+  tAC / tOH and the clock-out delay) or an input register in the I/O
+  cell.
