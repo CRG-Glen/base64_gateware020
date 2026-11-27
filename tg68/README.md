@@ -10,14 +10,15 @@ and the SD card. An adapter, `tg68_bus.v`, makes TG68K look like fx68k's
 ports and adds the caches and the direct SDRAM path. Changes to the fx68k
 build's own files are few and marked `TG68:`.
 
-> **v2.0** (the current release): the clock switches at run time between
-> **12x, 16x and 20x** (85.1, 113.5 and 141.9 MHz) with the `speed`
-> command, with no board mod; sequential instruction fetches from the
-> cache take 4 clocks instead of 5 (the fetch predictor, step 15). On an
-> A500+, caches on: SysInfo 10776 / 14379 / 18024 Dhrystones and AIBB
-> MemTest 16.60 / 21.03 / 26.16 MB/s at 12x / 16x / 20x; xSysInfo fast RAM
-> 36.85 MB/s at 20x; the Frontier timedemo averages 26.2 / 31.1 / 33.8 fps.
-> How to install it and use `speed` and `maprom`: the
+> **v2.1** (the current release): four clock speeds in one bitstream,
+> **12x, 16x, 20x and 22x** (85.1, 113.5, 141.9 and 156.1 MHz), switched at
+> run time with `speed`; the work of steps 17 to 24 (a write drops only its
+> own instruction-cache entry, the barrel shifter, word and byte writes in
+> 4 clocks, 32-bit operands as one pair, router1, and the SDRAM data pins
+> in the timing check). On an A500+, caches on: SysInfo 11526 / 15379 /
+> 19238 / 21165 Dhrystones, AIBB MemTest 16.69 / 21.13 / 26.32 / 28.90 MB/s
+> and the Frontier CPU timedemo 33.8 / 44.8 / 56.0 / 61.4 fps at 12x / 16x /
+> 20x / 22x. How to install it and use `speed` and `maprom`: the
 > [front page](../README.md).
 >
 > **SD card: every `full` bitstream from step 4 on reads the card.** The
@@ -34,12 +35,14 @@ step's branch (`step15-fetch-predictor` and so on), where they still are.
 
 | Folder | What changed | Status |
 | --- | --- | --- |
+| **v2.1 release** (`bitstreams/step24_pins/` on branch `step24-sdram-io`) | exp-22x's design (pin-fed PLLs, no RTL change), with the seed chosen by the new SDRAM pin check: `check_timing.py` now times the SDRAM data pin -> register paths (longest at most 4.50 ns, shortest at least 1.55 ns, limits from the step 23 builds on hardware), and `build.py` picks the passing seed with the lowest 22x ratio | **Runs on hardware at 12x, 16x, 20x and 22x**: the Frontier CPU timedemo ten times in a row at 22x; benchmarks as exp-22x (SysInfo 11526 / 15379 / 19238 / 21165). Seed 26 of 32 (3 pass the pins): pins 4.42 / 2.23 ns, 12x +0.98 ns; 16x / 20x / 22x need 1.21× / 1.51× / 1.66× the worst-case model |
+| `bitstreams/step23_perf/` (branch `step23-burst`, never a release) | exp-22x + 24 performance counters (`perf` 1.1): counters 20-23 count the misses a 4- or 8-word cache line fill would have caught | Measured on hardware at 20x: line fills would gain 0.8-1.3% on the Frontier CPU timedemo, under 0.7% elsewhere: **burst fills parked**. Seed 7 froze at once at 22x and seed 4 (`step23_perf_seed4`) halfway through Frontier: their SDRAM data pin paths (5.01 and 4.79 ns) were too long, which led to step 24 |
 | `bitstreams/exp_22x/` (branch `exp-22x`, experiment) | step 21 + a fourth speed, **22x** (156.1 MHz): 16x and 20x now share one PLL, 22x has the other; `speed` 1.5 (12 / 16 / 20 / 22). SDRAM: one more clock after precharge and refresh at 22x | **The 7 MHz-fed build (`exp_22x_7m`, seed 12, 1.16× / 1.45× / 1.60×) runs on hardware at all four speeds**: 22x SysInfo 21165 Dhrystones (22.09 MIPS, +10% on 20x), xSysInfo fast RAM 40.36 MB/s, SD 3.0 MB/s, Frontier CPU timedemo 61.4 fps; 12x-20x as step 21. The pin-fed build (seed 15) runs at 22x the same (SysInfo 21163). Sim: 22x 8.9% faster than 20x. 12x seed 15: +1.08 ns; 16x / 20x / 22x need 1.20× / 1.50× / **1.65×** the worst-case model; 16 of seeds 1-16 pass |
 | `bitstreams/step21_fpair/` (branch `step21-fpair`) | step 20 + 32-bit operands (immediates, absolute addresses) fetched as one pair again when the CPU offers one: step 15's behaviour, which 15b had removed for timing | **Runs on hardware at 12x, 16x and 20x**: SysInfo 11521 / 15383 / 19239 Dhrystones (**+3.6%**, 20.08 MIPS at 20x), Frontier timedemos as step 20. Sim: compiled C -0.45% clocks. 12x seed 14: +1.28 ns; 16x / 20x need 1.176× / 1.470× the worst-case model; 15 of seeds 1-16 pass |
 | `bitstreams/step20_wr4/` (branch `step20-wr4`) | step 19 + word and byte writes to fast RAM in 4 clocks, not 5 (`WR4`, built in step 15 and left off for timing until router1) | **Runs on hardware at 12x, 16x and 20x**, stable: SysInfo as step 19 (11117 / 14838 / 18566), Frontier CPU timedemo 33.7 / 44.8 / 56.0 fps (+1.2 to +1.6%), Frontier timedemo 27.8 / 32.1 / 35.0 fps. Sim: compiled C -1.1% clocks. 12x seed 11: +1.24 ns; 16x / 20x need 1.193× / 1.491× the worst-case model; 16 of seeds 1-16 pass |
 | `bitstreams/step19_barrel/` (branch `step19-barrel`) | exp-router1 + the CPU core's barrel shifter: every shift and rotate in one CPU step whatever the count (was one step per bit). Checked against the old core on every shift/rotate form, flags included | **Runs on hardware at 12x, 16x and 20x**, SD card included: SysInfo 11118 / 14844 / 18566 Dhrystones (+3%), AIBB 16.69 / 21.13 / 26.32 MB/s, Frontier timedemo 27.7 / 32.0 / 35.0 fps, Frontier CPU timedemo 33.3 / 44.1 / 55.2 fps (+7%). Sim: compiled C -1.3% clocks, instruction mix -12.4%. 12x seed 2 (router1): +1.48 ns; 16x / 20x need 1.167× / 1.459× the worst-case model; 14 of seeds 1-16 pass (router2: 0 of 48) |
 | `bitstreams/exp_router1/` (branch `exp-router1`) | step 17's design, placed and routed with nextpnr's router1 instead of router2. No logic change | **Runs on hardware at 12x, 16x and 20x**, hours at 20x, SD card included; benchmarks as step 17 (SysInfo 10804 / 14416 / 18028, AIBB 16.68 / 21.13 / 26.32 MB/s, Frontier timedemo 26.4 / 30.9 / 34.0 fps). 12x seed 7: +1.53 ns; 16x / 20x need 1.146× / 1.433× the worst-case model, the most margin yet; 16 of 16 seeds pass |
-| `bitstreams/step18_perf/` (branch `step18-perf`, never a release) | step 17 + 20 performance counters, read with the `perf` command (in the folder; `perf_ReadMe.txt`): where a program's time goes (cache hits and misses, Chip RAM code fetches, time on the Amiga's bus, write-buffer waits). Otherwise identical to step 17 | Test build, not yet on hardware. Seed 2 (routed with nextpnr's router1): +1.43 / +4.88 ns; 16x / 20x need 1.16× / 1.45× the worst-case model; 14 of seeds 1-16 pass |
+| `bitstreams/step18_perf/` (branch `step18-perf`, never a release) | step 17 + 20 performance counters, read with the `perf` command (in the folder; `perf_ReadMe.txt`): where a program's time goes (cache hits and misses, Chip RAM code fetches, time on the Amiga's bus, write-buffer waits). Otherwise identical to step 17 | Ran on hardware at 12x and 20x (Frontier, SysInfo, Workbench): the numbers behind steps 19-21. Seed 2 (routed with nextpnr's router1): +1.43 / +4.88 ns; 16x / 20x need 1.16× / 1.45× the worst-case model; 14 of seeds 1-16 pass |
 | `bitstreams/step17_ickeep/` (branch `step17-icache-tag-drop`) | v2.0 + a CPU write drops only its own instruction-cache entry (and its Chip RAM mirrors), no longer cached code at other addresses with the same index (8 KB away). Same three speeds | **Runs on hardware at 12x, 16x and 20x**, SD card included. Benchmarks as v2.0 (within 1% caches on): SysInfo 10804 / 14411 / 18029, AIBB 16.69 / 21.13 / 26.32 MB/s, Frontier timedemo 26.4 / 30.9 / 34.1 fps; Frontier CPU timedemo 31.1 / 41.2 / 57.1 fps. Sim: compiled C -0.1% clocks, fast RAM write bursts -9.8%, push + pop -7 clocks. 12x seed 10: +0.82 / +1.43 ns; 16x / 20x need 1.27× / 1.58× the worst-case model; seeds 6 and 10 of 1-16 pass |
 | **v2.0 release** (`bitstreams/exp20x/` on branch `exp-20x`) | step 15b, with the second PLL at 20x (141.9 MHz) in place of 14x: run-time 12x / 16x / 20x (`speed 20`). SDRAM: two more clocks after each refresh at 20x. Built from the 20x experiment, seed 10 | **Runs on hardware at 12x, 16x and 20x** (hours at 20x), SD card included: SysInfo 18024 Dhrystones at 20x (+25% on 16x), AIBB 26.16 MB/s, xSysInfo fast RAM 36.85 MB/s, Frontier timedemo 33.8 fps. 12x: +0.77 / +2.19 ns; 16x / 20x need 1.23× / 1.54× the worst-case model |
 | `bitstreams/exp18x/` (never released) | the 18x experiment: 18x (127.7 MHz) in place of 14x | Ran on hardware: SysInfo 16225 at 18x (+12.9% on 16x). 18x needs 1.42× the model. Not kept: Glen chose 12x / 16x / 20x |
@@ -879,6 +882,25 @@ actually provides:
 | kernel → cache RAM | 2T | `TG_SETTLE`-1: the early lookup reads the cache RAMs on the edge into DECIDE (step 6) |
 | kernel → adapter | 3T | `TG_SETTLE` |
 | kernel → kernel | 4T | `TG_STEP` |
+| SDRAM data pins → … | 4.50 / 1.55 ns | Step 24. The read data goes from the `sdram_dq` pins straight into the adapter's registers (no register starts these paths, so the class table cannot time them). Longest at most 4.50 ns, shortest to a `cpu.*` register at least 1.55 ns, at every speed: the limits come from four 22x builds on hardware (see *SDRAM data pins*) |
+
+**SDRAM data pins (step 24).** The window in which the SDRAM's read data
+is valid at the pins opens 1.5T − X before the edge that reads it and closes
+0.5T − Y before it (the SDRAM's clock rises at our falling edge; X and Y are
+fixed delays: clock out, the SDRAM's access and hold times, the board). A
+pin path of length D samples the pin D before that edge, so the longest
+path limits the fastest clock (22x) and the shortest the slowest (12x).
+Neither X nor Y can be computed from the datasheet alone, so the limits are
+set from hardware: in step 23 the build with the longest path 4.47 ns ran
+for hours at 22x, builds at 4.79 and 5.01 ns froze (4.79 once in a warm
+Frontier run, 5.01 at once), and every build ran at 12x, the shortest path
+among them 1.60 ns. `check_timing.py` prints the two rows (`--pin-setup`,
+`--pin-hold`) and fails a build that breaks either; `scripts/sdram_pins.py`
+prints every pin. About one seed in ten passes them (3 of 32 for v2.1).
+Capturing the data in the pins' I/O cells (IDDR) would make it independent
+of the routing, but nextpnr allows that only as the pin's sole load, which
+costs one more clock on every SDRAM read (caches-off code 7-8% slower);
+Glen chose the check.
 
 `build.py` runs it after every place-and-route, tries up to 8 seeds
 (`--seeds N` for more) until it gets `RESULT: PASS`, and writes `timing.txt`. Expect the 1T classes to

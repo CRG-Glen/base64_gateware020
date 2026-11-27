@@ -466,6 +466,7 @@ style. `README.md` is the user-facing version of the same material.
 | exp-22x 7 MHz-fed at 16x | 15379 / 6528 | 21.13 / 10.39 |
 | exp-22x 7 MHz-fed at 20x | 19238 / 8145 | 26.32 / 12.94 |
 | exp-22x 7 MHz-fed at 22x (experiment) | 21165 / 9032 | 28.90 / 13.86 |
+| **v2.1** (step 24, seed 26) at 12x / 16x / 20x / 22x | as exp-22x (Glen) | as exp-22x |
 
 - AIBB MemTest did not move from step 6 to step 7 (pairs only come from
   cache hits; MemTest's reads miss and its writes are 16-bit). Step 8's
@@ -530,6 +531,47 @@ style. `README.md` is the user-facing version of the same material.
   more sensitive to the CPU): 10.9 / 92.8 / 31.1, 14.5 / 128.6 / 41.2,
   18.2 / 154.8 / 57.1 fps (min / max / average, 12x / 16x / 20x). No
   v2.0 number to compare with; the baseline for the next steps.
+- **v2.1 release** (27.11.2026): main gets steps 17 to 21, exp-router1
+  (router1 the default), exp-22x and step 24: four speeds, 12x / 16x /
+  20x / 22x, in one bitstream with the PLLs fed from the board's 12x
+  clock. Released bitstream: step 24's seed 26 (the release source
+  rebuilds it byte for byte). Benchmarks as exp-22x.
+- **SDRAM data pins in the timing check (step 24, branch
+  step24-sdram-io):** the read data goes from the `sdram_dq` pads through
+  `fastmem_zii`'s `dp_rdata` multiplexer (one LUT) to `cpu.k_din_dw`,
+  `cpu.dp_q` and `cpu.pf_d`, and nothing timed those paths: no register
+  starts them. Step 23's builds showed they decide 22x.
+  `check_timing.py` now prints two rows for them: the longest at most
+  **4.50 ns**, the shortest to a `cpu.*` register at least **1.55 ns**,
+  at every --freq (a four-speed bitstream runs at 22x, where the longest
+  binds, and at 12x, where the shortest does). Calibration (pad buffer
+  output -> FF D + setup, max corner): exp_22x_7m seed 12 4.47 / 1.60
+  (hours at 22x), exp_22x seed 15 4.79 / 2.16 (the benchmarks), step 23
+  seed 4 4.79 / 2.47 (froze in a warm Frontier run), seed 7 5.01 / 3.04
+  (froze on the switch). `build.py` now picks the passing seed with the
+  lowest 22x ratio (from the 12x report; equal to check_timing at 22x to
+  0.001) and writes a 22x report. Of 32 seeds of the exp-22x netlist, 3
+  pass the pins (the longest path ranges 4.04-5.89 ns); seed 26 (4.42 /
+  2.23, 1.21x / 1.51x / 1.66x) **runs on Glen's A500+ at all four
+  speeds, the Frontier CPU timedemo ten times in a row at 22x**,
+  benchmarks as exp-22x. First plan, dropped: the data captured by an
+  IDDR in each pin's I/O cell. nextpnr allows an IDDR only as the pin's
+  sole load, so it would have cost one more clock on every SDRAM read at
+  every speed (sim, 12x / 20x: compiled C +0.2-0.3%, caches off +8%);
+  Glen chose the check. Not checked yet: the SDRAM outputs (address,
+  command, write data), with no failure to calibrate against.
+- **Burst cache fills measured (step 23, branch step23-burst, parked):**
+  a tb model of 4- and 8-word line fills (`BURST_MEASURE`) and four perf
+  counters (20-23: misses in the same line as the previous miss, on a
+  word no other cache write has hit since; within 2% of the model on the
+  streaming benches). Glen's runs at 20x: a line fill would catch 41-62%
+  of the Frontier CPU timedemo's fetch misses and 14-21% of its data
+  misses, **0.8-1.3% of its time**; xSysInfo 0.65%, AIBB 0.3%, SysInfo
+  ~0; EON runs with the caches off (44% of its time in SDRAM fetches)
+  and gains nothing. Not worth the design. Where Frontier's time goes
+  (20x): the core's own steps 79%, the Amiga's bus 9%, a full Chip RAM
+  write buffer 5.5%, cache misses 5.2%, 5-clock hits 2.9%, fast RAM write
+  waits 1.7%.
 - **22x and four speeds (exp-22x, experiment):** 12x (pin), 16x and 20x
   from one PLL (VCO 567.5 MHz, /5 and /4), 22x (156.07 MHz) from the
   other; speed code 3, `$5B16`, `speed` 1.5; SDRAM tRP + 1 and tRFC + 1

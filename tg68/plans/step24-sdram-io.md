@@ -134,3 +134,5 @@ All benches (no RTL change).
   One in ten seeds passing is the cost of the check; if later steps make
   it worse, the plan's structural fallback (no LUT on the pin path) is
   next.
+- **Glen: seed 26 runs at all four speeds; the Frontier CPU timedemo ten
+  times in a row at 22x; benchmarks as exp-22x.** Released as v2.1.

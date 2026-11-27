@@ -5,31 +5,27 @@ Start every session here. One model plans a step, another builds it (see
 numbers that must not move, the acceptance criteria, the fallbacks and
 when to stop and report. Results go in the plan's own log section.
 
-## State (updated 16 November 2026, after v2.0)
+## State (updated 27 November 2026, v2.1)
 
-- `main` = **v2.0**: steps 13 to 15b plus the 20x clock (run-time 12x /
-  16x / 20x). Runs on Glen's A500+ at all three speeds, hours at 20x.
-  Released bitstream = the `exp-20x` build, seed 10.
-- **What to build next is in `strategy-after-v2.md`**: the measurements
-  behind it, the steps in order (17: instruction cache drops only its
-  own entry; 18: `perf` counters; 19: barrel shifter; 20: 16 KB caches;
-  X22: a 22x experiment) and the smaller items after them. Steps marked
-  "ready" there are built from that file; each has its own log section.
-- Waiting for Glen: the hardware test of `exp-7m-pll` (the PLLs fed from
-  the Amiga's 7 MHz clock, stage 1; bitstreams in
-  `tg68/bitstreams/exp7m_pll/` on that branch).
+- `main` = **v2.1**: steps 17 to 21, exp-router1, exp-22x and step 24
+  (run-time 12x / 16x / 20x / 22x, pin-fed PLLs). Runs on Glen's A500+ at
+  all four speeds, the Frontier CPU timedemo ten times in a row at 22x.
+  Released bitstream = step 24's seed 26.
+- Next: item 3 of the long plan below (step 24, its first item, is done;
+  24b, the SDRAM outputs, waits for a reason: nothing has failed there).
 - The old step and experiment branches are still on GitHub, with their
   test bitstreams (archiving them as tags is Glen's to do: this
   session's git access cannot push tags or delete branches).
-- New work branches from `main`. The numbered entries below are the
-  history of how v2.0 was reached.
+- New work branches from `main`. The numbered entries further down are
+  the history of how v2.0 and v2.1 were reached.
 
 ## The long plan (agreed with Glen, 27 November 2026)
 
-1. **Step 24** (`step24-sdram-io.md`): SDRAM read data in the I/O
-   cells, so no seed can break 22x; then **24b**, the SDRAM outputs.
-2. **A v2.1 release**: 12x / 16x / 20x / 22x, steps 17-21 and 24 to
-   `main`, once step 24 has passed Glen's tests.
+1. ~~**Step 24**~~ (`step24-sdram-io.md`): done, the SDRAM data pins in
+   the timing check (Glen chose that over I/O-cell capture, which cost a
+   clock on every read). **24b**, the SDRAM outputs, only if something
+   points there.
+2. ~~**A v2.1 release**~~: done (27 November 2026).
 3. **Smaller measured items**, each 1-5%: the Chip RAM write buffer
    (5.5% of the Frontier CPU timedemo waits on it being full: first a
    counter build for how the writes arrive); one clock off every SDRAM
@@ -119,12 +115,12 @@ measurement, net 0.8%), the data-read predictor (step 22, ~1%, parked),
    access to the line while it fills. The fast RAM path is already
    synchronous (the direct port, step 3); the Amiga's bus cannot be. Then the same from the Amiga's 7 MHz clock (`exp-7m-pll`
    stage 1 was built from v2.0 and never tested).
-10. **Step 24**, `step24-sdram-io` (`step24-sdram-io.md`): **planned,
-    next.** The SDRAM read data sampled by an IDDR in each data pin's I/O
-    cell, on the falling edge (the middle of the data window at 22x), with
-    one more clock on SDRAM reads at 22x only; 12x-20x unchanged. Goal:
-    22x that no seed can break (step 23: the unchecked pin paths decided
-    which builds ran). 24b after it: the SDRAM outputs into the I/O cells.
+10. ~~**Step 24**~~, `step24-sdram-io` (`step24-sdram-io.md`): **released
+    as v2.1.** The SDRAM data pin paths in `check_timing.py` (longest
+    <= 4.50 ns, shortest >= 1.55 ns, from step 23's builds on hardware);
+    `build.py` picks the lowest 22x ratio. 3 of 32 seeds pass; seed 26
+    runs at all four speeds. (The I/O-cell capture of the first plan cost
+    one clock on every read at every speed: dropped.)
 11. The smaller items (section 4 there, and `backlog.md`): each needs a
    plan from the planner first.
 
