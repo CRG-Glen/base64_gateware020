@@ -107,3 +107,21 @@ time, step 18).
   build.py keeps only the best seed's SDF: rebuild a seed with
   --skip-synth to measure it). Next: a plan for the pin paths (see
   plans/README.md).
+- **Seed 4 crashed too**, halfway through the Frontier CPU timedemo at
+  22x (screen froze; a reset recovers). Compared with the two exp_22x
+  builds (both rebuilt byte for byte; the RTL differs only by the
+  counters, +2,300 LUTs, 52% -> 61%):
+
+  | build | at 22x on Glen's board | logic ratio | SDRAM read pins mean / worst | pins > 4.5 ns | write data out mean / worst |
+  | --- | --- | --- | --- | --- | --- |
+  | exp_22x_7m seed 12 | ran for a long time | 1.60x | 3.49 / 4.47 | 0 | 2.73 / 3.54 |
+  | exp_22x seed 15 | ran the benchmarks | 1.65x | 3.93 / 4.79 | 3 | 2.62 / 3.10 |
+  | step23 seed 4 | crashed mid-Frontier | 1.61x | 4.20 / 4.79 | 6 | 3.17 / 3.65 |
+  | step23 seed 7 | crashed on the switch | 1.57x | 4.40 / 5.01 | 7 | 3.15 / 3.81 |
+
+  The checked logic does not order them; the SDRAM read pin paths do,
+  exactly. Address / command outputs: no pattern (seed 15 worst 3.64,
+  seed 4 3.10). Conclusion: 22x is limited by the unregistered SDRAM read
+  data paths, which vary 1 ns from seed to seed; any change to the design
+  re-rolls them. Fix structurally (input registers in the I/O cells),
+  not by picking seeds.
