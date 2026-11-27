@@ -45,6 +45,10 @@ ap.add_argument('--first-pass', action='store_true',
                 help='stop starting new seeds once one has passed timing')
 ap.add_argument('--keep-sdf', action='store_true',
                 help="keep every seed's .sdf (23 MB each), not only the best one's")
+ap.add_argument('--pin-setup', type=float, default=None,
+                help='SDRAM data pin setup limit in ns for check_timing (default its 4.50, the 22x '
+                     'limit); a test build for 20x only may use 5.01, the longest that has run '
+                     'at 20x (step 23 seed 7). Never for a release')
 ap.add_argument('--perf', action='store_true',
                 help='TEST BUILD with the performance counters (step 18, sw/perf): defines '
                      'TG68_PERF and adds perf_cnt.v; output in build/<cfg>_perf, files '
@@ -186,6 +190,10 @@ def summary(timing_text, freq=86.0):
     ratio = max((n * T - sl) / (n * T) for c, n, sl in rows)
     return w1, wm, (bad if bad[2] < 0 else None), ratio
 
+PINARGS = ['--pin-setup', str(a.pin_setup)] if a.pin_setup is not None else []
+if a.pin_setup is not None:
+    print('NOTE: SDRAM pin setup limit %.2f ns (not 4.50): a test build, not for 22x' % a.pin_setup)
+
 def ratio_at(timing_text, freq):
     """the worst delay/budget ratio at freq, from a report made at another
     clock: each class's budget less its slack is its delay with setup (the
@@ -240,7 +248,7 @@ def one_seed(seed):
             return seed, None, '%s not found on PATH' % NEXTPNR
     if r.returncode != 0:
         return seed, None, 'nextpnr failed (exit %d), see %s' % (r.returncode, d)
-    t = subprocess.run([sys.executable, CHECK, 'base64_tg68.sdf', '--paths', '6'],
+    t = subprocess.run([sys.executable, CHECK, 'base64_tg68.sdf', '--paths', '6'] + PINARGS,
                        cwd=d, capture_output=True, text=True)
     open(os.path.join(d, 'timing.txt'), 'w').write(t.stdout)
     return seed, t.returncode == 0, None
@@ -310,7 +318,7 @@ print('== best seed: %d (lowest 22x ratio %.3fx; worst 1T slack %+.2f ns)' % (se
 # 16x and 20x: the same build scored by the worst delay/budget ratio (it
 # cannot pass the worst-case model there; see README "Timing")
 for freq, tag in ((113.51, '16x'), (141.88, '20x'), (TOP, '22x')):   # exp-22x: 12x / 16x / 20x / 22x
-    t = subprocess.run([sys.executable, CHECK, 'base64_tg68.sdf', '--freq', str(freq), '--paths', '6'],
+    t = subprocess.run([sys.executable, CHECK, 'base64_tg68.sdf', '--freq', str(freq), '--paths', '6'] + PINARGS,
                        cwd=d, capture_output=True, text=True)
     open(os.path.join(d, 'timing_at%s.txt' % tag), 'w').write(t.stdout)
     sm = summary(t.stdout, freq)

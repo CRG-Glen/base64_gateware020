@@ -93,3 +93,12 @@ not: close the step; the waits are the bus's own speed.
   The benches are bound by the Amiga's bus (their time ends with the last
   write drained), so the waits saved come back at the end; Frontier's bus
   is busy ~7% of the time, so only hardware can say.
+- **Perf build, seeds 1-32: 0 pass at 22x.** Longest SDRAM pin path
+  4.86-6.22 ns (v2.1's netlist: 4.04-5.89): the counters and the 32-deep
+  buffer push the readers away from the pins; 4 seeds also miss 1T by
+  0.04-0.47 ns. As a 20x-only measurement build (`build.py --pin-setup
+  5.01`, new: the longest path that has run at 20x, step 23's seed 7):
+  seeds 2 (4.86) and 28 (4.93) pass; shipped **seed 28**, +0.98 ns, 1.21x
+  / 1.51x at 16x / 20x, `bitstreams/step25_wbuf_perf/`. A release with a
+  deeper buffer would need the pin paths shortened first (step 24's
+  structural fallback: no LUT between pin and register).
