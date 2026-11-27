@@ -167,3 +167,20 @@ after 24.
 ## Log
 
 (the builder writes here)
+- **Feasibility (tiny yosys / nextpnr designs on the real pins):** an
+  `IDDRX1F` packs into the I/O cell of an `sdram_dq` pin, also with the
+  pin driving write data (BB with I / T from fabric). **But nextpnr
+  refuses an IDDR whose pin also feeds the fabric** ("D input must be
+  connected only to a top level input"). So today's direct path cannot
+  stay beside the IDDR for 12x-20x: the plan's first fallback (the IDDR
+  and the extra read clock at every speed), where the plan says stop and
+  ask Glen. A falling-edge register packed in the I/O cell (also works)
+  does not avoid the clock: its output must reach the fabric registers in
+  half a clock, and the routes from the pins today are 3.1-5.0 ns (only
+  12x has that).
+- **Cost of the extra read clock at every speed** (sim: reads wait one
+  more clock, the word taken from a register of the pin; benches at
+  12x / 20x): c 63,900 -> 64,044 (+0.23%) / 38,676 -> 38,796 (+0.31%);
+  coff (caches off) 120,024 -> 129,984 (+8.3%) / 78,516 -> 84,516
+  (+7.6%); copy +3.3% / +2.0%; readoff +7.0% / +6.2%; read, scatter,
+  wrmix unchanged. All PASS. Stopped here for Glen's decision.

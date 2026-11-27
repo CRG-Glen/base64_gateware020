@@ -24,6 +24,30 @@ when to stop and report. Results go in the plan's own log section.
 - New work branches from `main`. The numbered entries below are the
   history of how v2.0 was reached.
 
+## The long plan (agreed with Glen, 27 November 2026)
+
+1. **Step 24** (`step24-sdram-io.md`): SDRAM read data in the I/O
+   cells, so no seed can break 22x; then **24b**, the SDRAM outputs.
+2. **A v2.1 release**: 12x / 16x / 20x / 22x, steps 17-21 and 24 to
+   `main`, once step 24 has passed Glen's tests.
+3. **Smaller measured items**, each 1-5%: the Chip RAM write buffer
+   (5.5% of the Frontier CPU timedemo waits on it being full: first a
+   counter build for how the writes arrive); one clock off every SDRAM
+   request (buys back step 24's read clock; caches-off code like EON);
+   a second posted fast RAM write (1.7% of Frontier).
+4. **Fewer kernel steps per instruction** (the 68030-style gain: the
+   core's own steps are 79% of Frontier's time): an instruction-level
+   test suite in the sim first, then one change at a time (taken
+   branches, the memory-destination fourth step, `clr`, `lea`, `movem`,
+   a 2-bit divider).
+5. Not speed, noted only: an MMU or an FPU (very large; probably does not
+   fit beside the rest).
+
+Measured and not worth building (do not redo): burst cache fills
+(step 23, 0.8-1.3% Frontier), a branch-target table (step 22's
+measurement, net 0.8%), the data-read predictor (step 22, ~1%, parked),
+16 KB caches (1-2.5%), STEP = 3, 24x.
+
 ## Next, in order (details: `strategy-after-v2.md`)
 
 1. ~~Step 17~~, `step17-icache-tag-drop`: **runs on Glen's A500+ at
