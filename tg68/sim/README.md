@@ -98,6 +98,12 @@
   dropped by a CPU write, how many of them held another address than the
   one written (a write drops the entry at its index whatever it holds),
   and how many of those were fetched again.
+* **bench bigread** (step 23): sums 16 KB of fast RAM (twice the data
+  cache), timed on the second pass, which misses as the first did:
+  sequential reads through more than the cache, as AIBB's MemTest does.
+* `VLFLAGS="-DBURST_MEASURE -DBURST_L=4"` (or 8), any bench: what a line
+  fill of that many words would do (a shadow of the cache tags; see
+  plans/step23-burst.md).
 * **bench chip**: a loop in Chip RAM writes 1 KB to Chip RAM, timed on the
   second pass (Chip RAM code from the instruction cache).
 * **bench copy | read | scatter | sd**: fast RAM throughput, timed on a second

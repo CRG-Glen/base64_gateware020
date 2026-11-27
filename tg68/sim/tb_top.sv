@@ -626,6 +626,55 @@ module tb;
             end
         end
     end
+`ifdef BURST_MEASURE
+    // step 23 (measurement, -DBURST_MEASURE -DBURST_L=4|8): what a line fill
+    // of BURST_L words would do. A shadow of each cache's tags mirrors every
+    // real cache write (fills, drops, the flush) and, on every real fast RAM
+    // miss (DDATA, cache on, cacheable), also takes the rest of the aligned
+    // line, as a burst fill would. In the timed pass: real misses the shadow
+    // already held ("would hit") and real hits whose word the extra fills had
+    // evicted ("would lose"). Each is about 4 clocks (a 9-clock miss against a
+    // 5-clock hit); the SDRAM time of the longer fills is not modelled.
+`ifndef BURST_L
+`define BURST_L 8
+`endif
+    localparam integer BL = `BURST_L;
+    reg [dut.cpu.TAGW-1:0] bs_ic [0:(1 << dut.cpu.IC_AW) - 1];
+    reg [dut.cpu.TAGW-1:0] bs_dc [0:(1 << dut.cpu.IC_AW) - 1];
+    integer bi; initial for (bi = 0; bi < (1 << dut.cpu.IC_AW); bi = bi + 1) begin bs_ic[bi] = 0; bs_dc[bi] = 0; end
+    integer bm_fmiss = 0, bm_dmiss = 0, bm_fhit = 0, bm_dhit = 0, bm_flost = 0, bm_dlost = 0;
+    function [dut.cpu.TAGW-1:0] bm_tag(input [31:1] w);
+        reg [dut.cpu.TAGW-4:0] lo;
+        begin lo = {w, 1'b0} >> (dut.cpu.IC_AW + 1); bm_tag = {1'b1, w[31:24] == 8'h08, w[31:24] == 8'h00, lo}; end
+    endfunction
+    reg [31:1] bm_w; integer bk;
+    wire bm_win = (t0 > 0 && t1 == 0);
+    always @(posedge dut.clk) begin
+        // the real writes, as the RAMs take them on this edge
+        if (dut.cpu.ic_we) bs_ic[dut.cpu.ic_wa] = dut.cpu.ic_wt;
+        if (dut.cpu.dc_we) bs_dc[dut.cpu.dc_wa] = dut.cpu.dc_wt;
+        // a real miss: would the line fill have had it? then fill the line
+        if (dut.cpu.q == 4'd10 && dut.cpu.ic_ok && (dut.cpu.cyc_fetch ? dut.cpu.ic_on : dut.cpu.dc_on)) begin
+            if (dut.cpu.cyc_fetch) begin
+                if (bm_win) begin bm_fmiss = bm_fmiss + 1; if (bs_ic[dut.cpu.a_r[dut.cpu.IC_AW:1]] == bm_tag(dut.cpu.a_r)) bm_fhit = bm_fhit + 1; end
+            end else begin
+                if (bm_win) begin bm_dmiss = bm_dmiss + 1; if (bs_dc[dut.cpu.a_r[dut.cpu.IC_AW:1]] == bm_tag(dut.cpu.a_r)) bm_dhit = bm_dhit + 1; end
+            end
+            for (bk = 0; bk < BL; bk = bk + 1) begin
+                bm_w = (dut.cpu.a_r & ~(BL - 1)) | bk;
+                if (dut.cpu.cyc_fetch) bs_ic[bm_w[dut.cpu.IC_AW:1]] = bm_tag(bm_w);
+                else                   bs_dc[bm_w[dut.cpu.IC_AW:1]] = bm_tag(bm_w);
+            end
+        end
+        // a real hit: is the word still there with the line fills?
+        if (bm_win && dut.cpu.q == 4'd8 && dut.cpu.cc_hit) begin
+            if (dut.cpu.cyc_fetch) begin if (bs_ic[dut.cpu.a_r[dut.cpu.IC_AW:1]] != bm_tag(dut.cpu.a_r)) bm_flost = bm_flost + 1; end
+            else                   begin if (bs_dc[dut.cpu.a_r[dut.cpu.IC_AW:1]] != bm_tag(dut.cpu.a_r)) bm_dlost = bm_dlost + 1; end
+        end
+        if (bm_win && dut.cpu.q == 4'd1 && !dut.cpu.internal_step && dut.cpu.fp_hit && dut.cpu.cnt_ok
+            && bs_ic[dut.cpu.k_addr[dut.cpu.IC_AW:1]] != bm_tag(dut.cpu.k_addr[31:1])) bm_flost = bm_flost + 1;
+    end
+`endif
     always @(negedge dut.core_dtack_n) if (t0 > 0 && t1 == 0) begin t_dt = $realtime; sum_as2dt = sum_as2dt + (t_dt - t_as); n_fm = n_fm + 1;
         if (dut.core_a[31:24] == 8'h08) begin
         if (dut.core_rw) begin n_rd = n_rd + 1; s_rd = s_rd + (t_dt - t_as); end else begin n_wr = n_wr + 1; s_wr = s_wr + (t_dt - t_as); end end end
@@ -715,6 +764,12 @@ module tb;
         $display("1 KB: %0.1f us -> %0.2f MB/s; %0d CPU bus cycles", (t1-t0)/1000.0, 1024.0/((t1-t0)/1000.0), n_fm);
         $display("instruction cache (whole run): valid entries dropped by a write %0d, of which held another address %0d; refilled after such a drop %0d",
                  ic_drop, ic_fdrop, ic_refill);
+`ifdef BURST_MEASURE
+        $display("BURST %0d words: fetch misses %0d, would hit %0d, hits lost %0d; data misses %0d, would hit %0d, hits lost %0d; net about %0d clocks (%0d.%0d%% of %0d)",
+                 BL, bm_fmiss, bm_fhit, bm_flost, bm_dmiss, bm_dhit, bm_dlost,
+                 4 * (bm_fhit + bm_dhit - bm_flost - bm_dlost),
+                 (400 * (bm_fhit + bm_dhit - bm_flost - bm_dlost)) / n_clk, ((4000 * (bm_fhit + bm_dhit - bm_flost - bm_dlost)) / n_clk) % 10, n_clk);
+`endif
         $display("stall clocks: fast write waits for the port %0d, read waits (CFREE) %0d, chip write waits %0d", st_fw, st_fr, st_cw);
 `ifdef TG68_PERF
         // the tb's own counters tick on clk12, so they only describe the
@@ -780,6 +835,8 @@ module tb;
         check(24'h8100, 32'h000000FF, "last chip long written");
 `elsif BENCH_WRFAST
         check(24'h8100, 32'h000000FF, "last fast long written");
+`elsif BENCH_BIGRD
+        check(24'h8100, 32'h007FF800, "sum of 4096 longs");
 `else
         check(24'h8100, 32'h00007F80, "sum");
 `endif

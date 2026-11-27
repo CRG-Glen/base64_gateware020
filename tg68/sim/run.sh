@@ -7,6 +7,7 @@
 #   sim/run.sh bench copy|read|scatter   fast RAM throughput
 #   sim/run.sh bench c|coff              compiled C from fast RAM (caches on|off)
 #   sim/run.sh bench op                  clocks and kernel steps per instruction
+#   sim/run.sh bench bigread             16 KB read, more than the data cache (step 23)
 # BENCH_ASD="--defsym SPEED18=1" sim/run.sh bench copy|read|scatter|c   at 20x (SPEED16 too: 16x)
 #   (exp-22x: --defsym SPEED18=1 --defsym SPEED22=1: at 22x)
 #   sim/run.sh bench sd                  SD controller, SPI loopback
@@ -45,6 +46,8 @@ bench)
   # run.sh bench [copy|read|scatter]: fast RAM throughput, timed 2nd pass
   case "${2:-copy}" in
     copy) SRC=test_mem.s; D=-DBENCH_COPY ;; read) SRC=test_rd.s; D= ;; scatter) SRC=test_rnd.s; D= ;;
+    # step 23: 16 KB read, more than the data cache holds (AIBB-like)
+    bigread) SRC=test_bigrd.s; D=-DBENCH_BIGRD ;;
     sd) SRC=test_sd.s; D=-DSDTEST ;;
     # the read loop with the caches off: every instruction fetch and data
     # read goes to the SDRAM (step 10: instruction prefetch)

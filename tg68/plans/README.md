@@ -76,7 +76,10 @@ when to stop and report. Results go in the plan's own log section.
    and then at 22x (no slip): 22x's own. Over a longer session the
    7 MHz-fed build swapped streams once by itself (step 14's automatic
    swap, as designed); no difference shown between the clock sources.
-9. **Next step after Glen's 22x test: burst cache fills** (Glen's choice).
+9. **Step 23**, `step23-burst` (`step23-burst.md`): burst cache fills
+   (Glen's choice). **Measuring**: sim gives sequential reads beyond the
+   cache -9% (4-word lines) / -13% (8-word), compiled C ~0; real
+   programs' miss patterns next (a perf build). Original note:
    A miss fills a line of 4 or 8 words (SDRAM burst, both cache banks a
    clock) while the CPU carries on with the first word; today a miss
    brings one pair (32 bits) and a one-word prefetch. Expected: sequential

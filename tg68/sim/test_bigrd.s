@@ -1,0 +1,63 @@
+| step 23: a big fast RAM read: sum 4096 longs (16 KB, twice the data
+| cache) at $08000000, timed on the second pass, which misses as the first
+| did. The loop runs from fast RAM. (From test_rd.s.)
+        .org 0
+        .long 0x00009000
+        .long start
+        .org 0x100
+start:
+        .ifdef SPEED18
+        | SPEED18 (named in the 18x experiment): switch to 20x first (SPEED16:
+        | 16x) and
+        | wait until the switch is done
+        .ifdef SPEED16
+        move.w  #0x5B10,0xEAF00A
+        .else
+        .ifdef SPEED22
+        move.w  #0x5B16,0xEAF00A    | exp-22x: 22x
+        .else
+        move.w  #0x5B14,0xEAF00A
+        .endif
+        .endif
+9:      move.w  0xEAF00A,%d0
+        btst    #11,%d0
+        bne.s   9b
+        .ifdef SPEED16
+        cmp.b   #0x10,%d0
+        .else
+        .ifdef SPEED22
+        cmp.b   #0x16,%d0
+        .else
+        cmp.b   #0x14,%d0
+        .endif
+        .endif
+        bne.s   9b
+        .endif
+        moveq   #1,%d0
+        .ifdef NOCACHE
+        moveq   #0,%d0              | bench readoff: caches off
+        .endif
+        movec   %d0,%cacr
+        lea     0x08000000,%a0
+        move.w  #4095,%d0
+fill:   move.l  %d0,(%a0)+
+        dbra    %d0,fill
+        lea     sumfn,%a0
+        lea     0x08004000,%a1
+        moveq   #7,%d0
+cpf:    move.l  (%a0)+,(%a1)+
+        dbra    %d0,cpf
+        jsr     0x08004000
+        move.b  #1,0x8F00
+        jsr     0x08004000
+        move.b  #2,0x8F00
+        move.l  %d2,0x8100          | sum 0..4095 = 0x7FF800
+        move.l  #0x600DC0DE,0x8FF0
+done:   bra.s   done
+sumfn:  lea     0x08000000,%a0
+        moveq   #0,%d2
+        move.w  #4095,%d0
+1:      add.l   (%a0)+,%d2
+        dbra    %d0,1b
+        rts
+        nop
