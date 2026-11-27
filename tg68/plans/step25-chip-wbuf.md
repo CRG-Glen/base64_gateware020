@@ -78,3 +78,18 @@ not: close the step; the waits are the bus's own speed.
 ## Log
 
 (the builder writes here)
+- RTL and tests (commit on this branch): regression PASS (bus, top,
+  fastmem, top and fastmem PERF=0, bench sd); every bench unchanged at
+  depth 8. test_top.s: two 20-write bursts at depth 32 read back (the
+  buffer reached 11 entries at 12x: the loop outruns the drain by that
+  much), back to 8, bad codes ignored. **The "taken once empty" mutant
+  cannot fail:** the CPU's write to +$F00E is itself an ordered cycle,
+  held until the buffer is empty (tb: every $5D write arrives with 0
+  entries), so the guard is a safety net the CPU cannot reach; the tb
+  checks every clock that the count never exceeds the limit.
+- Benches at depth 8 / 16 / 32 (clocks; chip write waits): wrchip 31,572
+  all three; 22,132 / 21,586 / 20,484. wrmix 31,572; 10,288 / 9,716 /
+  8,582 (-17%). chip 31,440; 21,238 / 20,681 / 19,564. c, copy unchanged.
+  The benches are bound by the Amiga's bus (their time ends with the last
+  write drained), so the waits saved come back at the end; Frontier's bus
+  is busy ~7% of the time, so only hardware can say.
