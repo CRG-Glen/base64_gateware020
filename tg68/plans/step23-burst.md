@@ -98,3 +98,12 @@ time, step 18).
   structural: the pin paths need a class in the checker (with the SDRAM's
   tAC / tOH and the clock-out delay) or an input register in the I/O
   cell.
+- **Glen: seed 4 runs at 22x** (seed 7, same netlist, crashed at once).
+  Seed 4's checked logic is worse (1.61x against 1.57x), its SDRAM pins
+  better: the SDRAM data pin -> register paths decide 22x. Seed 7 has
+  five pins above 4.79 ns (worst 5.01); seed 4 and exp_22x seed 15 have
+  none. `scripts/sdram_pins.py` measures them from the SDF. Until the
+  checker covers them, a 22x build's seed is picked by this too (and
+  build.py keeps only the best seed's SDF: rebuild a seed with
+  --skip-synth to measure it). Next: a plan for the pin paths (see
+  plans/README.md).

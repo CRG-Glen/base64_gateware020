@@ -77,11 +77,12 @@ when to stop and report. Results go in the plan's own log section.
    7 MHz-fed build swapped streams once by itself (step 14's automatic
    swap, as designed); no difference shown between the clock sources.
 9. **Step 23**, `step23-burst` (`step23-burst.md`): burst cache fills
-   (Glen's choice). **Measuring**: sim gives sequential reads beyond the
-   cache -9% (4-word lines) / -13% (8-word), compiled C ~0. **Waiting
-   for Glen**: the perf build with counters 20-23 (misses a 4- / 8-word
-   fill would catch), `bitstreams/step23_perf/` (seed 7, 1.42x at 20x,
-   1.57x at 22x): Frontier CPU timedemo, AIBB, xSysInfo, SysInfo, a game.
+   (Glen's choice). **Parked after measuring**: Glen's counter runs at
+   20x give 0.8-1.3% on Frontier, under 0.7% elsewhere, 0 for EON (caches
+   off). Found on the way: **the SDRAM data pin -> register paths are not
+   timed** and decide 22x (seed 7 crashed, seed 4 of the same netlist
+   runs; `scripts/sdram_pins.py`). Next: plan the pin paths (a checker
+   class, or input registers in the I/O cells).
    Original note:
    A miss fills a line of 4 or 8 words (SDRAM burst, both cache banks a
    clock) while the CPU carries on with the first word; today a miss
