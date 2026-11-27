@@ -43,6 +43,7 @@
         .equ    KEY_FREEZE, 0x5C40
         .equ    KEY_RUN,    0x5C80
         .equ    KEY_CLEAR,  0x5CC0
+        .equ    KEY_WB,     0x5D00          | step 25: write buffer depth
 
 | variable block offsets (a5)
         .equ    v_sys,   0
@@ -79,7 +80,7 @@ _start:
         move.l  %a4,%a0
         move.l  %d7,%d1
 1:      tst.l   %d1
-        beq.s   args_done
+        beq     args_done
         move.b  (%a0)+,%d0
         subq.l  #1,%d1
         cmp.b   #' ',%d0
@@ -87,7 +88,7 @@ _start:
         cmp.b   #9,%d0
         beq.s   1b
         cmp.b   #10,%d0
-        beq.s   args_done
+        beq     args_done
         or.b    #0x20,%d0
         moveq   #1,%d6
         cmp.b   #'c',%d0
@@ -98,7 +99,31 @@ _start:
         moveq   #3,%d6
         cmp.b   #'r',%d0
         beq.s   args_done
-        lea     m_usage(%pc),%a0
+        moveq   #4,%d6                      | step 25: WB 8|16|32
+        cmp.b   #'w',%d0
+        bne.s   usage
+2:      tst.l   %d1                         | skip the rest of the word
+        beq.s   usage
+        move.b  (%a0)+,%d0
+        subq.l  #1,%d1
+        cmp.b   #' ',%d0
+        bne.s   2b
+3:      tst.l   %d1                         | and the spaces
+        beq.s   usage
+        move.b  (%a0)+,%d0
+        subq.l  #1,%d1
+        cmp.b   #' ',%d0
+        beq.s   3b
+        moveq   #0,%d2                      | d2 = the depth code
+        cmp.b   #'8',%d0
+        beq.s   args_done
+        moveq   #1,%d2
+        cmp.b   #'1',%d0
+        beq.s   args_done
+        moveq   #2,%d2
+        cmp.b   #'3',%d0
+        beq.s   args_done
+usage:  lea     m_usage(%pc),%a0
         bsr     puts
         moveq   #10,%d0
         move.l  %d0,v_rc(%a5)
@@ -118,7 +143,7 @@ args_done:
         | ---- find the AutoConfig ROM board ----
 .ifdef TEST
         | test build (vamos): a fake board in RAM whose registers are plain
-        | memory: 20 counters, running, every one reading 78187493530
+        | memory: 22 counters, running, depth 16, every one reading 78187493530
         lea     fakeboard(%pc),%a3
         move.l  %a3,%a2
         add.l   #0xF000,%a2
@@ -128,9 +153,9 @@ args_done:
         move.w  #0x0000,PERF_REG(%a2)
 .else
 .ifdef TESTRST
-        move.w  #0x5403,PERF_REG(%a2)       | frozen by a reset, counter 3
+        move.w  #0x5603,PERF_REG(%a2)       | frozen by a reset, counter 3
 .else
-        move.w  #0x9400,PERF_REG(%a2)
+        move.w  #0x9640,PERF_REG(%a2)
 .endif
 .endif
         move.w  #0x789A,PERF_LO(%a2)
@@ -181,9 +206,16 @@ args_done:
         lea     m_frozen(%pc),%a0
         bra.s   said
 6:      cmp.w   #3,%d6
-        bne.s   report
+        bne.s   8f
         move.w  #KEY_RUN,PERF_REG(%a2)
         lea     m_running(%pc),%a0
+        bra.s   said
+8:      cmp.w   #4,%d6
+        bne.s   report
+        move.w  %d2,%d0                     | step 25: $5D0n
+        or.w    #KEY_WB,%d0
+        move.w  %d0,PERF_REG(%a2)
+        lea     m_wbset(%pc),%a0
 said:   bsr     puts
         bra     ok_exit
 
@@ -206,6 +238,18 @@ report:
         moveq   #2,%d2
         bsr     putdec
         lea     m_x(%pc),%a0
+        bsr     puts
+        lea     m_wbnow(%pc),%a0            | step 25: the write buffer's depth
+        bsr     puts                        | (bits 7:6: 8 << n; 0 before step 25)
+        move.w  %d5,%d1
+        lsr.w   #6,%d1
+        and.w   #3,%d1
+        moveq   #8,%d0
+        lsl.l   %d1,%d0
+        moveq   #0,%d1
+        moveq   #2,%d2
+        bsr     putdec
+        lea     m_wbend(%pc),%a0
         bsr     puts
         lea     m_head(%pc),%a0
         bsr     puts
@@ -332,8 +376,8 @@ putdec:
 | ---- text ------------------------------------------------------------------
 dosname:    .asciz  "dos.library"
 expname:    .asciz  "expansion.library"
-verstag:    .asciz  "$VER: perf 1.0 (17.11.2026) Base64"
-m_usage:    .asciz  "Usage: perf          print the counters (they run on if they were running)\n       perf CLEAR    zero them and start them\n       perf FREEZE   stop them\n       perf RUN      start them\n"
+verstag:    .asciz  "$VER: perf 1.2 (28.11.2026) Base64"
+m_usage:    .asciz  "Usage: perf          print the counters (they run on if they were running)\n       perf CLEAR    zero them and start them\n       perf FREEZE   stop them\n       perf RUN      start them\n       perf WB 8|16|32  Chip RAM write buffer depth (step 25 test builds)\n"
 m_noexp:    .asciz  "cannot open expansion.library\n"
 m_noboard:  .asciz  "No Base64 AutoConfig ROM board found (5194/14).\n"
 m_nowin:    .asciz  "Board found, but no status window - gateware is too old.\n"
@@ -345,6 +389,9 @@ m_wasrun:   .asciz  "The counters were running (frozen for this report).\n"
 m_wasrst:   .asciz  "The counters were frozen by an Amiga reset.\n"
 m_wasfrz:   .asciz  "The counters were frozen.\n"
 m_speed:    .asciz  "System clock now: "
+m_wbnow:    .asciz  "Chip RAM write buffer: "
+m_wbend:    .asciz  " entries\n"
+m_wbset:    .asciz  "Write buffer depth asked for (it changes once the buffer is empty).\n"
 m_x:        .asciz  "x\n"
 m_head:     .asciz  "\n # counter                                          count\n"
 m_sp:       .asciz  " "
@@ -374,6 +421,8 @@ names:      .asciz  "clocks"
             .asciz  "clocks waiting: fast RAM write"
             .asciz  "code dropped by writes"
             .asciz  "instruction-cache fills"
+            .asciz  "clocks with over 8 in the write buffer"
+            .asciz  "clocks with over 16 in the write buffer"
             .asciz  ""
         .balign 4
 vars:   .space  48

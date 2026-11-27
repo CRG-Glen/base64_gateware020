@@ -323,7 +323,7 @@ c17e:   move.l  (%a0)+,(%a1)+
         lea     0xEAF00E,%a0
         moveq   #0,%d0
         move.w  (%a0),%d0
-        move.l  %d0,0x8260          | 8260 00001400: frozen since power-on, 20 counters
+        move.l  %d0,0x8260          | 8260 00001600: frozen since power-on, 22 counters
         move.w  #0x5C80,(%a0)       | run
         moveq   #49,%d1
 1:      dbra    %d1,1b
@@ -352,11 +352,11 @@ c17e:   move.l  (%a0)+,(%a1)+
 1:      dbra    %d1,1b
         moveq   #0,%d0
         move.w  (%a0),%d0
-        move.l  %d0,0x8274          | 8274 00005400: frozen by the reset
+        move.l  %d0,0x8274          | 8274 00005600: frozen by the reset
         move.w  #0x5C80,(%a0)       | run again: the reset flag goes
         moveq   #0,%d0
         move.w  (%a0),%d0
-        move.l  %d0,0x8278          | 8278 00009400
+        move.l  %d0,0x8278          | 8278 00009600
         move.w  #0x5C40,(%a0)       | freeze
         move.w  #0x5CC0,(%a0)       | clear
         move.w  #0x5D80,(%a0)       | wrong key: ignored
@@ -368,7 +368,55 @@ c17e:   move.l  (%a0)+,(%a1)+
         move.l  %d0,0x827C          | 827C 00000000: cleared
         moveq   #0,%d0
         move.w  (%a0),%d0
-        move.l  %d0,0x8280          | 8280 00001401: still frozen, counter 1
+        move.l  %d0,0x8280          | 8280 00001601: still frozen, counter 1
+        | -- step 25: the Chip RAM write buffer's depth ($5D0n), taken once
+        | the buffer is empty; a burst of 20 Chip RAM writes at depth 32,
+        | read back in order --
+        move.w  #0x5D02,(%a0)       | depth 32
+        moveq   #19,%d1
+1:      dbra    %d1,1b
+        moveq   #0,%d0
+        move.w  (%a0),%d0
+        move.l  %d0,0x82A0          | 82A0 00001681: depth code 2 in bits 7:6
+        lea     0x8A00,%a1
+        moveq   #19,%d1
+        move.w  #0x1234,%d2
+1:      move.w  %d2,(%a1)+          | 20 word writes, back to back
+        add.w   #0x0101,%d2
+        dbra    %d1,1b
+        lea     0x8A00,%a1
+        moveq   #0,%d3
+        moveq   #19,%d1
+1:      add.w   (%a1)+,%d3          | the first read waits for the drain
+        rol.l   #3,%d3
+        dbra    %d1,1b
+        move.l  %d3,0x82A4          | 82A4 the tb's checksum of the 20 words
+        lea     0x8A40,%a1          | a second burst, and depth 8 asked for
+        moveq   #19,%d1             | while it is in the buffer: taken only
+        move.w  #0x1234,%d2         | once the buffer is empty
+1:      move.w  %d2,(%a1)+
+        add.w   #0x0101,%d2
+        dbra    %d1,1b
+        move.w  #0x5D00,(%a0)       | back to 8, with ~11 entries waiting
+        lea     0x8A40,%a1
+        moveq   #0,%d3
+        moveq   #19,%d1
+1:      add.w   (%a1)+,%d3
+        rol.l   #3,%d3
+        dbra    %d1,1b
+        move.l  %d3,0x82B0          | 82B0 the same checksum
+        moveq   #19,%d1
+1:      dbra    %d1,1b
+        moveq   #0,%d0
+        move.w  (%a0),%d0
+        move.l  %d0,0x82A8          | 82A8 00001601
+        move.w  #0x5D07,(%a0)       | not a depth: ignored (bits 7:2 must be 0)
+        move.w  #0x5D03,(%a0)       | code 3: ignored
+        moveq   #19,%d1
+1:      dbra    %d1,1b
+        moveq   #0,%d0
+        move.w  (%a0),%d0
+        move.l  %d0,0x82AC          | 82AC 00001601
         .endif
         | a pair whose second word is NOT cached must not be taken as a pair
         move.l  #0x31323334,0x08000D00  | both words cached

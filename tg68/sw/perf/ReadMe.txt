@@ -1,10 +1,13 @@
-perf 1.0 -- Base64 TG68 performance counters (step 18 test builds only)
+perf 1.2 -- Base64 TG68 performance counters (step 18 / 25 test builds only)
 
   perf              print the counters; if they were running they run on
   perf CLEAR        zero them and start them
   perf FREEZE       stop them
   perf RUN          start them again (without zeroing)
   perf >RAM:p.txt   the same, into a file
+  perf WB 8|16|32   the Chip RAM write buffer's depth (step 25 test
+                    builds; power-on 8, changes once the buffer is empty;
+                    a power cycle returns to 8)
 
 Only the perf test bitstreams (base64_tg68_full_perf*.bit) have the
 counters; with any other gateware perf says so and does nothing. They
@@ -28,6 +31,10 @@ count, from the moment you start them:
   18 code dropped by writes         instruction-cache entries holding code
                                     that a CPU write threw out
   19 instruction-cache fills
+  20 clocks with over 8 in the      step 25 builds: how much of a deeper
+     write buffer                   buffer gets used
+  21 clocks with over 16 in the
+     write buffer
 
 Typical use:
 

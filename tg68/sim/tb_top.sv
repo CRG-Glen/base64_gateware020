@@ -347,10 +347,28 @@ module tb;
         14: pc = dut.g_fastmem.u_perf.gc[14].v; 15: pc = dut.g_fastmem.u_perf.gc[15].v;
         16: pc = dut.g_fastmem.u_perf.gc[16].v; 17: pc = dut.g_fastmem.u_perf.gc[17].v;
         18: pc = dut.g_fastmem.u_perf.gc[18].v; 19: pc = dut.g_fastmem.u_perf.gc[19].v;
+        20: pc = dut.g_fastmem.u_perf.gc[20].v; 21: pc = dut.g_fastmem.u_perf.gc[21].v;
         default: pc = 0;
         endcase
     endfunction
     integer pf_bad = 0;
+    // step 25: the checksum test_top.s computes over its 20 written words
+    function [31:0] wb25_sum(input integer dummy);
+        integer k; reg [31:0] c; reg [15:0] w;
+        begin c = 0; w = 16'h1234;
+            for (k = 0; k < 20; k = k + 1) begin c[15:0] = c[15:0] + w; c = {c[28:0], c[31:29]}; w = w + 16'h0101; end
+            wb25_sum = c; end
+    endfunction
+    // the count never above the limit in force (nor the storage), and the
+    // most entries seen
+    integer wb25_max = 0;
+    always @(posedge dut.clk) begin
+        if (dut.wb_cnt > wb25_max) wb25_max = dut.wb_cnt;
+        if (dut.wb_cnt > dut.wb_lim || dut.wb_cnt > 32) begin
+            $display("FAIL wbuf: %0d entries with the limit %0d", dut.wb_cnt, dut.wb_lim);
+            errors = errors + 1;
+        end
+    end
     // hw against the tb's own count of the same event; tol covers the
     // window's edges (the tb counts some events a clock or two before the
     // counter's flag: at CCMP, DWAIT or WAIT rather than at the step)
@@ -369,10 +387,12 @@ module tb;
     // The bench programs do not touch the counters: they run exactly in the
     // timed window (forced between edges), and the end compares them with
     // the tb's counters (n_step and friends) and these:
-    integer pt_as = 0, pt_drop = 0, pt_fill = 0;
+    integer pt_as = 0, pt_drop = 0, pt_fill = 0, pt_wb8 = 0, pt_wb16 = 0;
     always @(negedge dut.clk) force dut.g_fastmem.u_perf.run = (t0 > 0 && t1 == 0);
     always @(posedge clk12) if (t0 > 0 && t1 == 0) begin
         if (!dut.cpu.as_i) pt_as = pt_as + 1;
+        if (dut.wb_cnt > 8)  pt_wb8  = pt_wb8 + 1;     // step 25: counters 20, 21
+        if (dut.wb_cnt > 16) pt_wb16 = pt_wb16 + 1;
         if (dut.cpu.ic_we && !dut.cpu.ic_flush) begin
             if (dut.cpu.ic_wt[dut.cpu.TAGW-1]) pt_fill = pt_fill + 1;
             else if (ev_old[dut.cpu.TAGW-1]) pt_drop = pt_drop + 1;   // a drop of an entry holding code
@@ -737,6 +757,8 @@ module tb;
         pchk(17, "fast write waits", st_fw, 2);
         pchk(18, "icache drops of code", pt_drop, 2);
         pchk(19, "icache fills", pt_fill, 2);
+        pchk(20, "wbuf more than 8", pt_wb8, 2);
+        pchk(21, "wbuf more than 16", pt_wb16, 2);
         end
         $display("perf: dcache hits %0d, SDRAM data reads %0d, old route: fetch chip %0d other %0d, read chip %0d other %0d, write chip %0d other %0d",
                  pc(5), pc(8), pc(9), pc(10), pc(11), pc(12), pc(13), pc(14));
@@ -919,12 +941,22 @@ module tb;
 `endif
 `ifdef TG68_PERF
         // step 18 (test_top.s): the counters through the registers
-        check(24'h8260, 32'h00001400, "perf: frozen at power-on, 20 counters");
+        check(24'h8260, 32'h00001600, "perf: frozen at power-on, 22 counters");
         check(24'h8268, 32'h00000000, "perf: steps, bits 39:32");
-        check(24'h8274, 32'h00005400, "perf: frozen by an Amiga reset");
-        check(24'h8278, 32'h00009400, "perf: run clears the reset flag");
+        check(24'h8274, 32'h00005600, "perf: frozen by an Amiga reset");
+        check(24'h8278, 32'h00009600, "perf: run clears the reset flag");
         check(24'h827C, 32'h00000000, "perf: cleared");
-        check(24'h8280, 32'h00001401, "perf: frozen, counter 1, wrong key ignored");
+        check(24'h8280, 32'h00001601, "perf: frozen, counter 1, wrong key ignored");
+        // step 25: the write buffer depth
+        check(24'h82A0, 32'h00001681, "wbuf: depth 32 in force");
+        check(24'h82A4, wb25_sum(0), "wbuf: burst read back");
+        check(24'h82B0, wb25_sum(0), "wbuf: 2nd burst back");
+        check(24'h82A8, 32'h00001601, "wbuf: back to depth 8");
+        check(24'h82AC, 32'h00001601, "wbuf: bad codes ignored");
+        // the 20-write loop outruns the 12x drain by ~11 entries: more than
+        // 8 shows the deeper limit at work
+        if (wb25_max <= 8) begin $display("FAIL wbuf: the burst never held more than 8 entries (max %0d)", wb25_max); errors = errors + 1; end
+        else $display("ok   wbuf: the buffer held up to %0d entries", wb25_max);
         if (rd32(24'h8264) < 50 || rd32(24'h826C) == 0 || rd32(24'h826C) != rd32(24'h8270)) begin
             $display("FAIL perf: steps %0d (>= 50 expected), clocks %0d then %0d (frozen: equal, not 0)",
                      rd32(24'h8264), rd32(24'h826C), rd32(24'h8270));

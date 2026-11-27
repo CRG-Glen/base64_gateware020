@@ -1562,17 +1562,52 @@ module base64_tg68_top #(
     //   rp_ds:   its data strobes are down
     //   rp_term: its DTACK was seen;  rp_hold: AS/DS up, holding
     localparam integer WB_N = CHIP_WB;
-    // (storage always 8 deep, the pointers wrap at 8; WB_N limits the fill)
-    reg [23:1] wb_a  [0:7];
-    reg [15:0] wb_d  [0:7];
-    reg [2:0]  wb_fc [0:7];
-    reg [1:0]  wb_ds [0:7];        // {UDS, LDS}, active low
-    reg [2:0]  wb_wp = 3'd0, wb_rp = 3'd0;
-    reg [3:0]  wb_cnt = 4'd0;
+    // (storage WB_S deep, the pointers wrap at WB_S; the limit wb_lim stops
+    // the fill: WB_N, or in a perf test build the depth set at run time)
+`ifdef TG68_PERF
+    // TG68 step 25 (measurement): 32 entries, the depth in use (8, 16 or 32)
+    // set at run time by a keyed write ($5D0n to +$F00E, perf WB n), taken
+    // only while the buffer is empty
+    localparam integer WB_S = 32;
+    localparam integer WB_PW = 5;
+`else
+    localparam integer WB_S = 8;
+    localparam integer WB_PW = 3;
+`endif
+    reg [23:1] wb_a  [0:WB_S-1];
+    reg [15:0] wb_d  [0:WB_S-1];
+    reg [2:0]  wb_fc [0:WB_S-1];
+    reg [1:0]  wb_ds [0:WB_S-1];   // {UDS, LDS}, active low
+    reg [WB_PW-1:0] wb_wp = {WB_PW{1'b0}}, wb_rp = {WB_PW{1'b0}};
+    reg [WB_PW:0]   wb_cnt = {(WB_PW+1){1'b0}};
     reg        rp_act = 1'b0, rp_term = 1'b0, rp_hold = 1'b0, rp_ds = 1'b0;
     reg        rp_uds = 1'b1, rp_lds = 1'b1;
+    wire       wb_busy = rp_act || (wb_cnt != {(WB_PW+1){1'b0}});
+`ifdef TG68_PERF
+`ifndef WB_LIM_DEFAULT
+`define WB_LIM_DEFAULT 8
+`endif
+    wire        wbl_wr;                // turbomem_zii: a keyed $5D write
+    wire [1:0]  wbl_val;
+    reg  [WB_PW:0] wb_lim = `WB_LIM_DEFAULT;
+    reg  [1:0]  wb_lcode = (`WB_LIM_DEFAULT == 32) ? 2'd2 : (`WB_LIM_DEFAULT == 16) ? 2'd1 : 2'd0;
+    reg         wbl_pend = 1'b0;
+    reg  [1:0]  wbl_req = 2'd0;
+    always @(posedge clk) begin
+        if (wbl_wr && wbl_val != 2'd3) begin wbl_pend <= 1'b1; wbl_req <= wbl_val; end
+        else if (wbl_pend && !wb_busy) begin
+            wbl_pend <= 1'b0;
+            wb_lcode <= wbl_req;
+            wb_lim   <= (wbl_req == 2'd2) ? 6'd32 : (wbl_req == 2'd1) ? 6'd16 : 6'd8;
+        end
+    end
+    wire       wb_full = (wb_cnt == wb_lim);
+    // counters 20 and 21: clocks with more than 8 / 16 entries
+    reg        perf_wb8 = 1'b0, perf_wb16 = 1'b0;
+    always @(posedge clk) begin perf_wb8 <= (wb_cnt > 6'd8); perf_wb16 <= (wb_cnt > 6'd16); end
+`else
     wire       wb_full = (wb_cnt == WB_N[3:0]);
-    wire       wb_busy = rp_act || (wb_cnt != 4'd0);
+`endif
     // TG68 step 14: BRn to the adapter as a register (as HALTn, step 13): as
     // s_br_n | wb_busy straight into bus_free it put the write buffer's
     // state on a 1T path into DECIDE that missed on seeds. Its job is to
@@ -1751,12 +1786,12 @@ module base64_tg68_top #(
         // straight from the CPU) and acknowledged, unless the buffer is full;
         // then the CPU waits for the engine to pop an entry.
         if (ext_reset) begin
-            wb_cnt <= 4'd0; wb_wp <= 3'd0; wb_rp <= 3'd0;
+            wb_cnt <= {(WB_PW+1){1'b0}}; wb_wp <= {WB_PW{1'b0}}; wb_rp <= {WB_PW{1'b0}};
         end else begin
-            wb_cnt <= wb_cnt + {3'd0, wb_acc} - {3'd0, wb_pop};
-            if (wb_pop) wb_rp <= wb_rp + 3'd1;
+            wb_cnt <= wb_cnt + {{WB_PW{1'b0}}, wb_acc} - {{WB_PW{1'b0}}, wb_pop};
+            if (wb_pop) wb_rp <= wb_rp + {{(WB_PW-1){1'b0}}, 1'b1};
             if (wb_acc) begin
-                wb_wp       <= wb_wp + 3'd1;
+                wb_wp       <= wb_wp + {{(WB_PW-1){1'b0}}, 1'b1};
                 rt_dtack_lo <= 1'b1;
             end
         end
@@ -2098,10 +2133,10 @@ module base64_tg68_top #(
     wire [7:0]  perf_cmd;
     wire [39:0] perf_q;
     wire [15:0] perf_stat;
-    perf_cnt #(.N(20), .W(40)) u_perf (
+    perf_cnt #(.N(22), .W(40)) u_perf (
         .clk         (clk),
         .amiga_reset (slave_reset),
-        .ev          ({perf_ev_cpu[19:17], perf_cw, perf_ev_cpu[15:1], 1'b1}),
+        .ev          ({perf_wb16, perf_wb8, perf_ev_cpu[19:17], perf_cw, perf_ev_cpu[15:1], 1'b1}),
         .cmd_wr      (perf_wr),
         .cmd         (perf_cmd),
         .q           (perf_q),
@@ -2129,8 +2164,10 @@ module base64_tg68_top #(
 `ifdef TG68_PERF
         .perf_wr    (perf_wr),            // step 18: +$F00E, +$F010-$F014
         .perf_cmd   (perf_cmd),
+        .wbl_wr     (wbl_wr),             // step 25: the write buffer depth
+        .wbl_val    (wbl_val),
         .perf_q     (perf_q),
-        .perf_stat  (perf_stat),
+        .perf_stat  (perf_stat | {8'd0, wb_lcode, 6'd0}),   // bits 7:6: the depth
 `endif
         .clk        (clk),
         .reset      (slave_reset),

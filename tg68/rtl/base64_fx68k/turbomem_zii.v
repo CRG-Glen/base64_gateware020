@@ -185,6 +185,10 @@ module turbomem_zii #(
     ,
     output reg         perf_wr = 1'b0,  // one-clock pulse: a keyed write to +$F00E
     output reg  [7:0]  perf_cmd = 8'd0,
+    // TG68 step 25 (test builds only): the Chip RAM write buffer's depth,
+    // a keyed write $5D0n to +$F00E (n = 0 / 1 / 2: 8 / 16 / 32 entries)
+    output reg         wbl_wr = 1'b0,
+    output reg  [1:0]  wbl_val = 2'd0,
     input  wire [39:0] perf_q,          // the selected counter
     input  wire [15:0] perf_stat        // what +$F00E reads
 `endif
@@ -370,6 +374,8 @@ always @(posedge clk) rom_q <= rom[a[ROM_AWID:1]];
 //   +$F00E..            reserved, read as zero
 //   (TG68 step 18, test builds with TG68_PERF only: +$F00E performance
 //   counter control, write $5Cxx (perf_cnt.v: xx = 00nnnnnn select counter
+//   (step 25: write $5D0n sets the Chip RAM write buffer's depth, 8 << n;
+//   the status read's bits 7:6 give the depth in force)
 //   n, $40 freeze, $80 run, $C0 clear), read {run, frozen by a
 //   reset, number of counters (6 bits), 0, 0, selected (6 bits)};
 //   +$F010 / +$F012 / +$F014 the selected counter's bits 15:0, 31:16 and
@@ -467,6 +473,12 @@ always @(posedge clk) begin
     if (perf_wr_hit && !perf_wr_q && d_in[15:8] == PERF_KEY) begin
         perf_wr  <= 1'b1;
         perf_cmd <= d_in[7:0];
+    end
+    // TG68 step 25: the write buffer depth key, same register address
+    wbl_wr <= 1'b0;
+    if (perf_wr_hit && !perf_wr_q && d_in[15:8] == 8'h5D && d_in[7:2] == 6'd0) begin
+        wbl_wr  <= 1'b1;
+        wbl_val <= d_in[1:0];
     end
 end
 `endif
