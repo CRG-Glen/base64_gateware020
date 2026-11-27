@@ -71,6 +71,11 @@ module sdram_ctrl #(
     // experiment needed one.) Changes only in a speed switch, with the CPU held
     // and the SDRAM idle.
     input  wire        rfc_long,
+    // TG68 exp-22x: at 22x (6.41 ns) one more clock after PRECHARGE (tRP:
+    // 3 clocks 19.2 ns, the -6 part needs 18, the model 20) and one more
+    // after REFRESH on top of rfc_long's two (64.1 -> 70.5 ns; model 65).
+    // Changes only in a speed switch, like rfc_long.
+    input  wire        xl22,
     output reg         cl3_now = (CAS_LAT == 3),
     output reg         ack,
     // Combinational ack, asserted in the SAME cycle the CAS data lands on dq
@@ -288,14 +293,14 @@ module sdram_ctrl #(
             S_INIT_PRE: begin
                 set_cmd(CMD_PRECHG);
                 sdram_a[10] <= 1'b1;
-                timer <= T_RP[3:0];
+                timer <= T_RP[3:0] + {3'd0, xl22};   // TG68 exp-22x: tRP + 1 at 22x
                 state <= S_INIT_REF1;
             end
             S_INIT_REF1: begin
                 if (timer != 0) timer <= timer - 1'b1;
                 else begin
                     set_cmd(CMD_REFRESH);
-                    timer <= T_RFC[3:0] + {2'd0, rfc_long, 1'b0};   // TG68: tRFC + 2 at 20x
+                    timer <= T_RFC[3:0] + {2'd0, rfc_long, 1'b0} + {3'd0, xl22};   // TG68: tRFC + 2 at 20x, + 3 at 22x
                     state <= S_INIT_REF2;
                 end
             end
@@ -303,7 +308,7 @@ module sdram_ctrl #(
                 if (timer != 0) timer <= timer - 1'b1;
                 else begin
                     set_cmd(CMD_REFRESH);
-                    timer <= T_RFC[3:0] + {2'd0, rfc_long, 1'b0};   // TG68: tRFC + 2 at 20x
+                    timer <= T_RFC[3:0] + {2'd0, rfc_long, 1'b0} + {3'd0, xl22};   // TG68: tRFC + 2 at 20x, + 3 at 22x
                     state <= S_INIT_MODE;
                 end
             end
@@ -379,7 +384,7 @@ module sdram_ctrl #(
                             sdram_ba <= a_bank;
                             sdram_a[10] <= 1'b0;     // this bank only
                             row_open[a_bank] <= 1'b0;
-                            timer <= T_RP[3:0];
+                            timer <= T_RP[3:0] + {3'd0, xl22};   // TG68 exp-22x: tRP + 1 at 22x
                             state <= S_PRECHG;
                         end
                         // else tRAS not met: stay in IDLE and retry next cycle
@@ -416,11 +421,11 @@ module sdram_ctrl #(
                         set_cmd(CMD_PRECHG);
                         sdram_a[10] <= 1'b1;         // precharge all
                         row_open <= 4'b0000;
-                        timer <= T_RP[3:0];
+                        timer <= T_RP[3:0] + {3'd0, xl22};   // TG68 exp-22x: tRP + 1 at 22x
                         state <= S_REF_PRE;
                     end else begin
                         set_cmd(CMD_REFRESH);
-                        timer <= T_RFC[3:0] + {2'd0, rfc_long, 1'b0};   // TG68: tRFC + 2 at 20x
+                        timer <= T_RFC[3:0] + {2'd0, rfc_long, 1'b0} + {3'd0, xl22};   // TG68: tRFC + 2 at 20x, + 3 at 22x
                         state <= S_REFRESH;
                     end
                 end
@@ -525,7 +530,7 @@ module sdram_ctrl #(
                 if (timer != 0) timer <= timer - 1'b1;
                 else begin
                     set_cmd(CMD_REFRESH);
-                    timer <= T_RFC[3:0] + {2'd0, rfc_long, 1'b0};   // TG68: tRFC + 2 at 20x
+                    timer <= T_RFC[3:0] + {2'd0, rfc_long, 1'b0} + {3'd0, xl22};   // TG68: tRFC + 2 at 20x, + 3 at 22x
                     state <= S_REFRESH;
                 end
             end

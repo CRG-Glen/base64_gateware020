@@ -45,6 +45,21 @@
 `ifndef S15_DEFAULT
 `define S15_DEFAULT 1
 `endif
+// step 17's switch default (sim: VLFLAGS=-DS17_DEFAULT=0: every write drops
+// the instruction-cache entry at its index, as up to v2.0)
+`ifndef S17_DEFAULT
+`define S17_DEFAULT 1
+`endif
+// step 20's switch default (sim: VLFLAGS=-DWR4_DEFAULT=0: a posted word or
+// byte write goes on to FINISH, 5 clocks, as up to step 19)
+`ifndef WR4_DEFAULT
+`define WR4_DEFAULT 1
+`endif
+// step 21's switch default (sim: VLFLAGS=-DFPAIR_DEFAULT=0: the predictor
+// answers a fetch the kernel offers as a pair with one word, as since 15b)
+`ifndef FPAIR_DEFAULT
+`define FPAIR_DEFAULT 1
+`endif
 
 module tg68_bus #(
     parameter integer STEP       = 4,  // min clocks between clkena pulses
@@ -75,12 +90,24 @@ module tg68_bus #(
     parameter integer RD11       = 1,  // pair prefetch + one-clock-shorter direct read
     // Step 15 switches (1 = on; 0 = as step 14):
     parameter integer FPRED      = `S15_DEFAULT,  // FETCH PREDICTOR: a sequential fetch hit in 4 clocks
-    parameter integer WR4        = 0,  // a posted word/byte write steps at DECIDE (4 clocks):
-                                       // works (sim: 1% on compiled C) but puts the fast RAM
-                                       // decode in the step decision; off for timing
+    parameter integer WR4        = `WR4_DEFAULT,  // a posted word/byte write steps at DECIDE (4 clocks):
+                                       // step 15 built it and left it off (the fast RAM decode in
+                                       // the step decision missed 1T under router2); on from step
+                                       // 20 (router1)
+    // Step 17 (1 = on; 0 = as v2.0):
+    // Step 21 (1 = on; 0 = as step 20):
+    parameter integer FPAIR      = `FPAIR_DEFAULT, // the predictor leaves a fetch the kernel
+                                       // offers as an aligned pair to the normal lookup
+                                       // (one 5-clock pair, not two 4-clock words)
+    parameter integer ICKEEP     = `S17_DEFAULT,  // a write keeps another address's
+                                       // instruction-cache entry (IC KEEP, below)
     parameter integer BARREL     = 0   // documentation only: which netlist
 )(
     input  wire        clk,
+`ifdef TG68_PERF
+    // step 18 (test builds only): one-clock event flags for perf_cnt.v
+    output reg  [19:0] perf_ev,
+`endif
     input  wire        enPhi1,     // unused, kept for drop-in compatibility
     input  wire        enPhi2,     // unused
     input  wire        HALTn,      // external HALT: holds off new cycles
@@ -529,6 +556,77 @@ module tg68_bus #(
     // clock before the next lookup's early read.
     reg  pw_upd2 = 1'b0;
     //
+    // IC KEEP (step 17). Up to v2.0 every CPU write dropped the instruction-
+    // cache entry at its index whatever that entry held, so a write to X
+    // also threw out cached code at every address that is X modulo 8 KB (a
+    // pushed return address, a filled screen). Now the drop is skipped when
+    // the entry is known to hold another address:
+    //   iw_t_e/o   the instruction cache's two tags at the write's row,
+    //              loaded on every DECIDE clock (dec_r) and held, as
+    //              k_din_ce/co are (the last DECIDE clock counts; no other
+    //              enable on the RAM -> register path). The RAMs read the
+    //              kernel's address on the edge into every DECIDE clock:
+    //              fp_rsel_n is low only in a step's clock, >= SETTLE clocks
+    //              before (sim check iw_ra_bad).
+    //   iw_dirty   the instruction cache may have been written since that
+    //              read. The RAMs read before they write, so a write that
+    //              lands on the read's own edge (ic_we in the clock before
+    //              the last DECIDE clock, iw_we_d) is not in the tags, and
+    //              nor is one in that DECIDE clock: both load it. Any later
+    //              write sets it.
+    //   iw_keep    the entry the write would drop (bank a_r[1]) is valid,
+    //              its tag differs from the written address's, and nothing
+    //              has written the cache since it was read: not before
+    //              (iw_dirty), not in this clock (ic_we: it lands before the
+    //              drop would), and no fill is being started in this clock
+    //              (pf_fill: its write and the drop would land together,
+    //              and the drop wins that, as before).
+    // Why it is safe: the drop is skipped only when the entry at the
+    // written address's index held a valid other address when it was read,
+    // and no instruction-cache write of any kind happened from that read up
+    // to the clock the drop would land. So the entry still holds that other
+    // address, a write to X cannot make it stale, and the drop would only
+    // have thrown away good code. In every other case the drop happens
+    // exactly as before. (A fill of X landing later still needs what it
+    // needed before: X's new data reaches memory first.)
+    // Chip RAM mirrors: the motherboard repeats Chip RAM through
+    // $000000-$1FFFFF (1 MB on an A500+ shows twice, 512 KB four times), so
+    // two Chip RAM addresses that differ only in bits 19-20 may be the same
+    // word. The index drop covered that by accident; here such a pair counts
+    // as the same address (iw_msk), so the drop still happens. No other
+    // cacheable window repeats (fast RAM and the ROM shadow decode every
+    // address bit the tag holds).
+    // A pair write's second word (pw_upd2, always the odd bank) is decided a
+    // clock later from iw_k2 (its keep, worked out in pw_upd's clock) and the
+    // writes of its own clock: only an odd-bank write can touch its entry
+    // (the pair's first-word drop is to the even bank).
+    // Sim checks: iw_ra_bad, iw_skip_bad (a skipped drop left an entry
+    // holding the written address).
+    reg  [TAGW-1:0] iw_t_e = {TAGW{1'b0}}, iw_t_o = {TAGW{1'b0}};
+    reg             iw_dirty = 1'b1;
+    reg             iw_we_d  = 1'b0;
+    reg             iw_k2    = 1'b0;
+`ifdef TG68_PERF
+    reg             pv_dv    = 1'b0;   // step 18's counter 18 (PERFORMANCE COUNTER EVENTS)
+`endif
+    localparam [TAGW-2:0] IW_MIR = ({{(TAGW-2){1'b0}}, 1'b1} << (19 - IC_AW - 1))
+                                 | ({{(TAGW-2){1'b0}}, 1'b1} << (20 - IC_AW - 1));
+    wire [TAGW-2:0] iw_msk    = ic_chip ? ~IW_MIR : {(TAGW-1){1'b1}};
+    wire            iw_ok     = (ICKEEP != 0) && !iw_dirty && !ic_we && !pf_fill;
+    wire            iw_other_e = iw_t_e[TAGW-1] && |((iw_t_e[TAGW-2:0] ^ ic_want[TAGW-2:0]) & iw_msk);
+    wire            iw_other_o = iw_t_o[TAGW-1] && |((iw_t_o[TAGW-2:0] ^ ic_want[TAGW-2:0]) & iw_msk);
+    wire            iw_keep   = iw_ok && (a_r[1] ? iw_other_o : iw_other_e);
+    wire            iw_keep2  = iw_k2 && !(ic_we && ic_wa[0]) && !pf_fill;
+    always @(posedge clk) begin
+        iw_we_d <= ic_we;
+        if (dec_r) begin
+            iw_t_e   <= ic_tq_e;
+            iw_t_o   <= ic_tq_o;
+            iw_dirty <= ic_we || iw_we_d;
+        end else if (ic_we)
+            iw_dirty <= 1'b1;
+    end
+    //
     // OVERLAP. A cache lookup does not need the SDRAM, so it may start while
     // a posted write, a prefetch or a discarded read is still finishing in
     // the background (only a miss then waits, in CFREE). Before, every
@@ -617,10 +715,9 @@ module tg68_bus #(
     // read on, fp_v after. The flush also turns ic_on off at once.
     // Anything else DECIDE does with a bus or data cycle drops fp_v and the
     // select; the next step reads the same fp_a again. A predicted fetch is
-    // always a single word, also when the kernel offers a pair (step 15b:
-    // the pair test, on the kernel's latest output long_cand, sat in front
-    // of every register DECIDE loads); pairs still come from the normal
-    // lookup when there is no prediction.
+    // always a single word; a fetch the kernel offers as an aligned pair
+    // goes to the normal lookup instead (step 21, k_pcand below: step 15
+    // had it, 15b took it out for timing).
     // fp_ac is a second copy of fp_a for the address compare in fp_hit
     // alone. fp_v is cleared on the edge the two load and is set again no
     // sooner than 3 clocks later (E3 of the next step), so fp_ac has two
@@ -640,8 +737,18 @@ module tg68_bus #(
     // that after fp_hit0, as it does for a bus cycle, so the bus-state
     // registers enter the decision once (through fp_hit and again through
     // "not fp_hit" they missed 1T by 0.4-0.9 ns on four seeds of five).
+    // STEP 21: a fetch the kernel offers as an aligned pair (a 32-bit
+    // immediate or absolute address, k_pcand) is left to the normal lookup,
+    // which answers both words in one 5-clock step, against two predicted
+    // 4-clock words; and the next prediction is then 2 words on. Step 15
+    // had this; 15b took it out because k_long_cand, the kernel's slowest
+    // output, then gated every register DECIDE loaded (kernel -> logic
+    // missed on 4 of 9 seeds). Since 15b's DECIDE split only the fetch
+    // branch sees fp_hit0, and router1 (exp-router1) gave every build more
+    // margin, so step 21 puts it back (FPAIR; -DFPAIR_DEFAULT=0 for 15b's).
+    wire        k_pcand = (FPAIR != 0) && (DP32_ACK != 0) && k_long_cand && !k_addr[1];
     wire        fp_hit0 = (FPRED != 0) && fp_v && ic_on && (k_bs == 2'b00) && !k_skip
-                          && (k_addr[31:1] == fp_ac);
+                          && (k_addr[31:1] == fp_ac) && !k_pcand;
     wire        fp_hit  = fp_hit0 && BGn && BGACKn && BRn && HALTn;
 
     // ------------------------------------------------------------------
@@ -804,6 +911,9 @@ module tg68_bus #(
         ic_we    <= 1'b0;
         dc_we    <= 1'b0;
         cyc_start <= 1'b0;
+`ifdef TG68_PERF
+        pv_dv    <= 1'b0;
+`endif
         // EARLY LOOKUP: loaded every clock (only the DECIDE edge counts,
         // and CCMP is always the clock straight after it), so no enable sits
         // in the RAM -> register path.
@@ -864,8 +974,8 @@ module tg68_bus #(
         // the next fetch address, from every DECIDE clock of a fetch (the
         // kernel's outputs are final there); fp_v goes with it
         if (dec_r && k_bs == 2'b00 && !k_skip) begin
-            fp_a  <= k_addr[31:1] + 31'd1;
-            fp_ac <= k_addr[31:1] + 31'd1;
+            fp_a  <= k_addr[31:1] + (k_pcand ? 31'd2 : 31'd1);   // step 21: + 2 after a pair
+            fp_ac <= k_addr[31:1] + (k_pcand ? 31'd2 : 31'd1);
             fp_v  <= 1'b0;
         end
 
@@ -888,7 +998,7 @@ module tg68_bus #(
             dp_inc   <= 1'b0;
             pf_valid <= 1'b0;
             pf_fill  <= 1'b0; pf_dc <= 1'b0; pf_ic <= 1'b0; pf_fill_d <= 1'b0;
-            pw_upd   <= 1'b0; pw_upd2 <= 1'b0;
+            pw_upd   <= 1'b0; pw_upd2 <= 1'b0; iw_k2 <= 1'b0;
             dp_pair  <= 1'b0;
             dp_spec  <= 1'b0;
             fp_v <= 1'b0; k_din_psel <= 1'b0;
@@ -928,8 +1038,15 @@ module tg68_bus #(
                 // dp_pair still holds this write's flag: the port is busy
                 // with it, so DECIDE has not reloaded it
                 pw_upd2 <= dp_pair;
+                // (step 17: no drop if the entry holds another address;
+                // the second word's keep is worked out now, iw_k2)
+                iw_k2   <= iw_ok && iw_other_o;
                 if (ICACHE != 0 && !ic_flush) begin
-                    ic_we <= 1'b1; ic_wa <= a_r[IC_AW:1]; ic_wt <= {TAGW{1'b0}};
+                    ic_wa <= a_r[IC_AW:1]; ic_wt <= {TAGW{1'b0}};
+                    if (!iw_keep) ic_we <= 1'b1;
+`ifdef TG68_PERF
+                    pv_dv <= !iw_keep && (a_r[1] ? iw_t_o[TAGW-1] : iw_t_e[TAGW-1]);
+`endif
                 end
                 if (DCACHE != 0) begin
                     dc_we <= 1'b1; dc_wa <= a_r[IC_AW:1];
@@ -942,7 +1059,11 @@ module tg68_bus #(
                 // same tag; a pair is always a whole longword)
                 pw_upd2 <= 1'b0;
                 if (ICACHE != 0 && !ic_flush) begin
-                    ic_we <= 1'b1; ic_wa <= {a_r[IC_AW:2], 1'b1}; ic_wt <= {TAGW{1'b0}};
+                    ic_wa <= {a_r[IC_AW:2], 1'b1}; ic_wt <= {TAGW{1'b0}};
+                    if (!iw_keep2) ic_we <= 1'b1;
+`ifdef TG68_PERF
+                    pv_dv <= !iw_keep2 && iw_t_o[TAGW-1];
+`endif
                 end
                 if (DCACHE != 0) begin
                     dc_we <= 1'b1; dc_wa <= {a_r[IC_AW:2], 1'b1};
@@ -1265,10 +1386,15 @@ module tg68_bus #(
                 if (tmr >= DATA_DELAY - 1) begin
                     // Cache fill on a fetch miss; invalidate on any write.
                     // (step 11: ic_okf, so chip RAM code fills it and a CPU
-                    // write to chip RAM drops the entry)
+                    // write to chip RAM drops the entry; step 17: unless
+                    // the entry holds another address, iw_keep)
                     if (ic_okf && !ic_flush
-                        && (!eRWn || (cyc_fetch && ic_on && !k_cacr[1] && !bus_berr)))
+                        && ((!eRWn && !iw_keep) || (cyc_fetch && ic_on && !k_cacr[1] && !bus_berr)))
                         ic_we <= 1'b1;
+`ifdef TG68_PERF
+                    if (ic_okf && !ic_flush && !eRWn && !iw_keep)
+                        pv_dv <= a_r[1] ? iw_t_o[TAGW-1] : iw_t_e[TAGW-1];
+`endif
                     // Data cache: invalidate on a write; fill on a whole-
                     // word read (a byte read over the motherboard bus need
                     // not drive the other byte).
@@ -1398,6 +1524,47 @@ module tg68_bus #(
         dp_inc = 1'b0; dp_pair = 1'b0; dp_wdata_lo = 16'd0;
     end
 
+`ifdef TG68_PERF
+    // ------------------------------------------------------------------
+    // PERFORMANCE COUNTER EVENTS (step 18, test builds only: build.py
+    // --perf). One-clock flags, each a register loaded from registers (and
+    // the kernel's outputs, which are stable at a step), so the counters
+    // add no load to any of the sequencer's own decisions. Numbering as in
+    // perf_cnt / sw/perf/perf.s; 0 (clocks) and 16 (Chip RAM write waits)
+    // are made in the top level. A step's flags describe the cycle it ends:
+    // in the clock k_step is high the kernel's outputs still show it, and
+    // k_din_sel / k_din_psel / cyc_fetch still belong to it.
+    reg  pv_lat = 1'b0;                        // q was Q_LATCH last clock
+    // pv_dv (declared with the IC KEEP registers): a write's drop of an
+    // entry that held code when DECIDE looked it up, set with that ic_we
+    wire pv_fetch = (k_bs == 2'b00) && !k_skip;
+    wire pv_lend  = pv_lat && (q != Q_LATCH);  // an old-route cycle just ended
+    wire pv_chip  = (a_r[31:21] == 11'd0);
+    initial perf_ev = 20'd0;
+    always @(posedge clk) begin
+        pv_lat       <= (q == Q_LATCH);
+        perf_ev      <= 20'd0;
+        perf_ev[1]   <= k_step;                                  // kernel steps
+        perf_ev[2]   <= k_step && pv_fetch;                      // fetch steps
+        perf_ev[3]   <= k_step && pv_fetch && k_din_psel;        // predicted fetches
+        perf_ev[4]   <= k_step && k_din_sel && cyc_fetch;        // instruction-cache hits
+        perf_ev[5]   <= k_step && k_din_sel && !cyc_fetch;       // data-cache hits
+        perf_ev[6]   <= k_step && internal_step;                 // internal steps
+        perf_ev[7]   <= (q == Q_DDATA) && cyc_fetch;             // SDRAM fetch (direct read)
+        perf_ev[8]   <= (q == Q_DDATA) && !cyc_fetch;            // SDRAM data read (direct)
+        perf_ev[9]   <= pv_lend && cyc_fetch && pv_chip;         // old route: fetch, Chip RAM
+        perf_ev[10]  <= pv_lend && cyc_fetch && !pv_chip;        //   fetch, elsewhere
+        perf_ev[11]  <= pv_lend && !cyc_fetch && eRWn && pv_chip;   // read, Chip RAM
+        perf_ev[12]  <= pv_lend && !cyc_fetch && eRWn && !pv_chip;  //   read, elsewhere
+        perf_ev[13]  <= pv_lend && !eRWn && pv_chip;             //   write, Chip RAM
+        perf_ev[14]  <= pv_lend && !eRWn && !pv_chip;            //   write, elsewhere
+        perf_ev[15]  <= !as_i;                                   // clocks in an old-route cycle
+        perf_ev[17]  <= dec_r && dp_busy && (k_bs == 2'b11) && k_fast;  // fast RAM write waits for the port
+        perf_ev[18]  <= pv_dv && !ic_flush;                      // drops of entries holding code
+        perf_ev[19]  <= ic_we && ic_wt[TAGW-1] && !ic_flush;     // instruction-cache fills
+    end
+`endif
+
 `ifndef YOSYS
     // step 15, sim only: on a predicted fetch, the RAMs' own read of the
     // kernel's address (on the edge into DECIDE, as for a normal lookup)
@@ -1414,6 +1581,41 @@ module tg68_bus #(
                 if (fp_chk_bad <= 5) $display("%0t: tg68_bus: predicted fetch at %h differs from the cache", $time, {k_addr[31:1], 1'b0});
             end
         end
+    // step 17, sim only. iw_ra_bad: the RAMs' read on the edge into every
+    // DECIDE clock used the kernel's address (so iw_t_e/o are the write's
+    // row). iw_skip_bad: two clocks after a drop was skipped (one after it
+    // would have landed) the entry must not hold the written address (or a
+    // Chip RAM mirror of it). iw_skips counts skipped drops; iw_forced the
+    // drops that happened only because the cache was written in between.
+    integer iw_ra_bad = 0, iw_skip_bad = 0, iw_skips = 0, iw_forced = 0;
+    reg  [IC_AW-2:0] iw_ra_p = 0;
+    reg  [1:0]       iw_sp = 2'b00;
+    reg  [IC_AW-1:0] iw_sa0, iw_sa1;
+    reg  [TAGW-2:0]  iw_st0, iw_st1, iw_sm0, iw_sm1;
+    wire             iw_dec_l = (q == Q_LATCH) && (tmr >= DATA_DELAY - 1) && ic_okf && !ic_flush && !eRWn;
+    wire             iw_dec_1 = pw_upd && (ICACHE != 0) && !ic_flush;
+    wire             iw_dec_2 = pw_upd2 && (ICACHE != 0) && !ic_flush;
+    wire             iw_sk    = !extReset && ((iw_dec_l || iw_dec_1) ? iw_keep : (iw_dec_2 && iw_keep2));
+    wire [IC_AW-1:0] iw_ska   = iw_dec_2 ? {a_r[IC_AW:2], 1'b1} : a_r[IC_AW:1];
+    wire [TAGW-1:0]  iw_now   = iw_sa1[0] ? ic_tag_o[iw_sa1[IC_AW-1:1]] : ic_tag_e[iw_sa1[IC_AW-1:1]];
+    always @(posedge clk) begin
+        iw_ra_p <= ic_ra;
+        if (!extReset && dec_r && iw_ra_p != k_addr[IC_AW:2]) begin
+            iw_ra_bad = iw_ra_bad + 1;
+            if (iw_ra_bad <= 5) $display("%0t: tg68_bus: DECIDE's cache read did not use the kernel's address", $time);
+        end
+        if (!extReset && (iw_dec_l || iw_dec_1) && !iw_keep && (ICKEEP != 0)
+            && (a_r[1] ? iw_other_o : iw_other_e)) iw_forced = iw_forced + 1;
+        if (!extReset && iw_dec_2 && !iw_keep2 && (ICKEEP != 0) && iw_other_o) iw_forced = iw_forced + 1;
+        if (iw_sk) iw_skips = iw_skips + 1;
+        iw_sp  <= {iw_sp[0], iw_sk};
+        iw_sa0 <= iw_ska; iw_st0 <= ic_want[TAGW-2:0]; iw_sm0 <= iw_msk;
+        iw_sa1 <= iw_sa0; iw_st1 <= iw_st0; iw_sm1 <= iw_sm0;
+        if (iw_sp[1] && iw_now[TAGW-1] && ((iw_now[TAGW-2:0] ^ iw_st1) & iw_sm1) == 0) begin
+            iw_skip_bad = iw_skip_bad + 1;
+            if (iw_skip_bad <= 5) $display("%0t: tg68_bus: a skipped drop left the written address cached (entry %h)", $time, iw_sa1);
+        end
+    end
     // step 14, sim only: in CCMP the registered compare inputs must equal
     // what a_r and the cache-on registers give (cc_on_k may only be 0 where
     // the live term is 1); the benches fail if cc_bad is not 0

@@ -294,7 +294,131 @@ still index drops.
 is not a plain bug in the new code; or the predictor's read
 (`fp_rsel_n`) turns out to share a DECIDE clock of a write cycle.
 
-**Log.** (the builder writes here)
+**Log.**
+
+- Built on branch `step17-icache-tag-drop` (from `main` at 59ff2a7).
+- **One addition to the plan: Chip RAM mirrors.** The motherboard repeats
+  Chip RAM through $000000-$1FFFFF (an A500+'s 1 MB shows twice, 512 KB
+  four times), so `$104100` and `$004100` can be the same word. The index
+  drop covered that by accident (every mirror distance is a multiple of
+  8 KB); a plain tag compare would keep stale code. So for a write in the
+  Chip RAM window, tags that differ only in address bits 19-20 count as
+  the same address (`iw_msk`, `IW_MIR`) and the drop happens. Strictly
+  more conservative than the plan; no other cacheable window repeats.
+  Flagged for the planner, since it is a coherency point the plan did not
+  mention.
+- RTL (`tg68_bus.v`, IC KEEP comment): `iw_t_e/o` loaded under `dec_r`
+  from `ic_tq_e/o`; `iw_dirty` loads `ic_we || iw_we_d` in DECIDE (the
+  RAMs read before they write, so a write landing on the read's edge is
+  not in the tags) and is set by any later `ic_we`; `iw_keep` also needs
+  `!ic_we` (a write landing before the drop would) and `!pf_fill`;
+  `iw_k2` carries the odd bank's keep from `pw_upd` to `pw_upd2`, where
+  only an odd-bank write in that clock (`ic_we && ic_wa[0]`) can still
+  spoil it. Address and tag loads stay unconditional, the keep is only
+  on `ic_we`. Switch `ICKEEP` (`-DS17_DEFAULT=0` = v2.0). All new
+  registers class as adapter ctrl (1T) by name: no classifier change.
+  All exist in the synthesized json (`iw_t_e/o` 14 bits each,
+  `iw_dirty`, `iw_we_d`, `iw_k2`).
+- Sim checks (`tg68_bus.v`, `ifndef YOSYS`): `iw_ra_bad` (the RAMs' read
+  on the edge into every DECIDE clock used `k_addr`'s row: 0 in every
+  sim, so `fp_rsel_n` never shares a DECIDE read), `iw_skip_bad` (two
+  clocks after a skipped drop the entry must not hold the written
+  address or a mirror of it), `iw_skips`, `iw_forced`.
+- Tests (`test_top.s`, fastmem, markers at $8F50, results $8230-$8254;
+  `tb_top.sv` looks at the entries when the marker write starts): (1)
+  code at $08005100 kept over a pair write 8 KB up and a Chip RAM write
+  at its index, run again with no fill, then a write to its immediate
+  drops it; (2) pair writes: second word at cached code's index kept,
+  second word = the code dropped; (3) fast $08009100 vs chip $9100 (tags
+  differ only in the region bits), both ways; (4) a write through the
+  mirror ($109104) drops chip $9104 (the tb's Chip RAM now repeats at
+  $108000 and its write shadow folds bit 20); (5) a fill on the lookup's
+  edge: smc1 at $08005400, its +8..+12 evicted by code 8 KB up, so the
+  storing run's fetch of +8 misses as a pair read whose fill of +10
+  lands on the edge the store's lookup reads; (6) a fill in the decision
+  clock: smc1 at $08005502, the nop after the store an odd word, whose
+  single read's prefetch of the store's target the posted store waits
+  for in DECIDE. 14 entry checks, 10 value checks.
+- Mutants (fastmem):
+  | mutant | caught by |
+  | --- | --- |
+  | (a) keep always 1 | smc tests, stale-hit oracle, `iw_skip_bad` (27), markers 5 and 9 (22 errors) |
+  | (b) compare ignores the region bits | markers 6, 7, 8 (test 3) |
+  | (c) `iw_dirty` stuck at 0 | test 5: storing run 5 not 2, stale hit, `iw_skip_bad` |
+  | (d) no mirror mask | test 4: marker 9, result 8244, stale hit |
+  | (e) `iw_dirty` without `iw_we_d` (the read-edge write) | test 5, as (c) |
+  | (f) no `!ic_we` in `iw_ok` | test 6 (before test 6 it passed) |
+  | (g) no `!pf_fill` | **not testable**: a fill cannot start in a drop's decision clock. A posted write's DECIDE needs the port idle, so no ack can come in DECIDE or the two clocks after (`pf_fill` needs an ack, DDATA2 or `pf_fill_d`, the last two only in the sequencer's own read states); an old-route write also starts with the port idle and issues no request until LATCH. Kept as a guard; `iw_skip_bad` would see it. |
+  | step 17 off (`-DS17_DEFAULT=0`) | with the keep checks enabled, 8 errors (every "kept" check); the tb now skips those checks when `ICKEEP` is 0, so the v2.0 reference passes |
+- Regression, all PASS: bus, top, fastmem; fastmem with `CAL_TEST` and
+  `CAL_DRIFT`; bus/top/fastmem with `S15_DEFAULT=0` and with
+  `S17_DEFAULT=0`; benches c, coff, copy, read, scatter, readoff, chip,
+  wrchip, wrfast, wrmix, sd, op; c, copy, read, scatter at 20x. No SDRAM
+  model violation, no stale hit, `iw_ra_bad` and `iw_skip_bad` 0.
+- Numbers (12x, timed-pass clocks, against section 5):
+  | bench | v2.0 | step 17 | |
+  | --- | --- | --- | --- |
+  | c | 65892 | 65808 | -0.13% |
+  | coff | 120948 | 120948 | |
+  | copy | 9432 | 9384 | -0.5% |
+  | read | 6204 | 6204 | |
+  | scatter | 3756 | 3756 | |
+  | readoff | 11316 | 11316 | |
+  | chip | 31440 | 31440 | |
+  | wrfast | 7464 | 6732 | **-9.8%** |
+  | wrmix | 31572 | 31572 | |
+  | op | 21600 | 21468 | -0.6%, see below |
+  **bench op's rows moved, against the plan's expectation, all of them
+  down**: push + pop of a long 25.88 -> 18.88 clocks, tst.l 5.25 -> 4.75,
+  clr.l (a0) 18.56 -> 18.00, addq.l #1,(a0) 18.62 -> 18.56, movem.l
+  196.88 -> 196.50; every other row identical. The planner moved the
+  bench's data and stack, but the stack's top ($080307FC) still shares an
+  index with the bench's own code ($080047FC): each push dropped a code
+  word. That is the case step 17 removes.
+  Entries of another address dropped: 0 everywhere except bench op (5,
+  all forced by `iw_dirty`: the previous write's drop of an invalid
+  entry dirties the next write's lookup; conservative). `read` and
+  `scatter` kept their 3 entries but did not get faster (the code was not
+  run again after). At 20x (step 17 off / on): c 39804 / 39816 (+12
+  ticks, one 7 MHz bus cycle at the end marker: the timed window is cut
+  by Chip RAM marker writes), copy 6168 / 6120 (-0.8%), read 4032 /
+  4032, scatter 2556 / 2556.
+- Timing (`build.py full --seed 1 --seeds 16 --keep-sdf`, netlist of
+  3de9d71): **2 of 16 pass**, seed 6 (+0.05 / +0.21 ns) and seed 10
+  (+0.82 / +1.43). v2.0 passed 4 of 18. The failures are in v2.0's
+  classes: kernel -> logic on 8 seeds (to -2.55 ns), logic -> logic on 4
+  (to -1.47), adapter ctrl -> logic on 2 (to -0.18), kernel -> read-data
+  latch on 1. No failing path goes through `iw_*`; the worst path that
+  does is +0.41 ns (seed 15, `iw_t_o` -> adapter ctrl -> logic), the
+  rest have >= 2.7 ns. So nothing to restructure (rule 3). Scored:
+  seed 10 1.266x (16x) / **1.582x (20x)**, seed 6 1.314x / 1.643x.
+  Shipped seed 10: `bitstreams/step17_ickeep/` (`_plain`, `_fast`,
+  timing at 12x / 16x / 20x, `seeds.txt`, `speed`, `README.txt` with the
+  test list). Utilisation 11,285 LUT4, 2,678 FF, 35 DP16KD.
+- **Glen's hardware test (seed 10): runs at 12x, 16x and 20x**, SD card
+  included. Caches on as v2.0 within 1% (SysInfo 10804 / 14411 / 18029,
+  AIBB 16.69 / 21.13 / 26.32, Frontier timedemo 26.4 / 30.9 / 34.1 fps),
+  which is what the sim said (the benchmarks do not collide). Caches-off
+  numbers moved both ways by up to 7% / 19%, where step 17 cannot change
+  anything: spread. New test from Glen, the Frontier "CPU" timedemo: 31.1
+  / 41.2 / 57.1 fps average (12x / 16x / 20x), a far bigger spread between
+  speeds than the Amiga-side one; the baseline for the next steps.
+  Test item 4 (code the CPU writes and then runs), from ADF under
+  Kickstart 3.x: Eon (The Black Lotus) runs fine. Hardwired (Crionics &
+  The Silents) stops at "this demo don't like axel" on step 17 and on
+  v2.0 alike: the demo's own accelerator check, so no test either way.
+  Desert Dream (Kefrens) runs on both; on both, the 3D ship at the start
+  shows small polygon errors (the same on v2.0, so not step 17; likely
+  the demo's timing on a fast CPU, to be narrowed down by Glen: speed 12
+  vs 20, and under Kickstart 1.3, which leaves the caches off). Glen:
+  worse at 20x than at 12x; correct under Kickstart 1.3. That does not
+  separate speed from caches: with the caches off, code in Chip RAM runs
+  at about 68000 speed (every word over the 7 MHz bus). Worse at 20x
+  points at a CPU/blitter race. **A real 68030 accelerator shows the same
+  ship errors**: the demo's own behaviour on fast CPUs, not this design.
+- Possible refinement, not done: an invalid entry needs no drop either
+  (skip on `!valid` too). It would remove bench op's 5 forced drops;
+  behaviour otherwise identical. Left as the plan wrote it.
 
 ---
 
@@ -389,7 +513,187 @@ the planner or Glen reads it):
 **Stop and report if** the default build is not byte-identical with the
 option off (the ifdef leaks).
 
-**Log.** (the builder writes here)
+**Log.**
+
+- Built on branch `step18-perf` (from `step17-icache-tag-drop`).
+- RTL, all under `` `ifdef TG68_PERF ``: `rtl/base64_tg68/perf_cnt.v`
+  (20 counters x 40 bits; power-on frozen and zero; `slave_reset` freezes
+  them and sets "frozen by a reset" if they were running; select / freeze /
+  run / clear). **One change to the plan's command set: clear does not
+  start the counters** (`perf CLEAR` sends clear, then run), so a frozen
+  set can be zeroed and checked. Read multiplexer in two registered
+  stages (the one-stage version missed 1T by up to 1.1 ns on the first
+  build). `tg68_bus.v` makes events 1-15 and 17-19 as registered flags
+  from registers and the kernel's step-time outputs (no load on any
+  sequencer decision); counter 18 counts drops of entries that held code
+  when DECIDE looked them up (`pv_dv`, set beside the drop's `ic_we`), not
+  every drop write (1933 in bench c, nearly all of them empty entries).
+  Top level: counter 16 = `postable && wb_full` (a Chip RAM write waiting
+  for buffer room), registered. `turbomem_zii.v`: +$F00E control (key
+  $5C) / stat, +$F010-$F014 the selected counter (A4 decoded only with
+  TG68_PERF). `build.py --perf`: `-DTG68_PERF`, adds `perf_cnt.v`,
+  `build/full_perf/`.
+- Counters: 0 clocks, 1 steps, 2 fetch steps, 3 predicted fetches, 4
+  instruction-cache hit steps, 5 data-cache hit steps, 6 internal steps,
+  7 / 8 direct SDRAM reads (fetch / data), 9-14 old-route cycles (fetch,
+  read, write x Chip RAM / elsewhere), 15 clocks with an old-route cycle
+  in progress, 16 Chip RAM write waits, 17 fast RAM write waits for the
+  port (`st_fw`'s expression), 18 drops of code, 19 instruction-cache
+  fills.
+- `sw/perf/perf.s` (68000, `build.sh`, `ReadMe.txt`): `perf` (freeze,
+  print all with names in decimal, run on if it was running), CLEAR /
+  FREEZE / RUN; reports "no counters" on any other gateware. Tested under
+  vamos with a fake board (`build.sh test`): running, frozen by a reset,
+  no counters, usage, a 40-bit value.
+- Sims: `run.sh` builds with the counters by default (`PERF=0` without).
+  test_top.s (fastmem) reads them through the registers: power-on frozen
+  $1400, steps over a 50-turn loop (153), clocks unchanged while frozen,
+  an Amiga reset (a sim-only pulse on perf_cnt's reset) freezes and flags
+  ($5400), run clears the flag ($9400), clear zeroes, a $5D key is
+  ignored. Every bench at 12x compares 13 counter groups with the tb's own
+  counts (n_clk, n_step, sk_f, sk_f4, n_hit, sk_i, n_dir, n_bus, st_cw,
+  st_fw, and new tb counts of old-route clocks, code drops and fills):
+  **all exact** (tolerance 2 allowed for the window's edges, never used).
+  At 16x / 20x the tb's counters tick on the 12x clock and describe
+  nothing, so only the clock count is checked there (window x 20/12 or
+  16/12: exact).
+- Mutants: counter 2's increment removed: bench c fails (0 against
+  9322). The reset flag not set: fastmem fails (8274 = $1400).
+- Regression, all PASS: bus, top, fastmem with PERF=1 and PERF=0;
+  fastmem CAL_TEST and CAL_DRIFT; S15_DEFAULT=0 and S17_DEFAULT=0; benches
+  c, coff, copy, read, scatter, readoff, chip, wrchip, wrfast, wrmix,
+  sd, op; c and copy with PERF=0; c, copy, read, scatter at 20x; c at 16x.
+  Clock counts identical to step 17 (the counters only watch).
+- **Default build byte-identical to step 17**: `build.py full --seed 10
+  --seeds 1` without `--perf` gives the same plain and `_fast` files as
+  `bitstreams/step17_ickeep/` (`cmp`).
+- Perf build, first netlist (one-stage read multiplexer), seeds 1-12: 7
+  of 12 failed to route (all on the same net, `u_clkgen.g_pll.u_gbuf_CLKI`:
+  the clock multiplexer's output into the DCCA), the other 5 failed
+  timing: the counters' read multiplexer (logic -> logic, to -1.06 ns),
+  and the design's usual tightest 1T paths (`cc_want_k` / `ic_qt_*` ->
+  step decision, `fp_rsel_n` -> cache RAMs, to -3.3 ns). Utilisation
+  12,009 LUT4 (+724), 3,557 FF (+879), 1,029 CCU2C (+400), 35 DP16KD.
+- Second netlist (two-stage read multiplexer), seeds 1-16: **all 16 failed
+  to route** on the same net. The timing report of a router1 diagnostic
+  showed why the multiplexer was slow: yosys built the variable
+  part-select `flat[sel*W +: W]` with a multiplier (4 extra MULT18X18D,
+  19 ns). Rewritten with constant indices (a loop of compares): 10
+  MULT18X18D as the normal build, 12,022 LUT4, 3,757 FF.
+- Third netlist, router2, seeds 1-16: 12 failed to route (all on
+  `u_gbuf_CLKI`), 4 failed timing in the usual classes (clkena -> kernel
+  to -2.10, kernel -> logic -1.19, icache/direct -> logic -0.67). So the
+  multipliers were not what blocked router2.
+- **router1** (new `ROUTER` override in build.py, default still router2;
+  normal builds unchanged), same netlist, seeds 1-16: **all route, 14 of
+  16 pass** (3 and 5 fail: icache/direct -> logic -0.64 / -0.17).
+  Worst 1T slack +0.16 to +1.43 ns, multicycle +2.9 to +6.4 ns. Scored at
+  16x / 20x: seed 2 1.158x / **1.447x** (the lowest; v2.0's seed 10 was
+  1.233x / 1.541x, step 17's 1.266x / 1.582x), 10 1.179 / 1.474, 15
+  1.188 / 1.485, 12 1.205 / 1.507, ... 8 1.302 / 1.627. Shipped seed 2:
+  `bitstreams/step18_perf/` (`_plain`, `_fast`, timing at 12x / 16x /
+  20x, `seeds.txt`, `perf`, `perf_ReadMe.txt`, `speed`, `README.txt` with
+  Glen's workload list).
+- **Glen's first runs** (seed 2; one session per speed, all workloads in
+  a row, ended by a reset): 12x 537 s, 20x 373 s. Shares (counter values
+  in the files Glen sent; `perf_an`-style arithmetic, clocks per kind as
+  4 / 5 / ~9 / measured):
+
+  | | 12x | 20x |
+  | --- | --- | --- |
+  | steps: fetch / internal / data | 46.8 / 35.7 / 17.5% | 45.1 / 38.6 / 16.3% |
+  | fetches: predicted / icache / SDRAM / buffer / bus | 83.5 / 9.6 / 4.1 / 2.8 / 0.0001% | 82.7 / 10.8 / 3.8 / 2.7 / 0.0001% |
+  | time: predicted fetches | 28.0% | 25.5% |
+  | time: internal steps | 25.6% | 26.3% |
+  | time: cache hits (instruction + data) | 10.3% | 10.3% |
+  | time: posted writes, buffer reads | 7.4% | 6.3% |
+  | time: SDRAM misses (fetch + data) | 4.9% | 4.0% |
+  | time: bus cycles (measured) + their setup | 19.7% | 23.4% |
+  | model total | 95.9% | 95.9% |
+  | bus cycles: chip reads / chip writes / other reads, clocks each | 62M / 95M / 32M, 43 | 61M / 85M / 21M, 69 |
+  | Chip write buffer full | 2.64% | 3.84% |
+  | fast RAM write waits | 0.53% | 0.51% |
+  | code dropped by writes, of fills | 2.5% | 2.5% |
+
+  What they decide, by the plan's rules:
+  - **Chip RAM code over the bus: 4,800 fetches in 9 minutes, 0.0005% of
+    the time.** Chip RAM code ran from the instruction cache (or Frontier
+    in this session was not running from Chip RAM; ask Glen). So step 20's
+    Chip RAM case does not apply. What a 16 KB cache could still remove
+    is part of the SDRAM misses: at most ~4-5% of the time, realistically
+    1-2%. **Below the plan's 5% threshold: do not build step 20 now.**
+  - Deeper Chip write buffer (4.5): at most 2.6% (12x) / 3.8% (20x).
+  - Fast RAM write waits (4.2): 0.5%. Drops of code (what is left of 1.2):
+    2.5% of fills, about 0.1% of the time.
+  - The two big shares are the core's own steps: predicted fetches (26-28%,
+    already the 4-clock floor) and internal steps (26%). **Caveat: a
+    stopped TG68 counts as internal steps** (the kernel's STOP keeps
+    stepping with state "01": `TG68KdotC_Kernel.vhd`, `stop`), and busy
+    wait loops (polling custom registers: 32M "other" bus reads) look like
+    work too. These runs mix idle Workbench time, waits and real work, so
+    how much of the 26% the barrel shifter (step 19) or fewer kernel steps
+    (4.8) could take cannot be read off them.
+  - Next measurements (asked of Glen): the Frontier CPU timedemo alone, and
+    SysInfo alone, each between `perf CLEAR` and `perf`, at 20x; and a
+    Workbench idle minute alone (how much of "internal" is STOP).
+  - A possible counter for a later perf build: steps while stopped
+    (kernel `stop`), so idle time separates from work.
+- **Glen's per-workload runs (20x, seed 2):**
+
+  | | Frontier CPU timedemo | Frontier WHDLoad, intro | SysInfo (with idle) | Workbench idle |
+  | --- | --- | --- | --- | --- |
+  | length | 124 s | 239 s | 33 s | 73 s |
+  | clocks per step | 5.10 | 9.65 | 4.71 | 4.03 |
+  | steps: fetch / internal / data | 52.8 / 27.7 / 19.6% | 45.4 / 38.3 / 16.3% | 11.5 / 86.0 / 2.5% | 0.3 / 99.6 / 0.1% |
+  | fetches: predicted / icache / SDRAM / buffer | 84.2 / 10.8 / 3.0 / 2.1% | 1.6 / 0.2 / 57.4 / 40.5% | 90.4 / 8.1 / 0.9 / 0.6% | |
+  | time: predicted fetches | 34.8% | 0.3% | 8.8% | 0.2% |
+  | time: internal steps | 21.7% | 15.9% | 73.1% | 98.8% |
+  | time: cache hits (i + d) | 13.5% | 0.1% | 2.5% | |
+  | time: posted writes etc. | 9.5% | 3.6% | 0.6% | |
+  | time: SDRAM misses (est. 9 clocks) | 4.9% | 30.8% | 0.3% | |
+  | time: bus cycles + setup | 9.8% | 17.3% | 14.3% | 0.6% |
+  | Chip write buffer full | **5.47%** | 1.76% | 0.43% | 0 |
+  | fast RAM write waits | 0.96% | 0.50% | 0.03% | |
+  | Chip RAM code over the bus | 2,301 fetches | 5.0M (0.3% of fetches) | 9 | 9 |
+  | model total | 95.3% | 77.5% | 99.6% | 99.9% |
+
+  - **Workbench idle is 99.6% internal steps: a stopped TG68 counts as
+    internal steps**, as the kernel source says. SysInfo's 33 s include
+    its idle window, so its split says little; the Frontier CPU timedemo
+    is the clean CPU workload.
+  - **Frontier WHDLoad (the intro) ran with the caches effectively off**:
+    6M data-cache reads against 245M SDRAM data reads, 5.9M instruction
+    fills against 915M SDRAM fetches, 9.65 clocks a step against 5.10 for
+    the timedemo. CACR EI off (or FI set) under WHDLoad or its slave, not a
+    gateware matter; Glen can look for a cache option. (The model's 9
+    clocks per uncached fetch is low for this case: total 77.5%.)
+  - **Frontier CPU timedemo**, what each item could give at most:
+    a deeper Chip RAM write buffer (4.5) **5.5%** (16.3M Chip writes, 78
+    clocks each on the bus: Frontier draws with the CPU); bigger caches
+    (step 20) part of the 4.9% of SDRAM misses (instruction fills 5.9% of
+    fetches), realistically 1.5-2.5%: **still below the 5% rule, step 20
+    not now**; the barrel shifter (step 19) part of 21.7% of internal
+    steps (how much is shifts is not measured; the timedemo itself will
+    show it); fast RAM write waits 1%.
+  - Chip RAM code over the bus is ~0 in every run except WHDLoad's intro
+    (0.3% of fetches).
+- **Router1 on the normal design** (branch `exp-router1`; the step 18
+  normal netlist, which is step 17 byte for byte under router2):
+  **16 of 16 seeds pass** at 12x (router2: 2 of 16), worst 1T +0.36 to
+  +1.53 ns, 20x ratios 1.433 to 1.599 (median ~1.50). Seed 7: +1.53 ns,
+  1.146x / **1.433x**, the best margin this design has had (v2.0 1.541x,
+  step 17 1.582x). Test bitstreams `bitstreams/exp_router1/` (seed 7),
+  waiting for Glen's run. If it behaves as step 17, router1 becomes the
+  default (build.py, CLAUDE.md) and step 19 is built with it.
+- **For the planner: router1 may be the better router for every build.**
+  On this netlist it routed what router2 could not and gave margins no
+  router2 build of this design has had (14 of 16 seeds passing, against
+  2 of 16 for step 17 and 4 of 18 for v2.0; best 20x ratio 1.447x). It has
+  not been tried on the normal netlist, and the four earlier router1
+  trials (with the multipliers) also passed every CPU class. A normal
+  build with `ROUTER=router1` on 16 seeds is a cheap experiment; whether
+  to ship a router1 build is Glen's and the planner's call (it would
+  change the reference flow in CLAUDE.md).
 
 ---
 
@@ -464,6 +768,85 @@ which; WinUAE in 68020 mode, or any real 68020 machine, can run the one
 case).
 
 **Log.** (the builder writes here)
+
+Built 20 November 2026 on macOS (from a second collaborator's Mac; the
+v2.0 seed 10 build reproduces byte for byte there), branch
+`step19-barrel` from `step18-perf`. **Result: the fallback.** No 12x
+seed passed, so `b0` stays the default; the `b1` netlist, the shift
+matrix and the tools are committed.
+
+- **Netlist.** GHDL 4.1.0 (the official `ghdl-gha-ubuntu-22.04-mcode`
+  build in Docker, `ubuntu:22.04`, `linux/amd64`) + `fix_latches.py`
+  with yowasp-yosys: regenerates `tg68_020_b0.v` **byte for byte**, and
+  writes `tg68_020_b1.v` (the VHDL is unchanged since v2.0). +73 LUT4 on
+  v2.0.
+- **Shift matrix** (`sim/shift_test.inc`, called from `test020.s` and
+  `test_top.s`; code at ROM $1100, so $1000-$10FF stays zero for the
+  MapROM tests' real-ROM reads at $F81000/2; results at $9E00): asl asr
+  lsl lsr rol ror roxl roxr x byte/word/long x counts 0 1 2 7 8 15 16 31
+  32 33 63 from a register and #1, #8, on two values (flags all clear /
+  all set on entry), plus one-bit memory shifts; every result and its
+  X N Z V C go into a MULU/ADD checksum, one per op and size (25 values),
+  checked against b0's. **b0 and b1 identical in all 25, in `bus`, `top`
+  and `fastmem`.** Mutant: X and C left out of the checksum -> all 25
+  fail. (Not in `bench *`: those share tb_top's MEMBENCH result block,
+  and their programs do not run the matrix.)
+- **Benches with b1** (`CORE=tg68_020_b1`, PERF=0): **op 21,468 ->
+  18,804 (-12.4 %)**, c 64,992 -> 64,092 (-1.4 %), coff 119,976 ->
+  119,052; copy, read, scatter, chip, wrfast, wrmix unchanged.
+- **Timing with b1: 0 of 48 seeds pass** at 12x. Built on step 18 with two
+  margin changes under it (below), 11,158 LUT4. Near misses: seed 11
+  (-0.02 / -0.01 ns), 30 (-0.03 / +0.76), 16 (-0.09 / +2.58), 3 (-0.14 /
+  -0.08). Failing seeds by class: kernel -> logic 17, icache/direct ->
+  logic 13, adapter ctrl -> logic 7, clkena -> kernel 3, adapter ctrl ->
+  cache RAM 3, others 5. kernel -> kernel (where the shifter is) is not
+  among them. Fallback taken as the plan says; not restructured.
+- **The margin changes tried under it** (not pushed; local branches
+  `old-step17b-on18`, `old-step17c-on18`):
+  (17b) CCMP's 14-bit tag compare done a clock earlier: the edge into
+  CCMP registers two half-tag matches per bank and per cache from the tag
+  RAMs' outputs and the live `k_addr` tag (kernel -> logic, SETTLE), so
+  CCMP keeps an AND and the selects before `step()`; sim check: the
+  precompare equals the old compare in every CCMP. (17c) `sdram_ctrl`'s
+  direct ACTIVATE records `open_row`/`ras_timer` a clock later from
+  `cur_bank`/`cur_row`, out of IDLE's request decision; sim checks from
+  the SDRAM pins (the row each ACTIVE opened = `open_row` for every open
+  bank while IDLE; PRECHARGE >= T_RAS after ACTIVE). Both cycle-identical
+  (every bench unchanged), mutants caught. **On an independent local
+  step 17 they raised the pass rate from 1 of 32 to 6 of 32 (best 1.576x
+  at 20x), and with b1 on top 5 of 48 passed (best 1.586x). On this step
+  17 they do not help: 17b + 17c alone 2 of 32 (seed 19 +0.37 ns,
+  1.301x / 1.627x; seed 8 +0.07, 1.312x / 1.640x), against step 17's own
+  2 of 16 at 1.582x.** Their new paths (tag RAM -> the half matches, 47
+  failing paths; the half matches -> `cnt`, 30) land just outside 1T
+  here. So they are not offered; noted for the planner as tried.
+- **Note (not this step):** on `step18-perf`, `sim/run.sh top` with the
+  default PERF=1 does not compile (`tb_top.sv` reads
+  `dut.g_fastmem.u_perf`, and the `top` bench has no fast RAM).
+  `PERF=0 sim/run.sh top` passes.
+
+**For the planner:** b1 is ready and verified; it needs margin that
+neither the trial nor these two changes found.
+
+**Rebuilt with router1** (after `exp-router1` made router1 the default;
+`exp-router1` merged into this branch, b1 the default core again in
+`build.py` and `sim/run.sh`):
+- Regression, all PASS (b1 unless said): bus, top, fastmem; top PERF=0;
+  bus/top/fastmem with b0; fastmem CAL_TEST, CAL_DRIFT; S15_DEFAULT=0,
+  S17_DEFAULT=0; benches c, coff, copy, read, scatter, readoff, chip,
+  wrchip, wrfast, wrmix, sd, op; c and copy at 20x. The shift matrix's 25
+  checksums identical everywhere. Benches: c 65,808 -> 64,920 (-1.3%),
+  op 21,468 -> 18,804 (-12.4%), copy unchanged; c at 20x 39,816 ->
+  39,240 (-1.4%). 11,358 LUT4, 2,678 FF, 10 MULT18X18D.
+- **Timing: 14 of 16 seeds pass** (router2: 0 of 48). 5 and 8 miss by
+  0.12 / 0.06 ns. Seed 2: +1.48 / +4.03 ns, **1.167x / 1.459x** at 16x /
+  20x (exp-router1's seed 7: 1.146x / 1.433x); then 9 (1.489x), 6
+  (1.504x), 12 (1.513x) ... 15 (1.648x). Shipped seed 2:
+  `bitstreams/step19_barrel/`, waiting for Glen's test (the Frontier CPU
+  timedemo against exp-router1, back to back). The failing classes are
+v2.0's (kernel -> logic: the register file -> the fast RAM address
+decode and `k_din`; icache/direct -> logic), not the shifter.
+
 
 ---
 

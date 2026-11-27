@@ -384,6 +384,23 @@ style. `README.md` is the user-facing version of the same material.
   (x + all-ones carry out) is slower than `==` (5.6 vs 4.7 ns alone).
   Not done: prefetch-buffer hits in 4 clocks (caches off: 1.7% in bench
   coff), dp_req's register clock.
+- **A write drops only its own instruction-cache entry (step 17, branch
+  step17-icache-tag-drop, seed 10; runs on hardware at 12x, 16x and
+  20x):** up to v2.0 a CPU write dropped the instruction-cache entry at
+  its index whatever it held, so it also threw out code 8 KB away.
+  `iw_t_e/o` (the tags at the write's row, loaded under `dec_r` from
+  `ic_tq_e/o`), `iw_dirty` (any `ic_we` since that read, including one
+  landing on the read's own edge: `iw_we_d`), `iw_keep` (valid, another
+  tag, nothing written since, no `ic_we` or `pf_fill` in the decision
+  clock) gate `ic_we` at the three drop sites (`pw_upd`, `pw_upd2` via
+  `iw_k2`, Q_LATCH). Chip RAM tags that differ only in bits 19-20 count
+  as the same address (`iw_msk`: the motherboard's mirrors), an addition
+  to the plan. `ICKEEP`, `-DS17_DEFAULT=0`. Sim checks `iw_ra_bad`,
+  `iw_skip_bad`; tests 1-6 in test_top.s (two of them fill races); the
+  tb's Chip RAM repeats at $108000. Sim: wrfast -9.8%, push + pop 26 -> 19
+  clocks, compiled C -0.1%. 2 of 16 seeds pass; 1.27x / 1.58x the model
+  at 16x / 20x. Hardware: benchmarks as v2.0 (they do not collide), as
+  the sim predicted. Details: plans/strategy-after-v2.md, step 17 log.
 - **Cache enable:** both caches follow CACR EI. The data cache must NOT get
   the 68030 CACR bit 8: software tells an 020 from an 030 by setting that bit
   and reading it back, so storing it would make the CPU detect as a 68030 and
@@ -430,6 +447,26 @@ style. `README.md` is the user-facing version of the same material.
 | exp-20x at 12x (seed 10) | 10776 / 4461 | 16.60 / 8.48 |
 | exp-20x at 16x (seed 10) | 14379 / 5440 | 21.03 / 10.59 |
 | exp-20x at 20x (seed 10, experiment) | 18024 / 7499 | 26.16 / 13.20 |
+| step 17 at 12x (seed 10) | 10804 / 4462 | 16.69 / 8.14 |
+| step 17 at 16x (seed 10) | 14411 / 6462 | 21.13 / 10.61 |
+| step 17 at 20x (seed 10) | 18029 / 7095 | 26.32 / 12.69 |
+| exp-router1 at 12x (step 17, router1, seed 7) | 10804 / 4774 | 16.68 / 8.14 |
+| exp-router1 at 16x (seed 7) | 14416 / 5924 | 21.13 / 10.18 |
+| exp-router1 at 20x (seed 7) | 18028 / 6910 | 26.32 / 12.69 |
+| step 19 at 12x (barrel shifter, router1, seed 2) | 11118 / 5361 | 16.69 / 8.49 |
+| step 19 at 16x (seed 2) | 14844 / 5992 | 21.13 / 10.38 |
+| step 19 at 20x (seed 2) | 18566 / 7394 | 26.32 / 12.69 |
+| step 20 at 12x (WR4, seed 11) | 11117 / 5360 | 16.69 / 8.50 |
+| step 20 at 16x (seed 11) | 14838 / 6415 | 21.13 / 10.37 |
+| step 20 at 20x (seed 11) | 18566 / 7442 | 26.32 / 12.69 |
+| step 21 at 12x (pairs in the predictor, seed 14) | 11521 / 5360 | 16.69 / 8.50 |
+| step 21 at 16x (seed 14) | 15383 / 5978 | 21.13 / 10.18 |
+| step 21 at 20x (seed 14) | 19239 / 7673 | 26.32 / 13.20 |
+| exp-22x 7 MHz-fed at 12x (seed 12) | 11526 / 5223 | 16.69 / 8.33 |
+| exp-22x 7 MHz-fed at 16x | 15379 / 6528 | 21.13 / 10.39 |
+| exp-22x 7 MHz-fed at 20x | 19238 / 8145 | 26.32 / 12.94 |
+| exp-22x 7 MHz-fed at 22x (experiment) | 21165 / 9032 | 28.90 / 13.86 |
+| **v2.1** (step 24, seed 26) at 12x / 16x / 20x / 22x | as exp-22x (Glen) | as exp-22x |
 
 - AIBB MemTest did not move from step 6 to step 7 (pairs only come from
   cache hits; MemTest's reads miss and its writes are 16-bit). Step 8's
@@ -479,6 +516,127 @@ style. `README.md` is the user-facing version of the same material.
   11.8 / 73.2 / 30.6 fps. `speed` at 12x: $170C (rising sample in use,
   nothing moved): step 14b's 12x fix works; at 16x after the tests $4710
   (falling in use, the unused rising sample moved), as with step 14.
+- Step 17 (seed 10; each benchmark run three times and averaged where it
+  moved): caches on as v2.0 within 1% everywhere (SysInfo +0.3 / +0.2 /
+  +0.0%, AIBB +0.5 / +0.5 / +0.6%, 12x / 16x / 20x). xSysInfo 12x 18661 /
+  9045, 10.62 / 5.14 MIPS, fast RAM 23.71 / 21.14 MB/s; 16x 24129 /
+  11638, 13.73 / 6.62, 29.58 / 26.20; 20x 30969 / 14076, 17.62 / 8.01,
+  36.83 / 32.72 (+6.8% caches on). SD 2.0 / 2.2 / 2.7 MB/s. Caches off
+  moved by up to -7% (xSysInfo 12x) and +19% (SysInfo 16x: 6462 against
+  v2.0's 5440, the same as step 15's 6462): step 17 cannot change
+  anything with the caches off (no fills; the sim is clock for clock
+  identical), so that is the benchmarks' spread again. Frontier timedemo
+  (Amiga, caches on) 9.6 / 70.3 / 26.4, 12.0 / 73.7 / 30.9, 14.1 / 75.5 /
+  34.1 fps. **New: Frontier timedemo "CPU"** (Glen's second test, far
+  more sensitive to the CPU): 10.9 / 92.8 / 31.1, 14.5 / 128.6 / 41.2,
+  18.2 / 154.8 / 57.1 fps (min / max / average, 12x / 16x / 20x). No
+  v2.0 number to compare with; the baseline for the next steps.
+- **v2.1 release** (27.11.2026): main gets steps 17 to 21, exp-router1
+  (router1 the default), exp-22x and step 24: four speeds, 12x / 16x /
+  20x / 22x, in one bitstream with the PLLs fed from the board's 12x
+  clock. Released bitstream: step 24's seed 26 (the release source
+  rebuilds it byte for byte). Benchmarks as exp-22x.
+- **SDRAM data pins in the timing check (step 24, branch
+  step24-sdram-io):** the read data goes from the `sdram_dq` pads through
+  `fastmem_zii`'s `dp_rdata` multiplexer (one LUT) to `cpu.k_din_dw`,
+  `cpu.dp_q` and `cpu.pf_d`, and nothing timed those paths: no register
+  starts them. Step 23's builds showed they decide 22x.
+  `check_timing.py` now prints two rows for them: the longest at most
+  **4.50 ns**, the shortest to a `cpu.*` register at least **1.55 ns**,
+  at every --freq (a four-speed bitstream runs at 22x, where the longest
+  binds, and at 12x, where the shortest does). Calibration (pad buffer
+  output -> FF D + setup, max corner): exp_22x_7m seed 12 4.47 / 1.60
+  (hours at 22x), exp_22x seed 15 4.79 / 2.16 (the benchmarks), step 23
+  seed 4 4.79 / 2.47 (froze in a warm Frontier run), seed 7 5.01 / 3.04
+  (froze on the switch). `build.py` now picks the passing seed with the
+  lowest 22x ratio (from the 12x report; equal to check_timing at 22x to
+  0.001) and writes a 22x report. Of 32 seeds of the exp-22x netlist, 3
+  pass the pins (the longest path ranges 4.04-5.89 ns); seed 26 (4.42 /
+  2.23, 1.21x / 1.51x / 1.66x) **runs on Glen's A500+ at all four
+  speeds, the Frontier CPU timedemo ten times in a row at 22x**,
+  benchmarks as exp-22x. First plan, dropped: the data captured by an
+  IDDR in each pin's I/O cell. nextpnr allows an IDDR only as the pin's
+  sole load, so it would have cost one more clock on every SDRAM read at
+  every speed (sim, 12x / 20x: compiled C +0.2-0.3%, caches off +8%);
+  Glen chose the check. Not checked yet: the SDRAM outputs (address,
+  command, write data), with no failure to calibrate against.
+- **Burst cache fills measured (step 23, branch step23-burst, parked):**
+  a tb model of 4- and 8-word line fills (`BURST_MEASURE`) and four perf
+  counters (20-23: misses in the same line as the previous miss, on a
+  word no other cache write has hit since; within 2% of the model on the
+  streaming benches). Glen's runs at 20x: a line fill would catch 41-62%
+  of the Frontier CPU timedemo's fetch misses and 14-21% of its data
+  misses, **0.8-1.3% of its time**; xSysInfo 0.65%, AIBB 0.3%, SysInfo
+  ~0; EON runs with the caches off (44% of its time in SDRAM fetches)
+  and gains nothing. Not worth the design. Where Frontier's time goes
+  (20x): the core's own steps 79%, the Amiga's bus 9%, a full Chip RAM
+  write buffer 5.5%, cache misses 5.2%, 5-clock hits 2.9%, fast RAM write
+  waits 1.7%.
+- **22x and four speeds (exp-22x, experiment):** 12x (pin), 16x and 20x
+  from one PLL (VCO 567.5 MHz, /5 and /4), 22x (156.07 MHz) from the
+  other; speed code 3, `$5B16`, `speed` 1.5; SDRAM tRP + 1 and tRFC + 1
+  more at 22x (`spd_xl`). `--pll7m` feeds both PLLs from the Amiga's
+  7.09 MHz clock (A x80, B x88). 16 of 16 seeds pass both ways. **The
+  7 MHz-fed build (seed 12: 1.161x / 1.451x / 1.596x at 16x / 20x / 22x)
+  runs at 22x on Glen's A500+ for a long run**: 22x works, and the PLLs
+  run below their rated 8 MHz input. Sim: 22x 8.9% faster than 20x.
+  Glen's benchmarks (7 MHz-fed, seed 12): 12x / 16x / 20x as step 21
+  (SysInfo 11526 / 15379 / 19238); **22x: SysInfo 21165 / 9032 (22.09
+  MIPS, +10.0% on 20x)**, AIBB 28.90 / 13.86, xSysInfo 34472 / 15929
+  (19.61 / 9.06 MIPS), fast RAM 40.36 / 35.74 MB/s, SD 3.0 MB/s, Frontier
+  timedemo 16.1 / 76.8 / 36.1 fps (+3.1%), CPU timedemo 21.8 / 173.8 /
+  61.4 fps (+9.6%). `speed` after the 22x run: both 7M samples had moved
+  since the calibration (bits 13 and 14; the falling one is in use), the
+  aligner had not slipped (bit 15 clear). Details: plans/exp22x.md.
+- **32-bit operands as one pair again (step 21, branch step21-fpair,
+  seed 14; router1):** `FPAIR`: the predictor leaves a fetch the kernel
+  offers as an aligned pair (`k_pcand`) to the normal lookup, and predicts
+  2 words on after it: step 15's behaviour, which 15b's change A removed
+  for timing. With 15b's split DECIDE and router1 it costs nothing: 15 of
+  16 seeds pass, seed 14 1.176x / 1.470x. Sim: bench c -0.45%. **Runs on
+  Glen's A500+ at all three speeds: SysInfo 11521 / 5360, 15383 / 5978,
+  19239 / 7673 (+3.6% caches on at every speed)**, which settles 15b's
+  open question (its -3.4% was real); AIBB 16.69 / 8.50, 21.13 / 10.18,
+  26.32 / 13.20; xSysInfo 18958 / 10012 (23.73 / 21.17 MB/s), 25099 /
+  11794 (29.58 / 26.24), 31280 / 14550 (36.87 / 32.78); SD 2.0 / 2.2 /
+  2.7; Frontier timedemo 27.8 / 32.1 / 35.1, CPU timedemo 33.7 / 44.8 /
+  56.1 fps (as step 20).
+- **Word and byte writes in 4 clocks (step 20, branch step20-wr4, seed 11;
+  router1):** `WR4` on (built in step 15, off since for timing): a posted
+  non-pair write to fast RAM steps at DECIDE. Planned and built by the
+  same model (`plans/step20-wr4.md`). Sim: bench c -1.1%. 16 of 16 seeds
+  pass, seed 11 1.193x / 1.491x. **Runs on Glen's A500+ at all three
+  speeds**, stable: SysInfo 11117 / 5360, 14838 / 6415, 18566 / 7442
+  (as step 19); AIBB 16.69 / 8.50, 21.13 / 10.37, 26.32 / 12.69; xSysInfo
+  18750 / 9628 (23.70 / 21.12 MB/s), 25127 / 11793 (29.55 / 26.22), 31258
+  / 15575 (36.88 / 32.76); SD 2.0 / 2.2 / 2.7; Frontier timedemo 27.8 /
+  32.1 / 35.0 fps, CPU timedemo 33.7 / 44.8 / 56.0 fps (+1.2 / +1.6 /
+  +1.4% on step 19).
+- **Barrel shifter (step 19, branch step19-barrel, seed 2; router1):** the
+  kernel netlist `tg68_020_b1.v` (BarrelShifter => 1, no VHDL change):
+  every shift and rotate in one step. Built first by a second
+  collaborator (shift/rotate matrix `sim/shift_test.inc`, identical on b0
+  and b1; 0 of 48 seeds with router2, fallback), then rebuilt with
+  router1: 14 of 16 pass, seed 2 +1.48 ns, 1.167x / 1.459x. Sim: bench c
+  -1.3%, op -12.4%. **Runs on Glen's A500+ at 12x, 16x and 20x**: SysInfo
+  11118 / 5361, 14844 / 5992, 18566 / 7394 (+3% caches on over
+  exp-router1); AIBB 16.69 / 8.49, 21.13 / 10.38, 26.32 / 12.69; xSysInfo
+  18373 / 9392 (23.70 / 21.15 MB/s), 24073 / 12140 (29.58 / 26.20), 31132
+  / 15397 (36.87 / 32.75); SD 2.0 / 2.2 / 2.7 MB/s; Frontier timedemo
+  27.7 / 32.0 / 35.0 fps, **CPU timedemo 33.3 / 44.1 / 55.2 fps (+7.1 /
+  +7.0 / +6.8%)**. (Glen wrote SysInfo 12x as 111118; 11.60 MIPS gives
+  11118.) The 20x CPU timedemo's 51.7 on exp-router1 against step 17's
+  57.1: with +7% at every speed here, 57.1 looks the outlier.
+- **exp-router1** (step 17's netlist placed and routed with nextpnr's
+  router1, branch `exp-router1`): 16 of 16 seeds pass at 12x (router2 2 of
+  16), seed 7 +1.53 ns, 1.146x / 1.433x at 16x / 20x. **Runs on Glen's
+  A500+ at all three speeds, hours at 20x**, results as step 17: SysInfo
+  10804 / 4774, 14416 / 5924, 18028 / 6910; AIBB 16.68 / 8.14, 21.13 /
+  10.18, 26.32 / 12.69; xSysInfo 18213 / 9294 (23.70 / 21.14 MB/s), 24771
+  / 11465 (29.57 / 26.18), 30968 / 14116 (36.83 / 32.74); SD 2.0 / 2.2 /
+  2.7 MB/s; Frontier timedemo 26.4 / 30.9 / 34.0 fps, CPU timedemo 31.1 /
+  41.2 / 51.7 fps (20x: step 17 gave 57.1 with the same logic; to be
+  re-run back to back). Router1 is the default flow from here.
 - **v2.0 release** (14.11.2026): main gets steps 13 to 15b and the 20x
   clock; speeds 12x / 16x / 20x (Glen: 14x and 18x not a big enough
   step). The released bitstream is the `exp-20x` seed 10 file Glen

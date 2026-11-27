@@ -84,12 +84,15 @@ VLFLAGS=-DS15_DEFAULT=0 sh sim/run.sh ...      # the same with step 15 switched 
 python3 scripts/build.py full --seed 1 --seeds 8   # 4 seeds at a time, build/full/seed<N>/, table in seeds.txt
 python3 scripts/build.py full --skip-synth --seed 9 --seeds 8   # more seeds, same netlist
 python3 scripts/check_timing.py build/full/base64_tg68.sdf --paths 4 [--freq 113.51|141.88]
+python3 scripts/build.py full --perf ...       # step 18 counter test build, build/full_perf/ (sims: PERF=0 for without)
 ```
 
 Toolchain: yowasp-yosys 0.70, yowasp-nextpnr-ecp5 0.11, ecppack
 (fpga-trellis), Verilator 5.020, binutils and gcc for m68k-linux-gnu.
 Synthesis: `synth_ecp5 -abc9`, keep_hierarchy on the TG68 modules, then
-flatten. nextpnr: `--placer static --router router2`.
+flatten. nextpnr: `--placer static --router router1` (from exp-router1:
+16 of 16 seeds pass against router2's 2 of 16, more 20x margin; v2.0 and
+steps up to 18 were router2: `ROUTER=router2` rebuilds them byte for byte).
 **ecppack stays plain by default**; `--compress --freq 38.8` gives the
 `_fast` files. `--spimode dual-spi --freq 62` never loaded on this module.
 
@@ -110,16 +113,17 @@ flatten. nextpnr: `--placer static --router router2`.
    registers unconditionally and put conditions only on enables or valid
    bits; keep new registers out of the kernel-step decision (`step()` in
    tg68_bus.v), which is the tightest 1T path in the design.
-4. **Ship only 12x builds that pass timing.** A 0.5 ns miss failed on
-   hardware once (step 11). Score the same build at 16x (113.51 MHz) and
-   20x (141.88 MHz) by the worst delay/budget ratio; it cannot pass there.
-   Builds at up to 1.31x (16x) and 1.54x (20x) have run on Glen's board.
-   Pick the passing seed with the lowest 20x ratio.
+4. **Ship only 12x builds that pass timing, SDRAM pins included.** A
+   0.5 ns miss failed on hardware once (step 11). Score the same build at
+   16x (113.51 MHz), 20x (141.88 MHz) and 22x (156.07 MHz) by the worst
+   delay/budget ratio; it cannot pass there. Builds at up to 1.31x (16x),
+   1.58x (20x) and 1.66x (22x) have run on Glen's board. `build.py` picks
+   the passing seed with the lowest 22x ratio.
 5. **Keep the previous known-good step.** Each step's bitstreams go in
    their own `bitstreams/stepN_name/` folder with timing reports.
 6. Changes to `rtl/base64_fx68k/` files are marked `TG68:` with the reason.
-7. **One build, every speed: 12x, 16x and 20x** (v2.0; Glen's decision:
-   no 14x or 18x). The build switches at run time (`speed`). In the RTL the
+7. **One build, every speed: 12x, 16x, 20x and 22x** (v2.1; Glen's
+   decision: no 14x or 18x). The build switches at run time (`speed`). In the RTL the
    20x clock still carries the old 14x names (`c14`, `lock14`, `u_pll14`,
    speed code 1): those are the names of the tested build. The `--x16` board-mod build is no longer built,
    simulated or shipped; its `ifdef TG68_X16` code stays, frozen at step
@@ -211,14 +215,23 @@ flatten. nextpnr: `--placer static --router router2`.
 
 ## Current state (details and numbers: plans/README.md, docs/HISTORY.md)
 
-- `main` = **v2.0** (steps 13 to 15b plus 20x): run-time 12x / 16x / 20x,
-  the fetch predictor; runs on Glen's A500+ at all three speeds, hours at
-  20x. Released bitstream: 20x build seed 10 (commit a8c9678's RTL; the
+- `main` = **v2.1** (steps 17 to 21, exp-router1, exp-22x and step 24):
+  run-time 12x / 16x / 20x / 22x, PLLs fed from the board's 12x clock;
+  runs on Glen's A500+ at all four speeds (the Frontier CPU timedemo ten
+  times in a row at 22x). Released bitstream: step 24's seed 26 (the
   release source rebuilds it byte for byte).
-- `step16-clkena-copies` was built and dropped (0 seeds pass; its plan
-  log has why).
-- New work branches from `main`. What to build next, in order, with the
-  measurements behind it: `plans/strategy-after-v2.md`.
+- **The SDRAM data pins decide 22x** (step 23): their pad -> register
+  paths are now rows in `check_timing.py` (longest <= 4.50 ns, shortest
+  >= 1.55 ns, calibrated on hardware; `scripts/sdram_pins.py`). About one
+  seed in ten passes: build 32 seeds. `build.py` picks the passing seed
+  with the lowest 22x ratio.
+- Parked after measuring: burst cache fills (step 23, ~1%), the
+  data-read predictor (step 22). `step23-burst` holds the 24-counter perf
+  build (`--perf`).
+- What next, in order: `plans/README.md`, "The long plan" (the Chip RAM
+  write buffer, one clock off SDRAM requests, a second posted write; then
+  fewer kernel steps per instruction, with an instruction test suite
+  first). New work branches from `main`.
 
 ## Licensing (unresolved; check before publishing anything new)
 

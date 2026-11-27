@@ -26,7 +26,11 @@ whole truth. This script re-times the routed design from nextpnr's SDF
                                                DTACK; every slave holds its read
                                                data from DTACK until AS rises)
 
+SDRAM data pins (step 24): the pad -> register paths of sdram_dq, which
+start at no register, get two rows of their own after the table (below).
+
 Usage: check_timing.py design.sdf [--freq 86] [--step 4 --settle 3 --din 1 --asu 1]
+                       [--pin-setup 4.50 --pin-hold 1.55 | --no-pins]
 Exit status 0 if every path meets its budget.
 """
 import argparse, collections, re, sys
@@ -40,6 +44,10 @@ ap.add_argument('--din', type=int, default=1)
 ap.add_argument('--data', type=int, default=2, help='tg68_bus DATA_DELAY')
 ap.add_argument('--asu', type=int, default=1, help='tg68_bus ADDR_SETUP')
 ap.add_argument('--paths', type=int, default=3, help='paths to print per class')
+# step 24: the SDRAM data pin -> register limits (see the pin rows below)
+ap.add_argument('--pin-setup', type=float, default=4.50, help='SDRAM data pin path, longest (ns)')
+ap.add_argument('--pin-hold', type=float, default=1.55, help='SDRAM data pin path to cpu.*, shortest (ns)')
+ap.add_argument('--no-pins', action='store_true', help='leave the SDRAM pin rows out')
 args = ap.parse_args()
 T = 1e6 / args.freq                      # ps
 
@@ -143,8 +151,9 @@ STATIC = re.compile(r'^(g_(fastmem|sd)\.u_\w+\.(maprom_active|maprom_load|config
                     # next request) before anything uses them. yosys merges
                     # spd, ph_top and ph_half into spd_hold2/spd_lox.
                     # NOT cl3_now: the sequencer reacts to it the next clock.
-                    # (v2.0: spd_rfc, the SDRAM's tRFC + 2 at 20x, likewise)
-                    r'|spd|ph_top|ph_half|ms_top|spd_hold2|spd_lox|spd_rfc|clk_sel'
+                    # (v2.0: spd_rfc, the SDRAM's tRFC + 2 at 20x, likewise;
+                    # exp-22x: spd_xl, tRP + 1 and tRFC + 1 more at 22x)
+                    r'|spd|ph_top|ph_half|ms_top|spd_hold2|spd_lox|spd_rfc|spd_xl|clk_sel'
                     r'|g_sdram\.u_sdram\.cas_lat_r|g_sd\.u_sd\.\w*lo_x\w*)(_|\[|$)')
 # Instruction cache RAM and its registers: ordinary single-cycle logic, but
 # listed separately because a cache hit loads k_din one clock after ic_qd,
@@ -283,6 +292,46 @@ for key in sorted(worst, key=lambda k: min(x[0] for x in worst[k])):
     print('%-34s %5dT %9.2f %9.2f %6d%s' % (names[key[0]] + ' -> ' + names[key[1]],
           BUDGET[key], s0[1] / 1000, s0[0] / 1000, len(lst),
           ('   <-- %d FAIL' % bad) if bad else ''))
+
+# ---- SDRAM data pins (step 24) ------------------------------------------------
+# The read data goes from the sdram_dq pads straight into fabric registers
+# (sdram_ctrl rdata_live -> fastmem_zii's dp_rdata multiplexer -> cpu.k_din_dw,
+# cpu.dp_q, cpu.pf_d), so every seed routes these paths differently, and no
+# register starts them. The data's window at the pads, against the read edge
+# E: it opens 1.5T - X before E and closes 0.5T - Y before E (the SDRAM's
+# clock rises at our falling edge, u_sdram_clk; X = clock out + tAC + board,
+# Y = clock out + tOH + board, fixed in ns). A path of D samples the pad at
+# E - D: setup D <= 1.5T - X binds at 22x, hold D >= 0.5T - Y at 12x. A
+# four-speed bitstream runs at both, so the limits do not follow --freq.
+# They come from Glen's A500+ (step 23, scripts/sdram_pins.py):
+#   build               22x                           longest  shortest (cpu.*)
+#   exp_22x_7m seed 12  ran for a long time             4.47     1.60
+#   exp_22x seed 15     ran the benchmarks              4.79     2.16
+#   step23 seed 4       froze halfway through Frontier  4.79     2.47
+#   step23 seed 7       froze on the switch             5.01     3.04
+# setup 4.50 (4.79 counted as marginal), hold 1.55 (seed 12's 1.5996, the shortest that runs at
+# 12x; no hold failure has been seen, so it is a bound from evidence). Change
+# them only from hardware results.
+if not args.no_pins:
+    sys.path.insert(0, __import__('os').path.dirname(__import__('os').path.abspath(__file__)))
+    from sdram_pins import pin_paths
+    pp = pin_paths(edges, setup, clkpin_delay)
+    if len(pp) == 0:
+        print('sdram data pins: none in this design (no SDRAM)')
+    elif len(pp) != 16:
+        print('sdram data pins: %d of 16 found in the SDF  <-- FAIL' % len(pp))
+        fail = True
+    else:
+        wl = max(pp, key=lambda k: pp[k][0]); ws = min(pp, key=lambda k: pp[k][2])
+        for what, lim, val, pin, reg in (
+                ('setup', args.pin_setup, pp[wl][0] / 1000, wl, pp[wl][1]),
+                ('hold',  args.pin_hold,  pp[ws][2] / 1000, ws, pp[ws][3])):
+            sl = (lim - val) if what == 'setup' else (val - lim)
+            bad = sum(1 for k in pp if (pp[k][0] / 1000 > lim if what == 'setup' else pp[k][2] / 1000 < lim))
+            fail |= bad > 0
+            print('sdram data pins, %-5s  limit %5.2f  worst %5.2f  slack %+5.2f  (pin %d -> %s)%s'
+                  % (what, lim, val, sl, pin, reg, ('   <-- %d pins FAIL' % bad) if bad else ''))
+
 print()
 for key in sorted(worst, key=lambda k: min(x[0] for x in worst[k])):
     for slack, t, node, s in sorted(worst[key])[:args.paths]:

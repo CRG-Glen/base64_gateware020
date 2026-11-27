@@ -111,6 +111,10 @@ module tb;
         for (i = 0; i < 4096; i = i + 1) ram[i] = 0;
     end
     wire [23:0] ba = {a, 1'b0};
+    // the tb's chip RAM, $8000-$9FFF, and its mirror at $108000: an A500+'s
+    // 1 MB of chip RAM shows twice in $000000-$1FFFFF (step 17 writes
+    // through the mirror)
+    wire chipram = (ba[23:21] == 3'd0) && (ba[19:0] >= 20'h08000) && (ba[19:0] < 20'h0A000);
 
     // ---- Gary, on the 7M grid -------------------------------------------
     integer cycles = 0, iacks = 0, cia = 0, errors = 0, unmapped = 0, romf = 0;
@@ -248,7 +252,13 @@ module tb;
     end
     reg        hp_pend = 0, hp_long = 0; reg [31:1] hp_a = 0;
     reg [17:0] cw_s;
-    task chk_word(input [31:1] wa, input [15:0] got);
+    // chip RAM addresses fold onto one word whatever bit 20 says (the mirror)
+    function [31:1] sh_key(input [31:1] wa);
+        sh_key = (wa[31:21] == 11'd0) ? {wa[31:21], 1'b0, wa[19:1]} : wa;
+    endfunction
+    task chk_word(input [31:1] wa0, input [15:0] got);
+        reg [31:1] wa;
+        wa = sh_key(wa0);
         if (shadow.exists(wa)) begin
             hit_chk = hit_chk + 1;
             cw_s = shadow[wa];
@@ -266,6 +276,122 @@ module tb;
         ram[12'hC00] = 16'h7803;                  // $9800: moveq #3,%d4
         shadow[31'h4C00] = {2'b11, 16'h7803};
     end
+    // step 17: at each CPU write to $8F50 (test_top.s), look at the
+    // instruction-cache entries the test is about. Checked when the write
+    // cycle starts (cyc_start), so every earlier write's drop has landed and
+    // nothing after it has run yet. ic17_fills counts fills of the four
+    // words being watched (a fill means the code was not found cached).
+    integer ic17_n = 0, ic17_bad = 0, ic17_fills = 0;
+    reg [dut.cpu.IC_AW-1:0] ic17_wi = 0;
+    function [dut.cpu.TAGW-1:0] ic17_tag(input [31:0] ad);
+        reg [dut.cpu.TAGW-4:0] lo;
+        begin
+            lo = ad[23:0] >> (dut.cpu.IC_AW + 1);
+            ic17_tag = {1'b1, ad[31:24] == 8'h08, ad[31:24] == 8'h00, lo};
+        end
+    endfunction
+    task ic17_ent(input [31:0] ad, input want, input integer mk);   // want 1: cached; 0: dropped
+        reg [dut.cpu.TAGW-1:0] t;
+        begin
+            t = ad[1] ? dut.cpu.ic_tag_o[ad[dut.cpu.IC_AW:2]] : dut.cpu.ic_tag_e[ad[dut.cpu.IC_AW:2]];
+            ic17_n = ic17_n + 1;
+            // (with step 17 off, -DS17_DEFAULT=0, only the drops are checked)
+            if (want ? (t !== ic17_tag(ad) && dut.cpu.ICKEEP != 0) : (t === ic17_tag(ad))) begin
+                ic17_bad = ic17_bad + 1;
+                $display("FAIL step 17 marker %0d: %h %0s in the instruction cache (entry tag %h)",
+                         mk, ad, want ? "not" : "still", t);
+            end
+        end
+    endtask
+    task ic17_nofill(input integer mk);
+        begin
+            ic17_n = ic17_n + 1;
+            if (ic17_fills != 0 && dut.cpu.ICKEEP != 0) begin
+                ic17_bad = ic17_bad + 1;
+                $display("FAIL step 17 marker %0d: %0d fills of code that should have stayed cached", mk, ic17_fills);
+            end
+        end
+    endtask
+    always @(posedge dut.clk) begin
+        if (dut.cpu.ic_we && dut.cpu.ic_wt[dut.cpu.TAGW-1] && !dut.cpu.ic_flush
+            && dut.cpu.ic_wa[dut.cpu.IC_AW-1:2] == ic17_wi[dut.cpu.IC_AW-1:2]) ic17_fills = ic17_fills + 1;
+        if (dut.cpu.cyc_start && !dut.cpu.eRWn && dut.cpu.a_r == 31'h47A8) begin   // $8F50
+            case (dut.cpu.oEdb[15:8])
+            8'd1: begin ic17_ent(32'h08005100, 1, 1); ic17_ent(32'h08005102, 1, 1); ic17_ent(32'h08005104, 1, 1);
+                        ic17_wi = 32'h08005100 >> 1; ic17_fills = 0; end
+            8'd2: ic17_nofill(2);
+            8'd3: ic17_ent(32'h08005104, 0, 3);
+            8'd4: ic17_ent(32'h08005202, 1, 4);
+            8'd5: ic17_ent(32'h08005202, 0, 5);
+            8'd6: begin ic17_ent(32'h08009100, 1, 6); ic17_ent(32'h08009102, 1, 6); end
+            8'd7: begin ic17_ent(32'h00009100, 1, 7); ic17_ent(32'h00009102, 1, 7); ic17_ent(32'h00009104, 1, 7);
+                        ic17_wi = 32'h00009100 >> 1; ic17_fills = 0; end
+            8'd8: ic17_nofill(8);
+            8'd9: ic17_ent(32'h00009104, 0, 9);
+            default: ;
+            endcase
+        end
+    end
+`ifdef TG68_PERF
+`ifdef FASTMEM   // (the top bench has no fast RAM, so no counters to read)
+    // step 18: the performance counters (perf_cnt.v). pc(i) reads counter i.
+    function [39:0] pc(input integer i);
+        case (i)
+        0: pc = dut.g_fastmem.u_perf.gc[0].v;   1: pc = dut.g_fastmem.u_perf.gc[1].v;
+        2: pc = dut.g_fastmem.u_perf.gc[2].v;   3: pc = dut.g_fastmem.u_perf.gc[3].v;
+        4: pc = dut.g_fastmem.u_perf.gc[4].v;   5: pc = dut.g_fastmem.u_perf.gc[5].v;
+        6: pc = dut.g_fastmem.u_perf.gc[6].v;   7: pc = dut.g_fastmem.u_perf.gc[7].v;
+        8: pc = dut.g_fastmem.u_perf.gc[8].v;   9: pc = dut.g_fastmem.u_perf.gc[9].v;
+        10: pc = dut.g_fastmem.u_perf.gc[10].v; 11: pc = dut.g_fastmem.u_perf.gc[11].v;
+        12: pc = dut.g_fastmem.u_perf.gc[12].v; 13: pc = dut.g_fastmem.u_perf.gc[13].v;
+        14: pc = dut.g_fastmem.u_perf.gc[14].v; 15: pc = dut.g_fastmem.u_perf.gc[15].v;
+        16: pc = dut.g_fastmem.u_perf.gc[16].v; 17: pc = dut.g_fastmem.u_perf.gc[17].v;
+        18: pc = dut.g_fastmem.u_perf.gc[18].v; 19: pc = dut.g_fastmem.u_perf.gc[19].v;
+        default: pc = 0;
+        endcase
+    endfunction
+    integer pf_bad = 0;
+    // hw against the tb's own count of the same event; tol covers the
+    // window's edges (the tb counts some events a clock or two before the
+    // counter's flag: at CCMP, DWAIT or WAIT rather than at the step)
+    task pchk(input integer i, input [255:0] nm, input integer tb, input integer tol);
+        integer hw;
+        begin
+            hw = pc(i);
+            if (hw - tb > tol || tb - hw > tol) begin
+                pf_bad = pf_bad + 1;
+                $display("FAIL perf counter %0d (%0s): %0d, tb counts %0d", i, nm, hw, tb);
+            end else
+                $display("ok   perf counter %0d (%0s): %0d (tb %0d)", i, nm, hw, tb);
+        end
+    endtask
+`ifdef MEMBENCH
+    // The bench programs do not touch the counters: they run exactly in the
+    // timed window (forced between edges), and the end compares them with
+    // the tb's counters (n_step and friends) and these:
+    integer pt_as = 0, pt_drop = 0, pt_fill = 0;
+    always @(negedge dut.clk) force dut.g_fastmem.u_perf.run = (t0 > 0 && t1 == 0);
+    always @(posedge clk12) if (t0 > 0 && t1 == 0) begin
+        if (!dut.cpu.as_i) pt_as = pt_as + 1;
+        if (dut.cpu.ic_we && !dut.cpu.ic_flush) begin
+            if (dut.cpu.ic_wt[dut.cpu.TAGW-1]) pt_fill = pt_fill + 1;
+            else if (ev_old[dut.cpu.TAGW-1]) pt_drop = pt_drop + 1;   // a drop of an entry holding code
+        end
+    end
+`else
+`ifdef FASTMEM
+    // test_top.s: an Amiga reset at its write to $8F60 (perf_cnt's own
+    // input only: a real one would reset the whole board)
+    integer pf_rst = 0;
+    always @(posedge dut.clk) begin
+        if (dut.cpu.cyc_start && !dut.cpu.eRWn && dut.cpu.a_r == 31'h47B0) pf_rst = 4;
+        if (pf_rst > 0) begin dut.g_fastmem.u_perf.sim_reset = 1'b1; pf_rst = pf_rst - 1; end
+        else dut.g_fastmem.u_perf.sim_reset = 1'b0;
+    end
+`endif
+`endif
+`endif
+`endif
     reg [3:0]  pb_pq = 0; reg pb_mr = 0;
     always @(posedge dut.clk) begin
         pb_pq <= dut.cpu.q;
@@ -275,7 +401,7 @@ module tb;
         // strobes belong to it. (oEdb and the strobes now load on every
         // DECIDE clock, so only a real cycle start may be recorded.)
         if (dut.cpu.cyc_start && !dut.cpu.eRWn) begin
-            pb_k = dut.cpu.a_r;
+            pb_k = sh_key(dut.cpu.a_r);
             pb_s = shadow.exists(pb_k) ? shadow[pb_k] : 18'd0;
             if (!dut.cpu.uds_want) begin pb_s[17] = 1'b1; pb_s[15:8] = dut.cpu.oEdb[15:8]; end
             if (!dut.cpu.lds_want) begin pb_s[16] = 1'b1; pb_s[7:0]  = dut.cpu.oEdb[7:0];  end
@@ -343,7 +469,7 @@ module tb;
             if (w == 3'd1 + xw) begin
                 if (rw) begin
                     if (ba < 24'h2000 || ba[23:19] == 5'b11111) mb_q <= rom[ba[12:1]];
-                    else if (ba >= 24'h8000 && ba < 24'hA000)  mb_q <= ram[ba[12:1]];
+                    else if (chipram)                          mb_q <= ram[ba[12:1]];
                     else begin mb_q <= 16'hFFFF; unmapped = unmapped + 1;
                         $display("unmapped read %h fc=%0d", ba, fc); end
                     mb_drive <= 1;
@@ -365,8 +491,8 @@ module tb;
             undriven = undriven + 1;
             if (undriven <= 5) $display("FAIL: write to %h latched with the data bus not driven", ba);
         end
-    always @(posedge uds_n) if (!rw && ba >= 24'h8000 && ba < 24'hA000) ram[ba[12:1]][15:8] = d[15:8];
-    always @(posedge lds_n) if (!rw && ba >= 24'h8000 && ba < 24'hA000) ram[ba[12:1]][7:0]  = d[7:0];
+    always @(posedge uds_n) if (!rw && chipram) ram[ba[12:1]][15:8] = d[15:8];
+    always @(posedge lds_n) if (!rw && chipram) ram[ba[12:1]][7:0]  = d[7:0];
     always @(posedge uds_n) if (!rw && ba == 24'h8F80) ipl_n = 3'b111;
 `ifdef FASTMEM
     // step 13: the turbomem board as if autoconfigured at $EA0000, so the
@@ -383,7 +509,7 @@ module tb;
         if (dut.clk_cur != cur_d && dut.clk_cur == dut.clk_sel) begin
             n_switch = n_switch + 1;
             $display("%0t: system clock now %0s", $time,
-                     dut.clk_cur == 2'd2 ? "16x" : dut.clk_cur == 2'd1 ? "14x" : "12x");
+                     dut.clk_cur == 2'd3 ? "22x" : dut.clk_cur == 2'd2 ? "16x" : dut.clk_cur == 2'd1 ? "20x" : "12x");
         end
         cur_d <= dut.clk_cur;
     end
@@ -394,7 +520,7 @@ module tb;
         if (d[15:8] == 8'd3) force dut.g_fastmem.u_turbomem.mr_ctrl = 2'b00;
     end
 `endif
-    always @(negedge as_n) if (!rw && !(ba >= 24'h8000 && ba < 24'hA000) && ba[23:16] != 8'hBF) begin
+    always @(negedge as_n) if (!rw && !chipram && ba[23:16] != 8'hBF) begin
         $display("unmapped write %h", ba); unmapped = unmapped + 1; end
 
 `ifdef MEMBENCH
@@ -521,6 +647,38 @@ module tb;
             errors = errors + 1;
         end else $display("ok   %-24s @%h = %h", what, ad, rd32(ad));
     endtask
+    // step 19: the shift/rotate matrix (shift_test.inc). Expected: the b0
+    // core's results (bit-by-bit shifter, on hardware since v1.0), the same
+    // values as the bus bench; each is the running checksum after a group
+    task check_shifts;
+        begin
+            check(24'h9E00, 32'h34DAAC4B, "shift asl.b");
+            check(24'h9E04, 32'h801984C2, "shift asl.w");
+            check(24'h9E08, 32'h2795DD4F, "shift asl.l");
+            check(24'h9E0C, 32'h2160305B, "shift asr.b");
+            check(24'h9E10, 32'h645732EC, "shift asr.w");
+            check(24'h9E14, 32'h68A1891E, "shift asr.l");
+            check(24'h9E18, 32'h9EC90CBF, "shift lsl.b");
+            check(24'h9E1C, 32'h30ACC68E, "shift lsl.w");
+            check(24'h9E20, 32'h812AFAEB, "shift lsl.l");
+            check(24'h9E24, 32'h0054F7F7, "shift lsr.b");
+            check(24'h9E28, 32'h687006D1, "shift lsr.w");
+            check(24'h9E2C, 32'h0678AB68, "shift lsr.l");
+            check(24'h9E30, 32'h4FBCDB93, "shift rol.b");
+            check(24'h9E34, 32'h5445A3AC, "shift rol.w");
+            check(24'h9E38, 32'hED594387, "shift rol.l");
+            check(24'h9E3C, 32'h397288F0, "shift ror.b");
+            check(24'h9E40, 32'hAF902A03, "shift ror.w");
+            check(24'h9E44, 32'h6CD2CD6D, "shift ror.l");
+            check(24'h9E48, 32'h32549942, "shift roxl.b");
+            check(24'h9E4C, 32'h190E0E6A, "shift roxl.w");
+            check(24'h9E50, 32'hCD9C12B7, "shift roxl.l");
+            check(24'h9E54, 32'h2D3B6C71, "shift roxr.b");
+            check(24'h9E58, 32'h7584DB5F, "shift roxr.w");
+            check(24'h9E5C, 32'hDD466E69, "shift roxr.l");
+            check(24'h9E60, 32'h7A21F495, "shift memory shifts");
+        end
+    endtask
 
 `ifdef SDTEST
     // the SD board as if autoconfigured at $E90000
@@ -558,6 +716,32 @@ module tb;
         $display("instruction cache (whole run): valid entries dropped by a write %0d, of which held another address %0d; refilled after such a drop %0d",
                  ic_drop, ic_fdrop, ic_refill);
         $display("stall clocks: fast write waits for the port %0d, read waits (CFREE) %0d, chip write waits %0d", st_fw, st_fr, st_cw);
+`ifdef TG68_PERF
+        // the tb's own counters tick on clk12, so they only describe the
+        // system clock at 12x; at 16x / 20x only the clock count is checked,
+        // against the window scaled by the multiplier
+        if (dut.clk_cur != 2'd0) begin
+            pchk(0, "clocks (window, scaled)", (n_clk * (dut.clk_cur == 2'd3 ? 22 : dut.clk_cur == 2'd2 ? 16 : 20)) / 12, 3);
+            $display("perf: steps %0d, fetch %0d, predicted %0d (not compared away from 12x)", pc(1), pc(2), pc(3));
+        end else begin
+        pchk(0, "clocks", n_clk, 2);
+        pchk(1, "kernel steps", n_step, 2);
+        pchk(2, "fetch steps", sk_f, 2);
+        pchk(3, "predicted fetches", sk_f4, 2);
+        pchk(4, "icache + dcache hits", n_hit - pc(5), 2);
+        pchk(6, "internal steps", sk_i, 2);
+        pchk(7, "SDRAM fetches + data reads", n_dir - pc(8), 2);
+        pchk(9, "old-route cycles (all six)", n_bus - (pc(10) + pc(11) + pc(12) + pc(13) + pc(14)), 2);
+        pchk(15, "old-route clocks", pt_as, 2);
+        pchk(16, "chip write waits", st_cw, 2);
+        pchk(17, "fast write waits", st_fw, 2);
+        pchk(18, "icache drops of code", pt_drop, 2);
+        pchk(19, "icache fills", pt_fill, 2);
+        end
+        $display("perf: dcache hits %0d, SDRAM data reads %0d, old route: fetch chip %0d other %0d, read chip %0d other %0d, write chip %0d other %0d",
+                 pc(5), pc(8), pc(9), pc(10), pc(11), pc(12), pc(13), pc(14));
+        if (pf_bad) errors = errors + pf_bad;
+`endif
         $display("per cycle, in 11.75 ns clocks: AS->DTACK %0.1f, DTACK->AS up %0.1f, AS up->next AS %0.1f",
                  sum_as2dt/n_fm/11.746, sum_dt2up/n_fm/11.746, sum_up2as/n_fm/11.746);
         $display("AS->DTACK reads %0d avg %0.1f clk, writes %0d avg %0.1f clk", n_rd, s_rd/n_rd/11.746, n_wr, s_wr/n_wr/11.746);
@@ -571,6 +755,19 @@ module tb;
         check(24'h8118, 32'h00000102, "SPI loopback first word");
         check(24'h811C, 32'h000000F1, "SPI loopback bytes");
 `elsif BENCH_C
+        // step 21: with FPAIR the instruction-stream pairs come back, and the
+        // prediction after one is right (no sequential fetch in 5 clocks).
+        // Only with the caches on (bench coff: no predictor) and at 12x (the
+        // sk_ counters time steps on clk12)
+        if (dut.cpu.ic_on && dut.clk_cur == 2'd0
+            && ((dut.cpu.FPAIR != 0) != (sk_fpair > 0) || sk_f5seq != 0)) begin
+            $display("FAIL FPAIR %0d: %0d instruction-stream pairs, %0d sequential fetches not predicted", dut.cpu.FPAIR, sk_fpair, sk_f5seq);
+            errors = errors + 1;
+        end
+        // step 20: with WR4 single posted writes step in 4 clocks
+        if ((dut.cpu.WR4 != 0) != (sk_w4 > 0)) begin
+            $display("FAIL WR4 %0d but %0d single writes in 4 clocks", dut.cpu.WR4, sk_w4); errors = errors + 1;
+        end
         check(24'h8100, 32'h05364511, "C workload checksum, pass 1");
         check(24'h8104, 32'h61FEF797, "C workload checksum, pass 2");
 `elsif BENCH_COPY
@@ -590,6 +787,9 @@ module tb;
         if (dut.cpu.fp_chk_bad) begin $display("FAIL: %0d predicted fetches differed from the cache's own lookup", dut.cpu.fp_chk_bad); errors = errors + 1; end
         $display("predicted fetches %0d (checked at the kernel's sample clock: %0d)", dut.cpu.fp_hits, fp_chk);
         if (dut.cpu.cc_bad) begin $display("FAIL: %0d CCMP compares used registered inputs that differ from a_r", dut.cpu.cc_bad); errors = errors + 1; end
+        if (dut.cpu.iw_ra_bad) begin $display("FAIL: %0d DECIDE cache reads did not use the kernel's address", dut.cpu.iw_ra_bad); errors = errors + 1; end
+        if (dut.cpu.iw_skip_bad) begin $display("FAIL: %0d skipped instruction-cache drops left the written address cached", dut.cpu.iw_skip_bad); errors = errors + 1; end
+        $display("instruction-cache drops skipped (entry held another address) %0d; forced by a cache write in between %0d", dut.cpu.iw_skips, dut.cpu.iw_forced);
         if (errors) $display("FAILED"); else $display("PASS");
         $finish;
 `else
@@ -649,6 +849,7 @@ module tb;
         checkm(24'h81D4, 32'h0000470C, 32'h00007FFF, "speed: 12x after the drift");
         checkm(24'h81D8, 32'h00004710, 32'h00007FFF, "speed: 16x, falling stream");
         checkm(24'h81E0, 32'h00004714, 32'h00007FFF, "speed: 20x, falling stream");   // v2.0
+        checkm(24'h8288, 32'h00004716, 32'h00007FFF, "speed: 22x, falling stream");   // exp-22x
         checkm(24'h81E8, 32'h0000470C, 32'h00007FFF, "speed: back to 12x, falling");
         checkm(24'h81F0, 32'h0000470C, 32'h00007FFF, "speed: unkeyed / invalid ignored");
         checkm(24'h81F4, 32'h0000570C, 32'h00007FFF, "speed: 12x, rising forced");
@@ -662,6 +863,7 @@ module tb;
         check(24'h81D4, 32'h0000370C, "speed: 12x at power-on, rising 7M stream");
         check(24'h81D8, 32'h00000710, "speed: 16x, falling stream");
         check(24'h81E0, 32'h00000714, "speed: 20x, falling stream");   // v2.0
+        check(24'h8288, 32'h00000716, "speed: 22x, falling stream");   // exp-22x
         check(24'h81E8, 32'h0000370C, "speed: back to 12x, rising stream");
         check(24'h81F0, 32'h0000370C, "speed: unkeyed / invalid writes ignored");
         check(24'h81F4, 32'h0000370C, "speed: 12x, rising forced");
@@ -674,6 +876,13 @@ module tb;
         check(24'h81D4, 32'h0000170C, "speed: 12x at power-on, rising");
         check(24'h81D8, 32'h00000710, "speed: 16x");
         check(24'h81E0, 32'h00000714, "speed: 20x");   // v2.0
+`ifdef TG68_PLL7M
+        // fed from the 7 MHz clock the unused rising sample can report a
+        // move at 22x (bit 14), as it does at 16x / 20x on hardware
+        checkm(24'h8288, 32'h00000716, 32'h00003FFF, "speed: 22x (7 MHz PLL input)");
+`else
+        check(24'h8288, 32'h00000716, "speed: 22x");   // exp-22x
+`endif
         check(24'h81E8, 32'h0000170C, "speed: back to 12x, rising");
         check(24'h81F0, 32'h0000170C, "speed: unkeyed / invalid writes ignored");
         check(24'h81F4, 32'h0000170C, "speed: 12x, rising 7M stream forced");
@@ -683,6 +892,8 @@ module tb;
 `endif
         check(24'h81DC, 32'hACF1E135, "speed: memory traffic at 16x");
         check(24'h81E4, 32'hACF1E135, "speed: memory traffic at 20x");
+        check(24'h8284, 32'hACF1E135, "speed: memory traffic at 22x");   // exp-22x
+        check(24'h828C, 32'h00000100, "speed: the 22x PLL locked");
         check(24'h81EC, 32'hACF1E135, "speed: memory traffic at 12x");
         check(24'h81FC, 32'hACF1E135, "speed: memory traffic after a recalibration");
         // step 15: code that overwrites the instruction 0, 1 or 2 words
@@ -701,11 +912,40 @@ module tb;
         if (dut.ph_slip) begin $display("FAIL: the 7M aligner slipped"); errors = errors + 1; end
         if (!dut.ph_locked) begin $display("FAIL: the 7M aligner is not locked"); errors = errors + 1; end
         $display("clock switches: %0d; SDRAM mode loads: %0d", n_switch, u_sdram.n_mrs);
-        if (n_switch != 3) begin $display("FAIL: expected 3 clock switches"); errors = errors + 1; end
+        if (n_switch != 4) begin $display("FAIL: expected 4 clock switches (16x, 20x, 22x, 12x)"); errors = errors + 1; end
         // v2.0: 12x -> 16x loads CL3, 16x -> 20x keeps it, 20x -> 12x loads
         // CL2: still 3 (step 13: 16x -> 14x loaded CL2, 14x -> 12x none)
         if (u_sdram.n_mrs != 3) begin $display("FAIL: expected 3 SDRAM mode loads (init, CL3, CL2)"); errors = errors + 1; end
 `endif
+`ifdef TG68_PERF
+        // step 18 (test_top.s): the counters through the registers
+        check(24'h8260, 32'h00001400, "perf: frozen at power-on, 20 counters");
+        check(24'h8268, 32'h00000000, "perf: steps, bits 39:32");
+        check(24'h8274, 32'h00005400, "perf: frozen by an Amiga reset");
+        check(24'h8278, 32'h00009400, "perf: run clears the reset flag");
+        check(24'h827C, 32'h00000000, "perf: cleared");
+        check(24'h8280, 32'h00001401, "perf: frozen, counter 1, wrong key ignored");
+        if (rd32(24'h8264) < 50 || rd32(24'h826C) == 0 || rd32(24'h826C) != rd32(24'h8270)) begin
+            $display("FAIL perf: steps %0d (>= 50 expected), clocks %0d then %0d (frozen: equal, not 0)",
+                     rd32(24'h8264), rd32(24'h826C), rd32(24'h8270));
+            errors = errors + 1;
+        end else
+            $display("ok   perf: %0d kernel steps in the run, %0d clocks, unchanged while frozen", rd32(24'h8264), rd32(24'h826C));
+`endif
+        // step 17 (test_top.s, the 8F50 markers)
+        check(24'h8230, 32'h0000FA57, "step 17: code kept over writes to its index");
+        check(24'h8234, 32'h00001717, "step 17: a write to the code drops it");
+        check(24'h8238, 32'h00000007, "step 17: pair write, second word's index kept");
+        check(24'h823C, 32'h00000009, "step 17: pair write over the code");
+        check(24'h8240, 32'h0000FA57, "step 17: chip code kept over a fast RAM write");
+        check(24'h8244, 32'h00001719, "step 17: a write through the chip RAM mirror");
+        check(24'h8248, 32'h00000002, "step 17: fill on the lookup edge, storing run");
+        check(24'h824C, 32'h00000002, "step 17: fill on the lookup edge, the run after");
+        check(24'h8250, 32'h00000002, "step 17: fill in the decision clock, storing run");
+        check(24'h8254, 32'h00000002, "step 17: fill in the decision clock, the run after");
+        $display("step 17 entry checks: %0d, failed %0d", ic17_n, ic17_bad);
+        if (ic17_n != 14) begin $display("FAIL: expected 14 step 17 entry checks"); errors = errors + 1; end
+        if (ic17_bad) errors = errors + ic17_bad;
         check(24'h8120, 32'h13579BDF, "fast RAM $08000000");
         check(24'h8124, 32'h2468ACE0, "fast RAM $08FFFFFC");
         check(24'h8128, 32'h0000FA57, "code run from fast RAM");
@@ -758,12 +998,16 @@ module tb;
 `endif
         check(24'h8140, 32'h00000055, "ROM code via cache");
         check(24'h8FF0, 32'h600DC0DE, "done marker");
+        check_shifts;
         if (iacks != 1) begin $display("FAIL IACK count %0d", iacks); errors = errors + 1; end
         if (unmapped)   begin $display("FAIL %0d unmapped accesses reached the MB", unmapped); errors = errors + 1; end
         if (led_r)      begin $display("FAIL red LED (stall)"); errors = errors + 1; end
         if (dut.cpu.fp_chk_bad) begin $display("FAIL: %0d predicted fetches differed from the cache's own lookup", dut.cpu.fp_chk_bad); errors = errors + 1; end
         $display("predicted fetches %0d (checked at the kernel's sample clock: %0d)", dut.cpu.fp_hits, fp_chk);
         if (dut.cpu.cc_bad) begin $display("FAIL: %0d CCMP compares used registered inputs that differ from a_r", dut.cpu.cc_bad); errors = errors + 1; end
+        if (dut.cpu.iw_ra_bad) begin $display("FAIL: %0d DECIDE cache reads did not use the kernel's address", dut.cpu.iw_ra_bad); errors = errors + 1; end
+        if (dut.cpu.iw_skip_bad) begin $display("FAIL: %0d skipped instruction-cache drops left the written address cached", dut.cpu.iw_skip_bad); errors = errors + 1; end
+        $display("instruction-cache drops skipped (entry held another address) %0d; forced by a cache write in between %0d", dut.cpu.iw_skips, dut.cpu.iw_forced);
         if (errors) $display("FAILED, %0d errors", errors); else $display("PASS");
         $finish;
 `endif

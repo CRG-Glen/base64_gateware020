@@ -17,29 +17,31 @@ a clock you can change while the Amiga runs.
 
 | | |
 | --- | --- |
-| CPU | TG68K.C, 68020 mode, 32-bit longword reads and writes (caches and fast RAM) |
-| Clock | **12x, 16x or 20x** the Amiga's 7.09 MHz (85, 113.5, 141.9 MHz), switched at run time with the `speed` command; power-on 12x. No board mod |
-| Caches | 8 KB instruction (fast RAM, Kickstart and Chip RAM code) + 8 KB data (fast RAM and Kickstart), write-through; sequential instruction fetches predicted |
+| CPU | TG68K.C, 68020 mode, 32-bit longword reads and writes (caches and fast RAM), barrel shifter (any shift in one step) |
+| Clock | **12x, 16x, 20x or 22x** the Amiga's 7.09 MHz (85.1, 113.5, 141.9, 156.1 MHz), switched at run time with the `speed` command; power-on 12x. No board mod |
+| Caches | 8 KB instruction (fast RAM, Kickstart and Chip RAM code) + 8 KB data (fast RAM and Kickstart), write-through; sequential instruction fetches predicted; a CPU write drops only its own cached code |
 | Fast RAM | up to 8 MB Zorro II + 16 MB at `$08000000`, direct SDRAM path |
 | Also | 8-entry Chip RAM write buffer, SD card boot (sfsd.device), MapROM (Kickstart in SDRAM), autoconfig |
 | Not included | MMU, FPU |
 
-Measured on an A500+ (Kickstart 3.x), v2.0, caches on / off:
+Measured on an A500+ (Kickstart 3.x), v2.1, caches on / off:
 
-| | 12x | 16x | 20x |
-| --- | --- | --- | --- |
-| SysInfo Dhrystones | 10776 / 4461 | 14379 / 5440 | **18024 / 7499** (18.81 MIPS) |
-| AIBB MemTest | 16.60 / 8.48 MB/s | 21.03 / 10.59 MB/s | **26.16 / 13.20 MB/s** |
-| xSysInfo Dhrystones | 18430 / 9743 | 24407 / 12117 | **29009 / 14486** |
-| xSysInfo fast RAM | 23.69 / 21.17 MB/s | 29.58 / 26.21 MB/s | **36.85 / 32.73 MB/s** |
-| SD card (xSysInfo) | 2.0 MB/s | 2.2 MB/s | 2.7 MB/s |
-| Frontier timedemo (min / max / average fps) | 9.5 / 70.4 / 26.2 | 11.8 / 73.3 / 31.1 | 13.9 / 75.6 / 33.8 |
+| | 12x | 16x | 20x | 22x |
+| --- | --- | --- | --- | --- |
+| SysInfo Dhrystones | 11526 / 5223 | 15379 / 6528 | 19238 / 8145 | **21165 / 9032** (22.09 MIPS) |
+| AIBB MemTest | 16.69 / 8.33 MB/s | 21.13 / 10.39 MB/s | 26.32 / 12.94 MB/s | **28.90 / 13.86 MB/s** |
+| xSysInfo Dhrystones | 18958 / 9949 | 25115 / 12141 | 31336 / 15252 | **34472 / 15929** |
+| xSysInfo fast RAM | 23.71 / 21.17 MB/s | 29.58 / 26.22 MB/s | 36.87 / 32.78 MB/s | **40.36 / 35.74 MB/s** |
+| SD card (xSysInfo) | 2.0 MB/s | 2.2 MB/s | 2.7 MB/s | 3.0 MB/s |
+| Frontier timedemo (average fps) | 27.8 | 32.1 | 35.0 | 36.1 |
+| Frontier CPU timedemo (average fps) | 33.8 | 44.8 | 56.0 | 61.4 |
 
 Games that keep their code in Chip RAM (Frontier, Gloom) run from the
 instruction cache, and their screen writes go through the write buffer
 while the CPU carries on. Kickstart runs from fast RAM via MapROM. Chip
 RAM itself is the Amiga's own 7 MHz bus and does not get faster with the
-clock, which is why Frontier gains less from 20x than the benchmarks do.
+clock, which is why the Frontier timedemo gains less from 20x and 22x than
+the benchmarks do; its CPU timedemo shows the CPU itself.
 
 ## Getting it running
 
@@ -76,6 +78,7 @@ speed             show the clock in force and the 7 MHz capture status
 speed 12          85.1 MHz, the board's own clock (power-on default)
 speed 16          113.5 MHz
 speed 20          141.9 MHz
+speed 22          156.1 MHz
 speed 20 RISE     force the 7 MHz sample to the rising clock edge
 speed 20 FALL     ... or to the falling edge (normally calibrated)
 ```
@@ -86,15 +89,17 @@ speed 20 FALL     ... or to the falling edge (normally calibrated)
 - The speed **stays over a reset**. Switching the Amiga off and on always
   returns to 12x, so a speed that is too fast for a board is undone by a
   power cycle.
-- To start at 20x every time, add `speed 20` near the top of
+- To start at 22x (or 20x) every time, add `speed 22` near the top of
   `S:Startup-Sequence` (or to `S:User-Startup`).
 - `speed` with no argument also says which edge samples the 7 MHz clock and
   whether anything has moved since the last calibration. "The rising-edge
   sample has moved" at 16x or 20x is harmless: that sample is not the one
   in use at those speeds.
-- 16x and 20x run the FPGA past its worst-case timing model (20x: about
-  1.5x). They run on the developer's A500+, including hours at 20x, but
-  every board is different: if one is unstable, use a lower speed.
+- 16x, 20x and 22x run the FPGA past its worst-case timing model (20x:
+  about 1.5x, 22x: about 1.66x). They run on the developer's A500+,
+  including hours at 20x and the Frontier CPU timedemo ten times in a row
+  at 22x, but every board is different: if one is unstable, use a lower
+  speed. 22x also runs the SDRAM close to its 166 MHz rating.
 - The ICS570B clock chip must be strapped for x12 (stock).
 
 ## The `maprom` command
@@ -114,12 +119,11 @@ and the boot ROM sets it again.
 
 ## Status
 
-v2.0 runs on the developer's A500+ at 12x, 16x and 20x, including hours
-of use at 20x. The design notes in [`tg68/README.md`](tg68/README.md)
-describe every step of the speed-up work, and
-[`tg68/docs/HISTORY.md`](tg68/docs/HISTORY.md) has the measurements. The
-old step-by-step branches (each with its test bitstreams) are still on
-GitHub.
+v2.1 runs on the developer's A500+ at 12x, 16x, 20x and 22x. The design
+notes in [`tg68/README.md`](tg68/README.md) describe every step of the
+speed-up work, and [`tg68/docs/HISTORY.md`](tg68/docs/HISTORY.md) has the
+measurements. The old step-by-step branches (each with its test
+bitstreams) are still on GitHub.
 [`tg68/CLAUDE.md`](tg68/CLAUDE.md) and [`tg68/plans/`](tg68/plans/README.md)
 hold the working rules and plans.
 

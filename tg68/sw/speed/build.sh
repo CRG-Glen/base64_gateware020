@@ -4,7 +4,8 @@
 #   sh build.sh          speed
 #   sh build.sh test     also speed_test / speed_testfix / speed_testjit: a
 #                        fake board in RAM, for amitools' vamos (normal,
-#                        fixed 16x gateware, a status with every flag set)
+#                        fixed 16x gateware, a status with every flag set;
+#                        speed_test22: the 22x PLL locked, exp-22x)
 set -e
 cd "$(dirname "$0")"
 one() {   # one <output> [--defsym ...]
@@ -23,4 +24,5 @@ if [ "$1" = test ]; then
     one speed_test --defsym TEST=1
     one speed_testfix --defsym TEST=1 --defsym TESTFIX=1
     one speed_testjit --defsym TEST=1 --defsym TESTJIT=1
+    one speed_test22 --defsym TEST=1 --defsym TEST22=1
 fi

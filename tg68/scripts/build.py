@@ -45,6 +45,13 @@ ap.add_argument('--first-pass', action='store_true',
                 help='stop starting new seeds once one has passed timing')
 ap.add_argument('--keep-sdf', action='store_true',
                 help="keep every seed's .sdf (23 MB each), not only the best one's")
+ap.add_argument('--perf', action='store_true',
+                help='TEST BUILD with the performance counters (step 18, sw/perf): defines '
+                     'TG68_PERF and adds perf_cnt.v; output in build/<cfg>_perf, files '
+                     'base64_tg68_<cfg>_perf*.bit. Without it the netlist is the normal one')
+ap.add_argument('--pll7m', action='store_true',
+                help='EXPERIMENT (exp-22x): both PLLs take the Amiga\'s 7.09 MHz clock instead '
+                     'of the 12x pin; defines TG68_PLL7M, output in build/<cfg>_7m')
 ap.add_argument('--x16', action='store_true',
                 help='EXPERIMENTAL: for a board whose ICS570B is rewired from x12 to x16 '
                      '(113.5 MHz). Defines TG68_X16, output in build/<cfg>_x16. Overclocked: '
@@ -67,7 +74,7 @@ YOSYS = find_tool('YOSYS', 'yosys', 'yowasp-yosys')
 NEXTPNR = find_tool('NEXTPNR', 'nextpnr-ecp5', 'yowasp-nextpnr-ecp5')
 ECPPACK = os.environ.get('ECPPACK', 'ecppack')
 fm, sd = CFGS[a.cfg]
-name = a.cfg + ('_x16' if a.x16 else '')
+name = a.cfg + ('_x16' if a.x16 else '') + ('_perf' if a.perf else '') + ('_7m' if a.pll7m else '')
 out = os.path.join(ROOT, 'build', name)
 os.makedirs(out, exist_ok=True)
 for f in ('turbomem.mem', 'sfsd.mem'):        # $readmemh looks in the cwd
@@ -85,17 +92,19 @@ def run(cmd):
 
 R = lambda *p: os.path.join(ROOT, 'rtl', *p).replace('\\', '/')
 srcs_sv = [R('base64_tg68', 'base64_tg68_top.sv')]
-core = 'tg68_020_b0.v'
+core = 'tg68_020_b1.v'   # step 19: the barrel shifter (b0, the bit-by-bit shifter, up to step 18)
 srcs_v = [R('base64_tg68', 'tg68_bus.v'), R('base64_tg68', 'clkgen.v'), R('tg68', core)] + \
          [R('base64_fx68k', f + '.v') for f in
           ('autoconfig_zii', 'fastmem_zii', 'turbomem_zii', 'sd_subsystem', 'sdcard',
            'sdram_ctrl', 'fifo', 'shifter', 'rx_cpu_buf', 'tx_cpu_buf')]
+if a.perf:
+    srcs_v.append(R('base64_tg68', 'perf_cnt.v'))
 
 if not a.skip_synth:
     print('== yosys  (%s: ENABLE_FASTMEM=%d ENABLE_SD=%d)' % (a.cfg, fm, sd))
     # --x16: every 16x change is under `ifdef TG68_X16, so without it yosys
     # reads exactly the 12x text (and the 12x bitstreams stay reproducible)
-    dfl = '-DTG68_X16 ' if a.x16 else ''
+    dfl = ('-DTG68_X16 ' if a.x16 else '') + ('-DTG68_PERF ' if a.perf else '') + ('-DTG68_PLL7M ' if a.pll7m else '')
     script = '\n'.join(['read_verilog %s-sv ' % dfl + f for f in srcs_sv] +
                        ['read_verilog %s' % dfl + f for f in srcs_v] + [
         'read_verilog -lib +/ecp5/cells_bb.v',   # BB: the SD card input pins
@@ -150,10 +159,15 @@ def nextpnr_cmd(json, seed, log):
             '--json', json, '--lpf', lpf,
             '--textcfg', 'base64_tg68.config', '--sdf', 'base64_tg68.sdf',
             '--report', 'report.json', '--timing-allow-fail',
-            '--router', 'router2',
-            # static placer + router2 gave the best results here. The static
-            # placer needs nextpnr >= 0.7 (any current oss-cad-suite); set
-            # PLACER=heap for an older nextpnr.
+            '--router', os.environ.get('ROUTER', 'router1'),
+            # static placer + router1. The static placer needs nextpnr >= 0.7
+            # (any current oss-cad-suite); set PLACER=heap for an older
+            # nextpnr. router1 is the default from exp-router1 (Nov 2026):
+            # on step 17's netlist it passed 16 of 16 seeds at 12x where
+            # router2 passed 2 of 16, best 20x ratio 1.433x against 1.582x,
+            # and it routes the step 18 perf build, where router2 could not
+            # route the clock multiplexer's output into its DCCA. ROUTER=router2
+            # rebuilds v2.0 and steps up to 18 byte for byte.
             '--placer', os.environ.get('PLACER', 'static'),
             '--seed', str(seed), '-l', log]
 
@@ -171,6 +185,17 @@ def summary(timing_text, freq=86.0):
     bad = min(rows, key=lambda r: r[2])
     ratio = max((n * T - sl) / (n * T) for c, n, sl in rows)
     return w1, wm, (bad if bad[2] < 0 else None), ratio
+
+def ratio_at(timing_text, freq):
+    """the worst delay/budget ratio at freq, from a report made at another
+    clock: each class's budget less its slack is its delay with setup (the
+    delays do not depend on the clock), over the budget at freq. Equals
+    check_timing.py --freq <freq> on the same SDF (step 24: checked to
+    0.001)."""
+    T0 = 1000.0 / float(re.search(r'at ([\d.]+) MHz', timing_text).group(1))
+    T = 1000.0 / freq
+    rows = [(int(n), float(sl)) for c, n, d, sl in ROW.findall(timing_text)]
+    return max((n * T0 - sl) / (n * T) for n, sl in rows)
 
 def ecppack(config, bit, extra):
     run([ECPPACK] + extra + [config, bit])
@@ -240,7 +265,9 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as ex:
             print('   seed %d: %s' % (seed, err or ('PASS' if ok else 'fail')), flush=True)
 
 # ---- the table ---------------------------------------------------------------
-lines = ['seed  result  worst 1T  worst multicycle  worst failing class']
+PINROW = re.compile(r'^sdram data pins, (setup|hold)\s+limit\s+[\d.]+\s+worst\s+([\d.]+)', re.M)
+TOP = 156.07                     # exp-22x: the fastest speed, 22x (156.07 MHz)
+lines = ['seed  result  worst 1T  worst multicycle  22x ratio  pins setup / hold  worst failing class']
 best = None
 for seed in sorted(results):
     ok, err = results[seed]
@@ -252,10 +279,17 @@ for seed in sorted(results):
         lines.append('%4d  ERROR   timing.txt has no class table' % seed)
         continue
     w1, wm, bad, _ = sm
-    lines.append('%4d  %-6s  %+8.2f  %+16.2f  %s' % (seed, 'PASS' if ok else 'FAIL', w1, wm,
-                 '%s %+.2f' % (bad[0], bad[2]) if bad else ''))
-    if ok and (best is None or w1 > best[1]):
-        best = (seed, w1)
+    txt = open(os.path.join(out, 'seed%d' % seed, 'timing.txt')).read()
+    r22 = ratio_at(txt, TOP)
+    pins = dict(PINROW.findall(txt))
+    lines.append('%4d  %-6s  %+8.2f  %+16.2f  %8.3fx  %6s / %-6s  %s' % (seed, 'PASS' if ok else 'FAIL', w1, wm, r22,
+                 pins.get('setup', '-'), pins.get('hold', '-'),
+                 '%s %+.2f' % (bad[0], bad[2]) if bad else ('sdram pins' if not ok else '')))
+    # step 24: the passing seed with the lowest 22x ratio (rule 4; until
+    # step 24 the best was the largest 1T slack, and the 22x ratio was
+    # scored by hand)
+    if ok and (best is None or r22 < best[2]):
+        best = (seed, w1, r22)
 table = '\n'.join(lines)
 print('== seeds\n' + table)
 open(os.path.join(out, 'seeds.txt'), 'w').write(table + '\n')
@@ -272,10 +306,10 @@ if best is None:
 
 seed = best[0]
 d = os.path.join(out, 'seed%d' % seed)
-print('== best seed: %d (worst 1T slack %+.2f ns)' % (seed, best[1]))
+print('== best seed: %d (lowest 22x ratio %.3fx; worst 1T slack %+.2f ns)' % (seed, best[2], best[1]))
 # 16x and 20x: the same build scored by the worst delay/budget ratio (it
 # cannot pass the worst-case model there; see README "Timing")
-for freq, tag in ((113.51, '16x'), (141.88, '20x')):   # v2.0: 12x / 16x / 20x
+for freq, tag in ((113.51, '16x'), (141.88, '20x'), (TOP, '22x')):   # exp-22x: 12x / 16x / 20x / 22x
     t = subprocess.run([sys.executable, CHECK, 'base64_tg68.sdf', '--freq', str(freq), '--paths', '6'],
                        cwd=d, capture_output=True, text=True)
     open(os.path.join(d, 'timing_at%s.txt' % tag), 'w').write(t.stdout)

@@ -296,6 +296,37 @@ module tb;
         check(32'h8134, 32'h00000001, "code before patch");
         check(32'h8138, 32'h00000002, "self-modified code");
         check(32'h8FF0, 32'h600DC0DE, "done marker");
+        // step 19: shift/rotate matrix (shift_test.inc); per group checksums
+        $write("shift matrix:");
+        for (i = 0; i < 25; i = i + 1) $write(" %h", rd32(32'h9E00 + 4*i));
+        $write("\n");
+        // expected: the b0 core's results (bit-by-bit shifter, on hardware
+        // since v1.0); each value is the running checksum after that group
+        check(32'h9E00, 32'h34DAAC4B, "shift asl.b");
+        check(32'h9E04, 32'h801984C2, "shift asl.w");
+        check(32'h9E08, 32'h2795DD4F, "shift asl.l");
+        check(32'h9E0C, 32'h2160305B, "shift asr.b");
+        check(32'h9E10, 32'h645732EC, "shift asr.w");
+        check(32'h9E14, 32'h68A1891E, "shift asr.l");
+        check(32'h9E18, 32'h9EC90CBF, "shift lsl.b");
+        check(32'h9E1C, 32'h30ACC68E, "shift lsl.w");
+        check(32'h9E20, 32'h812AFAEB, "shift lsl.l");
+        check(32'h9E24, 32'h0054F7F7, "shift lsr.b");
+        check(32'h9E28, 32'h687006D1, "shift lsr.w");
+        check(32'h9E2C, 32'h0678AB68, "shift lsr.l");
+        check(32'h9E30, 32'h4FBCDB93, "shift rol.b");
+        check(32'h9E34, 32'h5445A3AC, "shift rol.w");
+        check(32'h9E38, 32'hED594387, "shift rol.l");
+        check(32'h9E3C, 32'h397288F0, "shift ror.b");
+        check(32'h9E40, 32'hAF902A03, "shift ror.w");
+        check(32'h9E44, 32'h6CD2CD6D, "shift ror.l");
+        check(32'h9E48, 32'h32549942, "shift roxl.b");
+        check(32'h9E4C, 32'h190E0E6A, "shift roxl.w");
+        check(32'h9E50, 32'hCD9C12B7, "shift roxl.l");
+        check(32'h9E54, 32'h2D3B6C71, "shift roxr.b");
+        check(32'h9E58, 32'h7584DB5F, "shift roxr.w");
+        check(32'h9E5C, 32'hDD466E69, "shift roxr.l");
+        check(32'h9E60, 32'h7A21F495, "shift memory shifts");
         if (iacks != 1) begin $display("FAIL expected 1 IACK, got %0d", iacks); errors = errors + 1; end
         $display("cache hits checked against the CPU's writes %0d (stale: %0d); pair hits %0d; clkena_lw steps %0d", hit_chk, hit_bad, long_hits, n_clw);
         if (hit_bad) errors = errors + hit_bad;
@@ -304,6 +335,9 @@ module tb;
         if (dut.fp_chk_bad) begin $display("FAIL: %0d predicted fetches differed from the cache's own lookup", dut.fp_chk_bad); errors = errors + 1; end
         $display("predicted fetches %0d (checked at the kernel's sample clock: %0d)", dut.fp_hits, fp_chk);
         if (dut.cc_bad) begin $display("FAIL: %0d CCMP compares used registered inputs that differ from a_r", dut.cc_bad); errors = errors + 1; end
+        if (dut.iw_ra_bad) begin $display("FAIL: %0d DECIDE cache reads did not use the kernel's address", dut.iw_ra_bad); errors = errors + 1; end
+        if (dut.iw_skip_bad) begin $display("FAIL: %0d skipped instruction-cache drops left the written address cached", dut.iw_skip_bad); errors = errors + 1; end
+        $display("instruction-cache drops skipped (entry held another address) %0d; forced by a cache write in between %0d", dut.iw_skips, dut.iw_forced);
         if (errors == 0) $display("PASS");
         else             $display("FAILED with %0d errors", errors);
         $finish;

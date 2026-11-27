@@ -28,3 +28,11 @@ sw/speed/*.o
 sw/speed/*.elf
 sw/speed/*.bin
 __pycache__/
+# perf outputs (sw/perf/build.sh; step 18 test builds)
+sw/perf/perf
+sw/perf/perf_test
+sw/perf/perf_testrst
+sw/perf/perf_testnone
+sw/perf/*.o
+sw/perf/*.elf
+sw/perf/*.bin
