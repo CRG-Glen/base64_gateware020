@@ -115,3 +115,10 @@ the usual set at all four speeds.
   between the system clock's edges), not the 7 MHz PLL input: the two
   clock sources behave the same. The PLL also runs from 7.09 MHz, below
   its rated 8 MHz input, with no visible difference.
+- **Pin-fed build at 22x, a longer session** (Glen): `speed` reported one
+  automatic swap since power-on (the sample in use moved AUTO_N = 4
+  times; step 14's swap then moved to the other stream), no slip, the
+  machine fine. The 7 MHz-fed build had no swap over its long run. Mild
+  evidence (one event) that the 7 MHz-fed clock holds its phase to the
+  Amiga's 7 MHz better at 22x: it passes through one PLL, the pin-fed
+  clock through two (the ICS570B x12, then the FPGA's x11/6).

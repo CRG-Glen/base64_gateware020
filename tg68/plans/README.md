@@ -73,7 +73,9 @@ when to stop and report. Results go in the plan's own log section.
    for some time: SysInfo 21165 (+10% on 20x), Frontier CPU timedemo
    +9.6%**; 12x-20x as step 21. The pin-fed build (seed 15) runs at 22x
    too, the same (SysInfo 21163); in both the 7M sample in use moved now
-   and then at 22x (no slip, no swap): 22x's own, not the PLL input.
+   and then at 22x (no slip): 22x's own. Over a longer session the
+   pin-fed build swapped streams once by itself, the 7 MHz-fed one never:
+   mild evidence for the 7 MHz-fed clock at 22x.
 9. **Next step after Glen's 22x test: burst cache fills** (Glen's choice).
    A miss fills a line of 4 or 8 words (SDRAM burst, both cache banks a
    clock) while the CPU carries on with the first word; today a miss
