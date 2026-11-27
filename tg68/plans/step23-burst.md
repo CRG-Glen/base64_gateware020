@@ -47,3 +47,31 @@ time, step 18).
    burst, filling both banks while the CPU runs on, a write to the line
    during its fill, a read of a word of the line not yet filled, the
    prefetch buffer (which a line fill would replace).
+
+## Log
+
+- Counters 20-23 (commit 2caca29; perf 1.1): a cached fast RAM /
+  MapROM miss in the same aligned 4- (20 fetch, 22 data) or 8-word line
+  (21, 23) as the previous miss of its kind, on a word no cache write
+  with another tag has hit since (8 per-word bits per kind, cleared by a
+  conflicting fill, a drop, the flush). A first version without the
+  per-word bits counted repeated conflict misses (bench c: 12 of 17
+  fetch misses alternate between a word and a Kickstart word 8 KB away)
+  and a version that forgot the whole line on any overwrite missed
+  copy's (its destination writes land on the source's index). Against
+  the tb model (would hit, 4 / 8 words): bigread 2048 / 3072 (model
+  2048 / 3072), copy 128 / 192 (132 / 194), c fetch 2 / 3 (2 / 3), c data
+  4 / 4 (10 / 12: the counter remembers one line, so it is a lower
+  bound). tb compares each with its own count; mutants (no word check;
+  no data overwrite tracking) fail bench c. Regression PASS: bus, top,
+  fastmem, top and fastmem with PERF=0.
+- What to read from Glen's runs: counter 20 / 7 and 21 / 7 are the shares
+  of fetch misses a 4- / 8-word fill would catch, 22 / 8 and 23 / 8 for
+  data. Each caught miss saves ~4-5 clocks; against counter 0 that gives
+  the time.
+- Build (`build.py full --perf`, router1, seeds 1-16): **16 of 16 pass**
+  at 12x. Ratios from each seed's 12x report (budget minus slack, so
+  setup included; the "worst ns" column leaves setup out and ranked seed 4
+  wrongly at first): best seed 7, +1.58 ns, 1.14x / **1.42x** / 1.57x at
+  16x / 20x / 22x (exp_22x seed 15: 1.20x / 1.50x / 1.65x). Shipped:
+  `bitstreams/step23_perf/`. Waiting for Glen's numbers.

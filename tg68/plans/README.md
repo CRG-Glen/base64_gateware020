@@ -78,8 +78,11 @@ when to stop and report. Results go in the plan's own log section.
    swap, as designed); no difference shown between the clock sources.
 9. **Step 23**, `step23-burst` (`step23-burst.md`): burst cache fills
    (Glen's choice). **Measuring**: sim gives sequential reads beyond the
-   cache -9% (4-word lines) / -13% (8-word), compiled C ~0; real
-   programs' miss patterns next (a perf build). Original note:
+   cache -9% (4-word lines) / -13% (8-word), compiled C ~0. **Waiting
+   for Glen**: the perf build with counters 20-23 (misses a 4- / 8-word
+   fill would catch), `bitstreams/step23_perf/` (seed 7, 1.42x at 20x,
+   1.57x at 22x): Frontier CPU timedemo, AIBB, xSysInfo, SysInfo, a game.
+   Original note:
    A miss fills a line of 4 or 8 words (SDRAM burst, both cache banks a
    clock) while the CPU carries on with the first word; today a miss
    brings one pair (32 bits) and a one-word prefetch. Expected: sequential
