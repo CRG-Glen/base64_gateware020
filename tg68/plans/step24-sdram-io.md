@@ -120,3 +120,17 @@ All benches (no RTL change).
   read, scatter, wrmix 0. All PASS. Glen chose this plan instead.
 - Hold evidence: shortest `cpu.*` pin paths 1.60 (seed 12, 7 MHz build),
   2.16, 2.47, 3.04 ns; all four builds run at 12x.
+- Checker on the four step 23 SDFs: seed 12 (7 MHz build) PASS, seeds
+  15, 4, 7 FAIL on setup (3, 6, 6 pins over 4.50). Seed 12's shortest is
+  1.5996 ns, so the hold limit is 1.55 (1.60 failed it on rounding).
+  build.py's 22x ratio from the 12x report against check_timing.py
+  --freq 156.07: 1.6119 / 1.6118 (seed 4). Sims bus, top, fastmem PASS.
+- **Build, exp-22x netlist (pin-fed), router1, seeds 1-32: 3 pass**
+  (7: pins 4.04, 22x 1.726x; 19: 4.20, 1.720x; 26: 4.42, 1.662x). The
+  longest pin path ranges 4.04-5.89 ns over the 32 seeds; 28 fail on it,
+  1 (22) on logic. Seed 15 reproduces exp_22x (4.79, 1.646x). Shipped
+  **seed 26**: pins 4.42 / 2.23, 1.21x / 1.51x / 1.66x at 16x / 20x /
+  22x (exp_22x seed 15: 1.20 / 1.50 / 1.65). `bitstreams/step24_pins/`.
+  One in ten seeds passing is the cost of the check; if later steps make
+  it worse, the plan's structural fallback (no LUT on the pin path) is
+  next.
