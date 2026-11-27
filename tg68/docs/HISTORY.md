@@ -531,6 +531,16 @@ style. `README.md` is the user-facing version of the same material.
   more sensitive to the CPU): 10.9 / 92.8 / 31.1, 14.5 / 128.6 / 41.2,
   18.2 / 154.8 / 57.1 fps (min / max / average, 12x / 16x / 20x). No
   v2.0 number to compare with; the baseline for the next steps.
+- **A deeper Chip RAM write buffer measured (step 25, branch
+  step25-chip-wbuf, closed):** a perf test build with 32 entries and the
+  depth set at run time (`perf WB 8|16|32`). Glen, Frontier CPU timedemo
+  at 20x: the same frame rate at 8, 16 and 32. The waits for a full buffer
+  fell 40% at 32 (1,917M -> 1,147M clocks) and the buffer held more than
+  16 entries for ~2G clocks, but the same 83.6M writes still cross the
+  Amiga's bus at its speed, and the next Chip RAM read or custom chip
+  access waits for them: the bus is the limit. 8 entries stay. The perf
+  build's SDRAM pin paths were 4.86-6.22 ns (no seed met 22x's 4.50):
+  shipped for 20x only (`build.py --pin-setup 5.01`).
 - **v2.1 release** (27.11.2026): main gets steps 17 to 21, exp-router1
   (router1 the default), exp-22x and step 24: four speeds, 12x / 16x /
   20x / 22x, in one bitstream with the PLLs fed from the board's 12x

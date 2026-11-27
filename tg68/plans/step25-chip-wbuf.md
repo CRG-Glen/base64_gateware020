@@ -1,6 +1,6 @@
 # Step 25: a deeper Chip RAM write buffer (measure first)
 
-Status: **measuring** (28 November 2026). Branch `step25-chip-wbuf`, from
+Status: **closed after measuring** (28 November 2026): a deeper buffer gives Frontier nothing. Branch `step25-chip-wbuf`, from
 `main` (v2.1). Item 3 of the long plan, first of the smaller items.
 Planned and built by the same model.
 
@@ -102,3 +102,15 @@ not: close the step; the waits are the bus's own speed.
   / 1.51x at 16x / 20x, `bitstreams/step25_wbuf_perf/`. A release with a
   deeper buffer would need the pin paths shortened first (step 24's
   structural fallback: no LUT between pin and register).
+- **Glen, 20x, Frontier CPU timedemo at depth 8 / 16 / 32: the same frame
+  rate each time.** Counters (whole runs, each ending in a reset): Chip
+  RAM writes 83.58M / 83.59M / 83.55M; waits for a full buffer 1,917M /
+  1,539M / 1,147M clocks (-20% / -40%); clocks with more than 8 entries
+  0 / 2,436M / 2,433M, more than 16 0 / 0 / 1,973M. The buffer does fill
+  (long streams of drawing writes), and the CPU waits less for a free
+  entry, but the same writes still go over the Amiga's bus at its own
+  speed: the next Chip RAM read (44.2M of them) or custom chip access
+  waits for the queue to drain, so the frame takes as long. The waits are
+  the bus's own speed. **Closed**: 8 entries stay. (The runs' total
+  clocks, 43.6G / 38.1G / 38.8G, include the time before each reset and
+  are not comparable.)

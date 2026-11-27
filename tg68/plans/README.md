@@ -11,8 +11,9 @@ when to stop and report. Results go in the plan's own log section.
   (run-time 12x / 16x / 20x / 22x, pin-fed PLLs). Runs on Glen's A500+ at
   all four speeds, the Frontier CPU timedemo ten times in a row at 22x.
   Released bitstream = step 24's seed 26.
-- Next: item 3 of the long plan below (step 24, its first item, is done;
-  24b, the SDRAM outputs, waits for a reason: nothing has failed there).
+- Next: item 3 of the long plan below, after the write buffer (step 25,
+  closed: no gain): one clock off every SDRAM request, a second posted
+  fast RAM write. (24b, the SDRAM outputs, waits for a reason.)
 - The old step and experiment branches are still on GitHub, with their
   test bitstreams (archiving them as tags is Glen's to do: this
   session's git access cannot push tags or delete branches).
@@ -26,9 +27,9 @@ when to stop and report. Results go in the plan's own log section.
    clock on every read). **24b**, the SDRAM outputs, only if something
    points there.
 2. ~~**A v2.1 release**~~: done (27 November 2026).
-3. **Smaller measured items**, each 1-5%: the Chip RAM write buffer
-   (5.5% of the Frontier CPU timedemo waits on it being full: first a
-   counter build for how the writes arrive); one clock off every SDRAM
+3. **Smaller measured items**, each 1-5%: ~~the Chip RAM write buffer~~
+   (step 25, `step25-chip-wbuf.md`: depth 8, 16 and 32 give Frontier the
+   same frame rate; the Amiga's bus is the limit; closed); one clock off every SDRAM
    request (buys back step 24's read clock; caches-off code like EON);
    a second posted fast RAM write (1.7% of Frontier).
 4. **Fewer kernel steps per instruction** (the 68030-style gain: the
@@ -39,7 +40,8 @@ when to stop and report. Results go in the plan's own log section.
 5. Not speed, noted only: an MMU or an FPU (very large; probably does not
    fit beside the rest).
 
-Measured and not worth building (do not redo): burst cache fills
+Measured and not worth building (do not redo): a deeper Chip RAM write
+buffer (step 25, same frame rate at 8 / 16 / 32), burst cache fills
 (step 23, 0.8-1.3% Frontier), a branch-target table (step 22's
 measurement, net 0.8%), the data-read predictor (step 22, ~1%, parked),
 16 KB caches (1-2.5%), STEP = 3, 24x.
