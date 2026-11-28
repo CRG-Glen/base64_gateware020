@@ -100,3 +100,23 @@ memory-destination instructions; `bsr` / `jsr` / `rts`; `clr`; `lea`.
   the way: a second operand never uses a base register the first one
   moved ((An)+ / -(An)), no An source for data-only operations; run.sh
   stops if the program does not assemble.
+- **Where compiled C spends its steps** (`VLFLAGS=-DOPHIST sh sim/run.sh
+  bench c`, `sim/ophist.py`; new: tb_top prints every instruction of the
+  timed pass with its kernel steps and clocks, split at `decodeopc`):
+  7,379 instructions, 2.00 steps and 8.62 clocks each. Largest shares of
+  the clocks: **Bcc 20.6%** (1,145: taken .s 769 x 3 steps, 13.0 clocks;
+  not taken .s 364 x 2 steps, 8.2 clocks), move.b mem->reg 12.1%, move.l
+  reg->mem 7.0%, move.l mem->reg 5.3%, move.l mem->mem 4.8% (5.4 steps),
+  jsr 3.6% (abs.l 6 steps, (An) 4), rts 2.6% (3 steps), lea idx(An) 2.4%
+  (4 steps), movem 3.9% (7.2 steps for ~4 registers), addq mem 1.9%
+  (7.7 steps).
+- Why a branch costs 2-3 steps (`TG68KdotC_Kernel.vhd`, "0110" and
+  `bra1`): the decode step sets `setstate "01"` (no fetch) and goes to
+  `bra1`, where `exe_condition` is first valid (the previous
+  instruction's flags are only final then); taken: `TG68_PC_brw`, then
+  `nop` fetches the target. So: decode, condition, target. A taken .s
+  branch at 2 steps would save ~769 x 4-5 clocks, **~5.5% of bench c**; a
+  not-taken one at 1 step ~2.3%. 26b: read the kernel's prefetch and
+  flag timing first, then plan the change (likely candidates: evaluate
+  the condition at decode when the previous instruction did not write
+  the flags; or fetch the next word in `bra1` when not taken).

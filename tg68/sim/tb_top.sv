@@ -530,6 +530,24 @@ module tb;
     always @(posedge uds_n) if (!rw && ba == 24'h8F00) begin
         if (d[15:8] == 8'd1) t0 = $realtime; else t1 = $realtime;
     end
+`ifdef OPHIST
+    // step 26: every instruction of the timed pass, as "OPH opcode steps
+    // clocks" (ophist.py groups them): an instruction starts at the kernel
+    // step that has decodeOPC set and ends at the next one
+    reg [15:0] oh_op = 0; integer oh_st = 0, oh_ck = 0; reg oh_on = 0;
+    always @(posedge dut.clk) begin
+        if (t0 > 0 && t1 == 0) begin
+            oh_ck = oh_ck + 1;
+            if (dut.cpu.k_clkena) begin
+                if (dut.cpu.core.cpu.decodeopc) begin
+                    if (oh_on) $display("OPH %h %0d %0d", oh_op, oh_st, oh_ck - 1);
+                    oh_on = 1; oh_op = dut.cpu.core.cpu.opcode; oh_st = 0; oh_ck = 1;
+                end
+                oh_st = oh_st + 1;
+            end
+        end
+    end
+`endif
     integer n_fm = 0; real t_as = 0, sum_as2dt = 0, sum_dt2up = 0, sum_up2as = 0, t_dt = 0, t_up = 0;
     always @(negedge dut.core_as_n) if (t0 > 0 && t1 == 0) begin
         if (t_up > 0) sum_up2as = sum_up2as + ($realtime - t_up);
