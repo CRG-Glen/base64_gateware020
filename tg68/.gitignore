@@ -36,3 +36,8 @@ sw/perf/perf_testnone
 sw/perf/*.o
 sw/perf/*.elf
 sw/perf/*.bin
+# step 26a: made by gen_isa.py / tb_isa (isa_ref.hex and isa_ref_steps.txt are kept)
+sim/isa_test.s
+sim/isa_test_cases.txt
+sim/isa_out.hex
+sim/isa_steps.txt

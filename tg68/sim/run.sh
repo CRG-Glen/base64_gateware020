@@ -10,6 +10,9 @@
 # BENCH_ASD="--defsym SPEED18=1" sim/run.sh bench copy|read|scatter|c   at 20x (SPEED16 too: 16x)
 #   (exp-22x: --defsym SPEED18=1 --defsym SPEED22=1: at 22x)
 #   sim/run.sh bench sd                  SD controller, SPI loopback
+#   sim/run.sh isa      step 26a: every instruction against isa_ref.hex (the
+#                       v2.1 core's results); ISA_REF=1 writes the reference,
+#                       ISA_ARGS="--n 5 --seed 2" passes gen_isa.py options
 # CORE=tg68_020_b0_nobf_smul sim/run.sh bus   tests another core variant
 # PERF=0 sim/run.sh ...      without the step 18 performance counters (the
 #                            normal build); default PERF=1, as build.py --perf
@@ -33,6 +36,17 @@ bus)
   $AS -o t.o test020.s && $LD -o t.elf t.o 2>/dev/null && $OC t.elf t.bin && mem t.bin rom.mem
   $VL tb_tg68_bus.sv $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v -o tb_bus > build_bus.log 2>&1
   ./obj_dir/tb_bus ;;
+isa)
+  python3 -I gen_isa.py ${ISA_ARGS}
+  rm -f isa.bin isa_out.hex isa_steps.txt
+  { $AS -o isa.o isa_test.s && $LD -o isa.elf isa.o 2>/dev/null && $OC isa.elf isa.bin; } || { echo "FAIL: isa_test.s does not assemble"; exit 1; }
+  python3 -I -c "
+d=open('isa.bin','rb').read(); d+=bytes(len(d)%2)
+open('isa.mem','w').write('\n'.join('%02x%02x'%(d[i],d[i+1]) for i in range(0,len(d),2))+'\n')"
+  $VL tb_isa.sv $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v -o tb_isa > build_isa.log 2>&1
+  ./obj_dir/tb_isa
+  if [ "${ISA_REF:-0}" = 1 ]; then cp isa_out.hex isa_ref.hex; cp isa_steps.txt isa_ref_steps.txt; echo "wrote isa_ref.hex (core $CORE)"
+  else python3 -I isa_cmp.py; fi ;;
 top)
   $AS -o tt.o test_top.s && $LD -o tt.elf tt.o 2>/dev/null && $OC tt.elf tt.bin && mem tt.bin rom_top.mem
   $VL tb_top.sv $R/base64_tg68/base64_tg68_top.sv $R/base64_tg68/clkgen.v $R/base64_tg68/tg68_bus.v $R/tg68/$CORE.v $SLAVES $PSRC -o tb_top > build_top.log 2>&1

@@ -80,6 +80,7 @@ sudo bash tg68/scripts/setup_cloud.sh          # if verilator / yowasp-yosys / m
 sh sim/run.sh bus | top | fastmem              # the three regression benches
 sh sim/run.sh bench c|copy|read|scatter|readoff|chip|wrfast|wrmix|sd
 sh sim/run.sh bench op                         # clocks and kernel steps per instruction
+sh sim/run.sh isa                              # step 26a: 1,800 instruction cases against the v2.1 core's results (isa_ref.hex)
 VLFLAGS=-DS15_DEFAULT=0 sh sim/run.sh ...      # the same with step 15 switched off
 python3 scripts/build.py full --seed 1 --seeds 8   # 4 seeds at a time, build/full/seed<N>/, table in seeds.txt
 python3 scripts/build.py full --skip-synth --seed 9 --seeds 8   # more seeds, same netlist
