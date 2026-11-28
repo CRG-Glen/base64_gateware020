@@ -261,3 +261,5 @@ off by 2, the not-taken path taking `data_in`.
   differ. If the board still fails with it off, the build is at fault
   (timing, placement); if it fails only after `speed BRANCH ON`, the
   behaviour is, and when it fails says where.
+- Switchable build, 32 seeds: **11 pass**; best seed 4, +1.65 ns, 1.13x /
+  1.42x / 1.56x, pins 4.27 / 1.60. `bitstreams/step26b_switch/`.
