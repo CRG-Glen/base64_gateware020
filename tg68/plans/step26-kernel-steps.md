@@ -234,3 +234,6 @@ off by 2, the not-taken path taking `data_in`.
   (-2.5%); copy, read, scatter, readoff, chip, wrchip, wrfast, wrmix, sd
   unchanged. bench op: bra.s / bne.s taken 2 steps, 8 clocks (13 before);
   beq.s not taken 2 steps, 8 clocks (as before).
+- Regression with the fix: bus, top, fastmem (and PERF=0, CAL_TEST) PASS;
+  isa 0 of 1,820 differ; every bench as the first version (bench c
+  60,792, coff 117,048; the rest unchanged); bench sd PASS.
