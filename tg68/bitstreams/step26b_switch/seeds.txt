@@ -1,0 +1,33 @@
+seed  result  worst 1T  worst multicycle  22x ratio  pins setup / hold  worst failing class
+   1  FAIL       +1.05             +4.01     1.651x    4.21 / 1.54    sdram pins
+   2  FAIL       +1.36             +4.77     1.603x    4.25 / 1.43    sdram pins
+   3  PASS       +0.39             +2.06     1.754x    3.97 / 1.62    
+   4  PASS       +1.65             +4.94     1.558x    4.27 / 1.60    
+   5  PASS       +1.02             +4.02     1.656x    4.01 / 1.65    
+   6  FAIL       +1.00             +3.84     1.659x    4.52 / 2.01    sdram pins
+   7  PASS       +0.79             +5.02     1.691x    4.05 / 1.62    
+   8  FAIL       +1.26             +3.32     1.642x    4.00 / 1.43    sdram pins
+   9  FAIL       +0.81             +3.78     1.688x    5.31 / 1.64    sdram pins
+  10  FAIL       +0.94             +4.65     1.668x    4.06 / 1.42    sdram pins
+  11  PASS       +1.32             +2.88     1.665x    4.17 / 1.86    
+  12  FAIL       +1.20             +3.83     1.627x    4.06 / 1.40    sdram pins
+  13  FAIL       +0.52             +2.75     1.734x    3.66 / 1.31    sdram pins
+  14  PASS       +1.09             +4.35     1.645x    4.47 / 1.81    
+  15  PASS       +0.97             +3.35     1.663x    4.25 / 1.86    
+  16  FAIL       +1.49             +4.36     1.588x    4.93 / 1.36    sdram pins
+  17  PASS       +0.77             +3.38     1.695x    4.11 / 1.94    
+  18  FAIL       +1.08             +3.36     1.646x    3.92 / 1.43    sdram pins
+  19  PASS       +1.11             +3.60     1.642x    4.12 / 1.74    
+  20  FAIL       +1.24             +3.46     1.635x    4.30 / 1.48    sdram pins
+  21  PASS       +1.28             +3.08     1.655x    4.02 / 1.64    
+  22  FAIL       +0.77             +2.67     1.695x    4.29 / 1.50    sdram pins
+  23  FAIL       +1.51             +3.72     1.621x    4.74 / 1.63    sdram pins
+  24  FAIL       +1.33             +3.54     1.631x    5.09 / 1.91    sdram pins
+  25  FAIL       +1.34             +3.42     1.637x    4.14 / 1.48    sdram pins
+  26  FAIL       +1.34             +3.78     1.618x    4.57 / 1.83    sdram pins
+  27  FAIL       +1.13             +3.78     1.638x    4.35 / 1.45    sdram pins
+  28  PASS       +1.29             +4.19     1.613x    3.67 / 1.69    
+  29  FAIL       +1.02             +4.17     1.656x    4.57 / 1.60    sdram pins
+  30  FAIL       +0.95             +2.67     1.676x    3.93 / 1.45    sdram pins
+  31  FAIL       +1.23             +4.81     1.623x    4.25 / 1.37    sdram pins
+  32  FAIL       +0.85             +4.61     1.682x    5.09 / 1.25    sdram pins
