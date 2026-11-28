@@ -99,7 +99,7 @@ module tb;
     initial begin
         repeat (100) @(posedge clk);
         ext_reset = 0;
-        for (k = 0; k < 400000000 && !done; k = k + 1) @(posedge clk);
+        for (k = 0; k < 60000000 && !done; k = k + 1) @(posedge clk);
         if (!done) begin $display("FAIL: no done marker (last case %0d, a=%h, q=%0d)", cas, byte_a, dut.q); errors = errors + 1; end
         // the end marker is case n (= the number of cases): the result area
         // is n blocks of 200 bytes (100 words) from $200000

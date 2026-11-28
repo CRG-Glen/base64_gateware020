@@ -492,8 +492,10 @@ ALU: TG68K_ALU
 	-- does shift for byte access. note active low me
 	-- should produce address error on 68000
 	memmaskmux <= memmask when addr(0) = '1' else memmask(4 downto 0) & '1';
-	nUDS <= memmaskmux(5);
-	nLDS <= memmaskmux(4);
+	-- Base64 change 6: br_take's target fetch is a word read on the bus (the
+	-- kernel's own memmask stays the idle cycle's, so nothing inside changes)
+	nUDS <= memmaskmux(5) AND NOT br_take;
+	nLDS <= memmaskmux(4) AND NOT br_take;
 
 	-- wb_plain records the ordinary-longword mask for both data and writeback.
 	-- The former active qualifier differed only in idle state; state(1)

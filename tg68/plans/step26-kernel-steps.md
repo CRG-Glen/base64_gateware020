@@ -202,3 +202,35 @@ off by 2, the not-taken path taking `data_in`.
 - Timing: the new adder and the E2 overrides are kernel -> kernel (4T);
   if the 22x ratio rises by more than ~0.03x, report before going on.
 - Anything in the isa suite that differs.
+- **26b, as built** (the plan's design, simplified): no adapter change
+  and no new ports. In bra1 of a Bcc.s whose condition holds (`br_take`),
+  the kernel's `busstate` output says fetch, `addr_out` is the target
+  (set at the decode, `br_tgt`), and the data strobes go low; the
+  adapter does an ordinary fetch (cache, SDRAM or the bus), so there is
+  no `br_ok` and no question of a miss. Not taken: the cycle stays
+  internal, exactly as v2.1. The kernel's own `state` stays 01 either
+  way; at E2 `br_take` loads `opcode`, `last_opc_read` from `data_in`,
+  `exe_pc` / `last_opc_pc` from `br_tgt`, `TG68_PC <= br_tgt + 2`, and an
+  interrupt waits one instruction.
+- First version failed the new isa cases: a taken branch to a target not
+  in the cache hung (case 1711, `bpl.s` to an `illegal`): the bus fetch's
+  data strobes followed the kernel's idle-cycle memmask, so the slave
+  never answered. bench c and the regression sims had passed because all
+  their branch targets were cached. Fix: `nUDS` / `nLDS` low while
+  `br_take` (outputs only). gen_isa.py gained `bcc.s+trap` (a taken or
+  not-taken branch, then illegal / trap / divide by zero / chk on each
+  path: the stacked PC compared) and `bcc.s loop` (uncached first, then
+  cached); 1,820 cases; the reference remade on the v2.1 core
+  (`git show 4158f10~1:tg68/rtl/tg68/tg68_020_b1.v >
+  rtl/tg68/tg68_020_v21.v; CORE=tg68_020_v21 ISA_REF=1 sh sim/run.sh
+  isa`). **isa: 0 of 1,820 differ, 47 cases with fewer steps.** Mutants:
+  the PC after the target +4 instead of +2 (13 differ, then lost) and
+  `br_take` without the condition (5 differ, then lost): both FAIL.
+  tb_isa's timeout cut to 60M clocks (a lost program now fails in ~2
+  minutes, not 10).
+- Benches (first version; all targets cached there, so the same with the
+  fix, rechecked below): bench c 63,900 -> **60,792 (-4.9%)**, at 20x
+  38,676 -> 36,816, at 22x 35,232 -> 33,564; coff 120,024 -> 117,048
+  (-2.5%); copy, read, scatter, readoff, chip, wrchip, wrfast, wrmix, sd
+  unchanged. bench op: bra.s / bne.s taken 2 steps, 8 clocks (13 before);
+  beq.s not taken 2 steps, 8 clocks (as before).
