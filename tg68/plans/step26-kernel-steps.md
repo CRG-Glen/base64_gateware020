@@ -120,3 +120,85 @@ memory-destination instructions; `bsr` / `jsr` / `rts`; `clr`; `lea`.
   flag timing first, then plan the change (likely candidates: evaluate
   the condition at decode when the previous instruction did not write
   the flags; or fetch the next word in `bra1` when not taken).
+
+## 26b: taken short branches in 2 steps (planned 28 November 2026)
+
+Branch `step26b-branch`, from `step26-kernel-tests`.
+
+### How a Bcc.s runs today (TG68KdotC_Kernel.vhd)
+
+Edges E0, E1, E2, E3 are kernel steps; `state` is the bus cycle that runs
+between two edges (set from `setstate` at the earlier one).
+
+- E0 (end of the previous instruction): `setopcode`, `opcode <=
+  data_read` (the Bcc word); `state <= 00`: the cycle E0-E1 fetches
+  Bcc+2 (`TG68_PC` = the address being fetched).
+- E1 (decode, `micro_state` idle): the "0110" branch sets `setstate
+  "01"` (no bus cycle) and `next_micro_state <= bra1`; `last_opc_read <=`
+  the Bcc+2 word, `TG68_PC <=` Bcc+4. The previous instruction's ALU
+  writes `Flags` at this same edge, and `exe_opcode <= opcode`.
+- E2 (`bra1`): `exe_condition` (from `exe_opcode` and the registered
+  `Flags`) is first right. Not taken: nothing; `setopcode` with `state`
+  01 takes `opcode <= last_opc_read` (Bcc+2): **2 steps**. Taken:
+  `TG68_PC_brw` (PC = target), `next_micro_state <= nop`.
+- E3 (`nop`): the cycle E2-E3 fetched the target; `setopcode`,
+  `opcode <= data_read`: **3 steps**.
+
+The condition cannot move to E1: the flags it needs are written at E1
+by the ALU, on v2.1's worst kernel path (register file -> ALU -> flag
+register, 36.7 ns of 46.5); putting the condition and the PC adder behind
+it would cost 20x / 22x their margin.
+
+### The change: fetch the target in the condition step
+
+The cycle E1-E2 is idle today. The target is known at E1 (`TG68_PC` +
+the 8-bit displacement), whatever the condition. So:
+
+1. Kernel (a sixth marked change, `-- Base64 26b`): at E1, for a Bcc.s
+   (not bra/bsr, not .w/.l) with no trace bit and no pending bus error:
+   `br_tgt <= TG68_PC + sext(opcode(7:0))` (a new adder, from registers),
+   `brspec <= 1`, and the address for the E1-E2 cycle (`memaddr_delta_rega`)
+   = that target. `state` stays 01, so everything the kernel does at E2
+   is as today when the branch is not taken.
+2. Kernel output `br_fetch` (micro_state = bra1 and brspec): the adapter
+   reads the instruction cache at the address during the idle cycle and,
+   on a hit, puts the word on `data_in` (as for a cached fetch) and raises
+   a new kernel input `br_ok`. On a miss nothing is fetched (no SDRAM or
+   Chip RAM access for a branch that may not be taken).
+3. Kernel at E2 (`bra1`), taken AND `br_ok`: as if the cycle had been a
+   fetch of the target: `next_micro_state` idle (decode next), `opcode
+   <= data_in`, `last_opc_read <= data_in`, `last_opc_pc` and `exe_pc <=
+   br_tgt`, `TG68_PC <= br_tgt + 2` and the next fetch address the same;
+   an interrupt waits one instruction (setopcode wins at this boundary).
+   Taken without `br_ok`: today's path. Not taken: today's path.
+4. Adapter (tg68_bus.v): a DECIDE branch for an internal step with
+   `br_fetch`: the cache lookup as for a fetch (CCMP), a hit steps with
+   the word and `br_ok`; a miss steps as an internal step. The fetch
+   predictor follows the target (the next fetch is target+2 when taken).
+   `br_ok` is an adapter -> kernel input: it must be stable 2 clocks
+   before the kernel samples it (tb assertion, as `ks_chg`).
+
+### Expected (bench c, 12x)
+
+Taken .s: 13 -> ~9 clocks (769 of them); not taken: 8.2 -> ~9-10 (the
+lookup is CCMP's 5 clocks, and the predictor then points at the target):
+**about -3.7% clocks** (63,900 -> ~61,500). Frontier unknown: a perf
+counter for taken branches goes into the test build.
+
+### Tests
+
+`sh sim/run.sh isa` against the v2.1 reference (0 differ; branch cases
+fewer steps), and gen_isa additions: a not-taken and a taken Bcc.s
+followed by a trapping instruction (illegal, divide by zero, trap) so
+the stacked PC after each path is compared; Bcc.s to a target that is
+not cached (first pass) and cached (second pass); a branch to itself.
+The three regression sims, every bench (bench c must fall by about the
+amount above, `bench op` taken bra.s 13 -> 9), `bench sd`. Mutants:
+`br_ok` ignored (garbage opcode on a miss: isa must fail), the target
+off by 2, the not-taken path taking `data_in`.
+
+### Stop conditions
+
+- Timing: the new adder and the E2 overrides are kernel -> kernel (4T);
+  if the 22x ratio rises by more than ~0.03x, report before going on.
+- Anything in the isa suite that differs.
