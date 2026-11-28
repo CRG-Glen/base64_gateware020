@@ -41,3 +41,6 @@ sim/isa_test.s
 sim/isa_test_cases.txt
 sim/isa_out.hex
 sim/isa_steps.txt
+# step 26: the v2.1 core, copied from git history to remake isa_ref.hex
+# (git show 4158f10~1:tg68/rtl/tg68/tg68_020_b1.v > rtl/tg68/tg68_020_v21.v)
+rtl/tg68/tg68_020_v21.v
