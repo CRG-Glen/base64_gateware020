@@ -243,3 +243,21 @@ off by 2, the not-taken path taking `data_in`.
   14, 15, 16, 28, 29, 31, 32 have a pin path under 1.55 ns). Shipped
   **seed 10**: +1.47 ns, 1.18x / 1.47x / **1.62x** (v2.1 seed 26: 1.21x
   / 1.51x / 1.66x), pins 4.13 / 1.59. `bitstreams/step26b_branch/`.
+- **Glen: seed 10 does not boot** (black screen, LED flashing white /
+  pink: the red "a bus cycle waited ~100 ms with no DTACK" is on). Not
+  reproduced: new isa cases with a branch straight after data writes,
+  reads, movem, multiply, divide (1,830 cases, 0 differ), and a check in
+  tb_isa and tb_top that the fetched target equals the original path's
+  (tmp_TG68_PC + displacement) on every speculative branch: 86 (isa) and
+  568 (fastmem) checked, 0 differ. GHDL infers no latch.
+- **Diagnosis build: change 6 behind a run-time switch, off at power-on.**
+  Kernel input `brspec_en` (gates `set_brspec`), through tg68_020.vhd and
+  tg68_bus.v, from `kopt_br` in turbomem_zii (+$F00E, key $5E: $5E01 on,
+  $5E00 off; reads back in bit 0 in normal builds; power-on 0 on the
+  board, 1 in the sims, `KOPT_DEFAULT`); classed static in
+  check_timing.py (written by a CPU cycle, read only by the kernel's
+  decode >= STEP later). `speed` 1.6: `speed BRANCH ON|OFF`. Off: bench c
+  63,900 (v2.1 exactly); on: 60,792; bus / top / fastmem PASS, isa 0
+  differ. If the board still fails with it off, the build is at fault
+  (timing, placement); if it fails only after `speed BRANCH ON`, the
+  behaviour is, and when it fails says where.

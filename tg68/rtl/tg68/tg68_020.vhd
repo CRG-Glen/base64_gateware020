@@ -33,6 +33,7 @@ entity tg68_020 is
     data_in    : in  std_logic_vector(15 downto 0);
     data_in_hi : in  std_logic_vector(15 downto 0);   -- wide read, word at addr+0
     long_ack   : in  std_logic;                       -- accept this aligned pair
+    brspec_en  : in  std_logic;                       -- Base64 change 6 on (run-time switch)
     ipl        : in  std_logic_vector(2 downto 0);
     berr       : in  std_logic;
     addr_out   : out std_logic_vector(31 downto 0);
@@ -61,7 +62,7 @@ begin
     port map (clk => clk, nReset => nreset, clkena_in => clkena_in,
               clkena_lw_in => clkena_lw_in, clkena_lw2_in => clkena_lw2_in,
               clkena_lw2n_in => clkena_lw2n_in, clkena_lw3_in => clkena_lw3_in,
-              data_in => data_in, data_in_hi => data_in_hi, long_ack => long_ack,
+              data_in => data_in, data_in_hi => data_in_hi, long_ack => long_ack, brspec_en => brspec_en,
               IPL => ipl, IPL_autovector => '0',
               berr => berr, CPU => "11",
               addr_out => addr_out, data_write => data_write,

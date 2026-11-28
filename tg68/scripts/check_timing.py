@@ -140,6 +140,13 @@ STATIC = re.compile(r'^(g_(fastmem|sd)\.u_\w+\.(maprom_active|maprom_load|config
                     # (...and inside the fast RAM instance: seen in the step
                     # 13 build, g_fastmem.u_fastmem.fm_cfg_match = addr_match)
                     r'|g_sdram\.u_sdram\.init_done'
+                    # step 26b: the kernel-option bit (turbomem_zii, key $5E
+                    # at +$F00E), written by a CPU cycle to the board's own
+                    # registers: the kernel decodes no instruction for >= 4
+                    # clocks after that write (its next decode step is the
+                    # adapter's STEP away), and nothing reads it but the
+                    # kernel's decode; names as for the MapROM bits
+                    r'|(g_fastmem\.u_turbomem\.)?kopt_br'
                     # step 13, the run-time speed settings: spd and what is
                     # registered from it (7M grid count and half point, 1 ms
                     # count, rt_ hold, SD clock stretch), clk_sel, and the

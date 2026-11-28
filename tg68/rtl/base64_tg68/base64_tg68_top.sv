@@ -1023,6 +1023,7 @@ module base64_tg68_top #(
 `ifdef TG68_PERF
     wire [19:0] perf_ev_cpu;   // step 18: the adapter's event flags (perf_cnt)
 `endif
+    wire kopt_br;   // step 26b: kernel change 6 on (turbomem_zii, +$F00E key $5E)
     tg68_bus #(.STEP(TG_STEP), .SETTLE(TG_SETTLE), .DIN_SETUP(TG_DIN),
                .ADDR_SETUP(TG_ASU)) cpu (
         .clk      (clk),
@@ -1032,6 +1033,7 @@ module base64_tg68_top #(
         .enPhi1   (en_phi1),
         .enPhi2   (en_phi2),
         .HALTn    (tg_halt_n),
+        .brspec_en(kopt_br),          // step 26b: turbomem_zii's kernel-option bit
         .extReset (ext_reset),
         .cyc_idle (cpu_cyc_idle),
         .pwrUp    (~pwrup_done),
@@ -2124,6 +2126,7 @@ module base64_tg68_top #(
         .spd_wr     (spd_wr),
         .spd_val    (spd_val),
         .spd_smp    (spd_smp),
+        .kopt_br    (kopt_br),
         .spd_stat   (spd_stat),
         .spd_stat2  ({7'd0, pll_lock22, n_swap}),     // step 14: +$F00C (exp-22x: bit 8 = 22x PLL locked)
 `ifdef TG68_PERF
@@ -2163,6 +2166,7 @@ module base64_tg68_top #(
     assign fm_win   = 1'b0;
     assign fm_cfg_on = 1'b0; assign fm_cfg_match = 8'h00;
     assign dp_ack   = 1'b0; assign dp_rdata = 16'h0000;
+    assign kopt_br  = 1'b0;   // step 26b: no board registers, no fast branches
     assign fm_dout  = 16'hFFFF;
     assign fm_ac_access = 1'b0; assign fm_ac_oe = 1'b0; assign fm_ac_dtack_n = 1'b1;
     assign fm_ac_dout = 4'hF;

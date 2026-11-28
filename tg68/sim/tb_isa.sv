@@ -26,7 +26,7 @@ module tb;
     reg icw = 1'b0;
     always @(posedge clk) icw <= 1'b1;
     tg68_bus dut (
-        .clk(clk), .enPhi1(1'b0), .enPhi2(1'b0), .HALTn(1'b1),
+        .clk(clk), .enPhi1(1'b0), .enPhi2(1'b0), .HALTn(1'b1), .brspec_en(1'b1),
         .extReset(ext_reset), .pwrUp(1'b0), .cyc_idle(),
         .oRESETn(oRESETn), .oHALTEDn(oHALTEDn), .E(), .VPAn(1'b1), .VMAn(),
         .ASn(ASn), .eRWn(eRWn), .LDSn(LDSn), .UDSn(UDSn),
@@ -80,6 +80,20 @@ module tb;
         endcase
     end
 
+    // step 26b: in bra1 of a speculative branch, the target the kernel
+    // fetched (br_tgt, from TG68_PC at the decode) must be the one the
+    // original path computes there (tmp_TG68_PC + the displacement)
+    integer br_chk = 0, br_bad = 0;
+`ifndef ISA_V21     // (VLFLAGS=-DISA_V21 for a core without change 6, e.g. making the reference)
+    always @(posedge clk) if (dut.k_clkena && dut.core.cpu.brspec) begin
+        br_chk = br_chk + 1;
+        if (dut.core.cpu.br_tgt !== dut.core.cpu.tmp_tg68_pc + {{24{dut.core.cpu.opcode[7]}}, dut.core.cpu.opcode[7:0]}) begin
+            if (br_bad < 10) $display("FAIL case %0d: branch target %h, the original path's %h", cas, dut.core.cpu.br_tgt,
+                                      dut.core.cpu.tmp_tg68_pc + {{24{dut.core.cpu.opcode[7]}}, dut.core.cpu.opcode[7:0]});
+            br_bad = br_bad + 1;
+        end
+    end
+`endif
     // ---- kernel steps per case ----------------------------------------
     integer steps = 0, case_steps = 0, clocks = 0;
     integer stp [0:16383];
@@ -112,6 +126,8 @@ module tb;
         $fclose(fd);
         $display("cases %0d, kernel steps %0d, clocks %0d, bus cycles %0d", n_case, steps, clocks, cycles);
         if (stalled) begin $display("FAIL stall flag set"); errors = errors + 1; end
+        $display("speculative branches %0d, target differs from the original path %0d", br_chk, br_bad);
+        if (br_bad) errors = errors + 1;
         if (errors == 0) $display("RAN"); else $display("FAILED with %0d errors", errors);
         $finish;
     end

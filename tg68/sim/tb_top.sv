@@ -523,6 +523,23 @@ module tb;
     always @(negedge as_n) if (!rw && !chipram && ba[23:16] != 8'hBF) begin
         $display("unmapped write %h", ba); unmapped = unmapped + 1; end
 
+`ifndef ISA_V21
+    // step 26b: in bra1 of a speculative branch, br_tgt must equal the
+    // original path's target (tmp_TG68_PC + displacement), whatever came
+    // before the branch (bus cycles, interrupts)
+    integer br_chk = 0, br_bad = 0, br_take_n = 0, br_irq = 0;
+    always @(posedge dut.clk) if (dut.cpu.k_clkena && dut.cpu.core.cpu.brspec) begin
+        br_chk = br_chk + 1;
+        if (dut.cpu.core.cpu.br_take) br_take_n = br_take_n + 1;
+        if (dut.cpu.core.cpu.br_take && dut.cpu.core.cpu.ipl != 3'b000) br_irq = br_irq + 1;
+        if (dut.cpu.core.cpu.br_tgt !== dut.cpu.core.cpu.tmp_tg68_pc + {{24{dut.cpu.core.cpu.opcode[7]}}, dut.cpu.core.cpu.opcode[7:0]}) begin
+            if (br_bad < 10) $display("FAIL branch target %h, the original path's %h, at %0t", dut.cpu.core.cpu.br_tgt,
+                                      dut.cpu.core.cpu.tmp_tg68_pc + {{24{dut.cpu.core.cpu.opcode[7]}}, dut.cpu.core.cpu.opcode[7:0]}, $time);
+            br_bad = br_bad + 1; errors = errors + 1;
+        end
+    end
+    final $display("speculative branches %0d (taken %0d, with an interrupt level up %0d), target differs %0d", br_chk, br_take_n, br_irq, br_bad);
+`endif
 `ifdef MEMBENCH
     // time between the start/end markers, and per-phase accounting of
     // fast RAM cycles: AS(core) low -> DTACK(core) -> AS high -> next AS

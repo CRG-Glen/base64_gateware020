@@ -60,6 +60,13 @@
 // port is itself a register — that is already a normal one-clock hop, and
 // using the registered decode there would put it two clocks behind.
 //
+`ifndef KOPT_DEFAULT
+`ifdef YOSYS
+`define KOPT_DEFAULT 1'b0   // the board: change 6 off until the speed command turns it on
+`else
+`define KOPT_DEFAULT 1'b1   // the sims: on, so every bench exercises it
+`endif
+`endif
 module turbomem_zii #(
     // ROM_FILE IS DECLARED FIRST AND LEFT UNTYPED ON PURPOSE. In an ANSI
     // parameter port list a declaration that omits its data type can inherit
@@ -178,6 +185,10 @@ module turbomem_zii #(
     output reg         spd_wr = 1'b0,   // one-clock pulse: a keyed write
     output reg  [1:0]  spd_val = 2'd0,  // 0 12x, 1 14x, 2 16x
     output reg  [1:0]  spd_smp = 2'd0,  // 7M sampling: 0 auto, 1 rise, 2 fall
+    // TG68 step 26b: kernel change 6 (taken Bcc.s fetch the target in the
+    // condition step) on / off, a keyed write $5E01 / $5E00 to +$F00E;
+    // power-on off (`KOPT_DEFAULT: the sims turn it on), kept over a reset
+    output reg         kopt_br = `KOPT_DEFAULT,
     input  wire [15:0] spd_stat,        // what +$F00A reads
     input  wire [15:0] spd_stat2        // TG68 step 14: what +$F00C reads
 `ifdef TG68_PERF
@@ -367,7 +378,9 @@ always @(posedge clk) rom_q <= rom[a[ROM_AWID:1]];
 //           multiplier} (the top level's spd_stat)
 //   +$F00C  speed status 2 (step 14), read-only: automatic 7M sample
 //           swaps since power-up (low byte; the top level's spd_stat2)
-//   +$F00E..            reserved, read as zero
+//   +$F00E  (TG68 step 26b) kernel options, write $5E0n: bit 0 = change 6
+//           (taken short branches in 2 steps) on; read {15'b0, on}
+//   +$F010..            reserved, read as zero
 //   (TG68 step 18, test builds with TG68_PERF only: +$F00E performance
 //   counter control, write $5Cxx (perf_cnt.v: xx = 00nnnnnn select counter
 //   n, $40 freeze, $80 run, $C0 clear), read {run, frozen by a
@@ -414,7 +427,7 @@ always @(posedge clk) begin
     if (a[3])
         status_q <= (a[2:1] == 2'd0) ? {14'd0, mr_ctrl}
                   : (a[2:1] == 2'd1) ? spd_stat                 // TG68: speed
-                  : (a[2:1] == 2'd2) ? spd_stat2 : 16'h0000;   // TG68 step 14
+                  : (a[2:1] == 2'd2) ? spd_stat2 : {15'd0, kopt_br};   // TG68 step 14; step 26b
     else
 `endif
         status_q <= status_i[{a[2:1], 4'b0000} +: 16];
@@ -454,6 +467,14 @@ always @(posedge clk) begin
         else if (d_in[5:0] == 6'd22) begin spd_wr <= 1'b1; spd_val <= 2'd3; spd_smp <= d_in[7:6]; end
     end
 end
+
+// TG68 step 26b: kernel options at +$F00E, key $5E (the perf key $5C at the
+// same address in perf builds is a different key)
+wire kopt_wr_hit = tm_space && status_hit && !ds_n && !rw && (a[3:1] == 3'd7);
+reg  kopt_wr_q;
+always @(posedge clk) kopt_wr_q <= kopt_wr_hit;
+always @(posedge clk)
+    if (kopt_wr_hit && !kopt_wr_q && d_in[15:8] == 8'h5E && d_in[7:1] == 7'd0) kopt_br <= d_in[0];
 
 `ifdef TG68_PERF
 // TG68 step 18: the performance counters' control register at +$F00E, keyed

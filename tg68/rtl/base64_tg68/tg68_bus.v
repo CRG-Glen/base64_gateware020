@@ -111,6 +111,7 @@ module tg68_bus #(
     input  wire        enPhi1,     // unused, kept for drop-in compatibility
     input  wire        enPhi2,     // unused
     input  wire        HALTn,      // external HALT: holds off new cycles
+    input  wire        brspec_en,  // step 26b: kernel change 6 on (a config register, static)
     input  wire        extReset,   // core reset (RESET+HALT, power-up)
     // TG68 step 13: cyc_idle = no cycle in progress and the SDRAM port
     // free, for the speed switch (which holds the CPU through HALTn)
@@ -277,6 +278,9 @@ module tg68_bus #(
         .data_in    (k_dat),
         .data_in_hi (k_din_hmux),
         .long_ack   (k_long_ack),
+`ifndef ISA_V21
+        .brspec_en  (brspec_en),     // (the v2.1 core has no such port: sims of it set ISA_V21)
+`endif
         .ipl        (k_ipl),
         .berr       (k_berr),
         .addr_out   (k_addr),

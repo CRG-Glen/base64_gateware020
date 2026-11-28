@@ -11,7 +11,8 @@
 #   (exp-22x: --defsym SPEED18=1 --defsym SPEED22=1: at 22x)
 #   sim/run.sh bench sd                  SD controller, SPI loopback
 #   sim/run.sh isa      step 26a: every instruction against isa_ref.hex (the
-#                       v2.1 core's results); ISA_REF=1 writes the reference,
+#                       v2.1 core's results); ISA_REF=1 writes the reference
+#                       (on the v2.1 core: CORE=tg68_020_v21 VLFLAGS=-DISA_V21),
 #                       ISA_ARGS="--n 5 --seed 2" passes gen_isa.py options
 # CORE=tg68_020_b0_nobf_smul sim/run.sh bus   tests another core variant
 # PERF=0 sim/run.sh ...      without the step 18 performance counters (the

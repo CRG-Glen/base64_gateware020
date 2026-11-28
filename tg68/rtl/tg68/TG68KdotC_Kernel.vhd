@@ -151,6 +151,7 @@ entity TG68KdotC_Kernel is
 		-- Without long_ack, the normal 16-bit transfer sequence is used.
 		long_cand               : out std_logic;
 		long_ack                : in std_logic:='0';
+		brspec_en               : in std_logic:='0';	-- Base64 change 6: allow the target fetch
 		data_in_hi              : in std_logic_vector(15 downto 0):=(others=>'0');
 		data_write_lo           : out std_logic_vector(15 downto 0);
 		nResetOut				: out std_logic;
@@ -2957,7 +2958,7 @@ PROCESS (clk, cpu, OP1out, OP2out, opcode, exe_condition, nextpass, micro_state,
 							setstate <= "01";
 							next_micro_state <= bra1;
 							-- Base64 change 6: fetch the target in bra1 if taken
-							IF FlagsSR(7 downto 6)="00" AND make_berr='0' THEN
+							IF FlagsSR(7 downto 6)="00" AND make_berr='0' AND brspec_en='1' THEN
 								set_brspec <= '1';
 							END IF;
 						END IF;

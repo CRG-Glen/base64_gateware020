@@ -73,6 +73,7 @@
         .equ    MAGIC,      0x544D
         .equ    SPD_REG,    0x0A            | offset in the status window
         .equ    SPD_KEY,    0x5B00
+        .equ    KOPT_REG,   0x0E            | step 26b: kernel options (+$F00E, key $5E)
         .equ    B_LOCK14,   8
         .equ    B_LOCK16,   9
         .equ    B_SWITCH,   10
@@ -184,6 +185,33 @@ _start:
 6:      or.b    #0x20,%d0
         cmp.b   #'s',%d0                    | STATUS
         beq   args_done
+        cmp.b   #'b',%d0                    | step 26b: BRANCH ON|OFF
+        bne.s   usage
+10:     tst.l   %d1                         | skip the rest of the word
+        beq.s   usage
+        move.b  (%a0)+,%d0
+        subq.l  #1,%d1
+        cmp.b   #' ',%d0
+        bne.s   10b
+11:     tst.l   %d1                         | and the blanks
+        beq.s   usage
+        move.b  (%a0)+,%d0
+        subq.l  #1,%d1
+        cmp.b   #' ',%d0
+        beq.s   11b
+        or.b    #0x20,%d0
+        cmp.b   #'o',%d0
+        bne.s   usage
+        tst.l   %d1
+        beq.s   usage
+        move.b  (%a0)+,%d0
+        or.b    #0x20,%d0
+        move.w  #0x200,%d6                  | OFF
+        cmp.b   #'f',%d0
+        beq     args_done
+        move.w  #0x100,%d6                  | ON
+        cmp.b   #'n',%d0
+        beq     args_done
 usage:
         lea     m_usage(%pc),%a0
         bsr     puts
@@ -249,7 +277,22 @@ args_done:
         lea     m_nowin(%pc),%a0
         bsr     puts
         bra     close_exp
-3:      move.w  SPD_REG(%a2),%d5            | d5 = speed register
+3:      move.w  %d6,%d0                     | step 26b: BRANCH ON|OFF
+        and.w   #0x300,%d0
+        beq.s   13f
+        move.w  #0x5E00,%d0
+        btst    #8,%d6
+        beq.s   12f
+        moveq   #1,%d1
+        or.w    %d1,%d0
+12:     move.w  %d0,KOPT_REG(%a2)
+        lea     m_broff(%pc),%a0
+        btst    #0,KOPT_REG+1(%a2)          | what the gateware says now
+        beq.s   14f
+        lea     m_bron(%pc),%a0
+14:     bsr     puts
+        bra     close_exp
+13:     move.w  SPD_REG(%a2),%d5            | d5 = speed register
         btst    #B_SWITCH,%d5
         bne.s   4f
         | no run-time switching: a fixed 16x build reads $0010, an older
@@ -464,8 +507,10 @@ puthexn:
 | ---- text ------------------------------------------------------------------
 dosname:    .asciz  "dos.library"
 expname:    .asciz  "expansion.library"
-verstag:    .asciz  "$VER: speed 1.5 (24.11.2026) Base64"
-m_usage:    .asciz  "Usage: speed               show the clock in force\n       speed 12            85.1 MHz (power-on default)\n       speed 16           113.5 MHz\n       speed 20           141.9 MHz\n       speed 22           156.1 MHz (if the gateware has it)\n       speed <n> RISE|FALL  force the 7 MHz sampling edge\nThe speed stays over a reset; a power cycle returns to 12.\nThe speed in force again: recalibrate the 7 MHz capture.\n"
+verstag:    .asciz  "$VER: speed 1.6 (28.11.2026) Base64"
+m_usage:    .asciz  "Usage: speed               show the clock in force\n       speed 12            85.1 MHz (power-on default)\n       speed 16           113.5 MHz\n       speed 20           141.9 MHz\n       speed 22           156.1 MHz (if the gateware has it)\n       speed <n> RISE|FALL  force the 7 MHz sampling edge\n       speed BRANCH ON|OFF  step 26b test builds: fast branches\nThe speed stays over a reset; a power cycle returns to 12.\nThe speed in force again: recalibrate the 7 MHz capture.\n"
+m_bron:     .asciz  "Fast branches (step 26b): ON\n"
+m_broff:    .asciz  "Fast branches (step 26b): OFF (or this gateware does not have them)\n"
 m_noexp:    .asciz  "cannot open expansion.library\n"
 m_noboard:  .asciz  "No Base64 AutoConfig ROM board found (5194/14).\n"
 m_nowin:    .asciz  "Board found, but no status window - gateware is too old.\n"

@@ -321,6 +321,12 @@ form('bcc')(lambda c, L: ['b%s.%s 1f' % (R.choice(BCONDS + ['ra']), R.choice('sw
 # uncached the first time, from the cache after)
 form('bcc.s+trap')(lambda c, L: ['b%s.s 1f' % R.choice(BCONDS + ['ra']), R.choice(['illegal', 'trap #5', 'divu.w #0,%d1']), '1: ' + R.choice(['illegal', 'trap #6', 'divu.w #0,%d2', 'chk.w #-1,%d3'])])
 form('bcc.s loop')(lambda c, L: (c.d.__setitem__(0, R.randrange(-4, 3) & 0xFFFFFFFF), ['2: addq.l #1,%d0', 'cmp.l #3,%d0', 'b%s.s 2b' % R.choice(['lt', 'le', 'ne', 'mi', 'cs'])])[1])
+# step 26b: a short branch straight after instructions whose last bus cycle
+# is not an opcode fetch (a data write, a read, a long internal sequence):
+# the branch's own word may then have been prefetched earlier
+PREV = ['move.l %d1,(%a0)', 'move.w (%a1),%d2', 'add.l %d3,(%a2)', 'mulu.w %d4,%d5', 'divu.w #7,%d6', 'movem.l %d0-%d2,-(%a3)',
+        'move.l (%a0)+,%d4', 'tst.l (%a1)', 'clr.l (%a2)', 'lsl.l #5,%d1', 'pea (%a0)', 'move.l #0x12345678,%d3', 'moveq #0,%d4', 'nop']
+form('x; bcc.s')(lambda c, L: [R.choice(PREV), 'b%s.s 1f' % R.choice(BCONDS + ['ra']), 'moveq #-1,%d7', '1: ' + R.choice(['addq.l #1,%d6', 'illegal', 'move.l %d0,(%a1)'])])
 form('dbcc')(lambda c, L: (c.d.__setitem__(1, (c.d[1] & 0xFFFF0000) | R.randrange(5)), ['2: addq.l #1,%d0', 'db%s %%d1,2b' % R.choice(CONDS)])[1])
 form('bsr/rts')(lambda c, L: ['bsr.%s 2f' % R.choice('swl'), 'bra.s 3f', '2: addq.l #1,%d0', 'rts', '3:'])
 form('jsr/rts')(lambda c, L: ['lea 2f,%a0', 'jsr (%a0)', 'bra.s 3f', '2: addq.l #3,%d0', 'rts', '3:'])
