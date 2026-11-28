@@ -237,3 +237,9 @@ off by 2, the not-taken path taking `data_in`.
 - Regression with the fix: bus, top, fastmem (and PERF=0, CAL_TEST) PASS;
   isa 0 of 1,820 differ; every bench as the first version (bench c
   60,792, coff 117,048; the rest unchanged); bench sd PASS.
+- **Build, 32 seeds (router1): 3 pass** (10, 11, 26), as v2.1's 3 of 32;
+  22x ratios over all seeds 1.60-1.88x (v2.1's netlist 1.60-1.71x): the
+  change costs nothing measurable. Now the hold limit bites too (seeds
+  14, 15, 16, 28, 29, 31, 32 have a pin path under 1.55 ns). Shipped
+  **seed 10**: +1.47 ns, 1.18x / 1.47x / **1.62x** (v2.1 seed 26: 1.21x
+  / 1.51x / 1.66x), pins 4.13 / 1.59. `bitstreams/step26b_branch/`.
