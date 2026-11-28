@@ -316,6 +316,11 @@ form('move ccr/sr')(f)
 form('andi/ori/eori ccr')(lambda c, L: ['%s.b #0x%x,%%ccr' % (R.choice(['andi', 'ori', 'eori']), R.getrandbits(8))])
 # control flow: a fixed shape, so the result shows the path taken
 form('bcc')(lambda c, L: ['b%s.%s 1f' % (R.choice(BCONDS + ['ra']), R.choice('swl')), 'moveq #-1,%d7', '1:'])
+# step 26b: a short branch then a trap on each path (the stacked PC after a
+# taken and a not-taken branch), and a backward loop (its target is fetched
+# uncached the first time, from the cache after)
+form('bcc.s+trap')(lambda c, L: ['b%s.s 1f' % R.choice(BCONDS + ['ra']), R.choice(['illegal', 'trap #5', 'divu.w #0,%d1']), '1: ' + R.choice(['illegal', 'trap #6', 'divu.w #0,%d2', 'chk.w #-1,%d3'])])
+form('bcc.s loop')(lambda c, L: (c.d.__setitem__(0, R.randrange(-4, 3) & 0xFFFFFFFF), ['2: addq.l #1,%d0', 'cmp.l #3,%d0', 'b%s.s 2b' % R.choice(['lt', 'le', 'ne', 'mi', 'cs'])])[1])
 form('dbcc')(lambda c, L: (c.d.__setitem__(1, (c.d[1] & 0xFFFF0000) | R.randrange(5)), ['2: addq.l #1,%d0', 'db%s %%d1,2b' % R.choice(CONDS)])[1])
 form('bsr/rts')(lambda c, L: ['bsr.%s 2f' % R.choice('swl'), 'bra.s 3f', '2: addq.l #1,%d0', 'rts', '3:'])
 form('jsr/rts')(lambda c, L: ['lea 2f,%a0', 'jsr (%a0)', 'bra.s 3f', '2: addq.l #3,%d0', 'rts', '3:'])

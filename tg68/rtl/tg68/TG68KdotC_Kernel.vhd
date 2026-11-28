@@ -387,6 +387,13 @@ architecture logic of TG68KdotC_Kernel is
 	signal exec					: bit_vector(lastOpcBit downto 0);
 
 	signal micro_state		: micro_states;
+	-- Base64 change 6 (step 26b): a taken Bcc.s fetches its target in the
+	-- condition step (bra1), which was an idle bus cycle
+	signal set_brspec		: std_logic;	-- this decode is a Bcc.s that may do so
+	signal brspec			: std_logic := '0';	-- it is, now in bra1
+	signal br_take			: std_logic;	-- bra1, taken: the cycle is a fetch of the target
+	signal br_tgt_c			: std_logic_vector(31 downto 0);
+	signal br_tgt			: std_logic_vector(31 downto 0);
 	signal wb_plain         : std_logic;
 	signal cand             : std_logic;
 	signal l1               : std_logic;
@@ -472,7 +479,14 @@ ALU: TG68K_ALU
 
 
 	nWr <= '0' WHEN state="11" ELSE '1';
-	busstate <= state;
+	-- Base64 change 6: in bra1 of a Bcc.s whose condition holds, the bus
+	-- side sees a fetch (of br_tgt, on addr_out since the decode step);
+	-- the kernel's own state stays 01, so a branch not taken runs as before
+	br_take <= '1' WHEN micro_state=bra1 AND brspec='1' AND exe_condition='1' ELSE '0';
+	busstate <= "00" WHEN br_take='1' ELSE state;
+	br_tgt_c <= TG68_PC + (opcode(7)&opcode(7)&opcode(7)&opcode(7)&opcode(7)&opcode(7)&opcode(7)&opcode(7)&
+	                       opcode(7)&opcode(7)&opcode(7)&opcode(7)&opcode(7)&opcode(7)&opcode(7)&opcode(7)&
+	                       opcode(7)&opcode(7)&opcode(7)&opcode(7)&opcode(7)&opcode(7)&opcode(7)&opcode(7)&opcode(7 downto 0));
 	nResetOut <= '0' WHEN exec(opcRESET)='1' ELSE '1';
 	
 	-- does shift for byte access. note active low me
@@ -1116,7 +1130,9 @@ PROCESS (clk, setdisp, memaddr_a, briefdata, memaddr_delta, setdispbyte, datatyp
 				END IF;
 				use_base <= '0'; 
 				memaddr_delta_regb <= (others => '0');
-				IF cand='1' AND l1='0' THEN
+				IF set_brspec='1' THEN		-- Base64 change 6: the target, for bra1's cycle
+					memaddr_delta_rega <= br_tgt_c;
+				ELSIF cand='1' AND l1='0' THEN
 					memaddr_delta_rega <= addr_p2;
 				ELSIF (memmaskmux(3)='0' AND cand='0') OR exec(mem_addsub)='1' THEN
 					memaddr_delta_rega <= addsub_q;
@@ -1215,6 +1231,10 @@ PROCESS (clk, IPL, setstate, addrvalue, state, exec_write_back, set_direct_data,
 				PC_datab(7 downto 0) <= opcode(7 downto 0);
 			END IF;
 		END IF;
+		IF br_take = '1' THEN		-- Base64 change 6: the target was fetched, go on at +2
+			PC_dataa <= br_tgt;
+			PC_datab <= X"00000002";
+		END IF;
 
 		TG68_PC_add <= PC_dataa+PC_datab;
 		
@@ -1223,7 +1243,8 @@ PROCESS (clk, IPL, setstate, addrvalue, state, exec_write_back, set_direct_data,
 		setinterrupt <= '0';
 		IF setstate="00" AND next_micro_state=idle AND setnextpass='0' AND (exec_write_back='0' OR state="11") AND set_rot_cnt="000001" AND set_exec(opcCHK)='0'THEN
 			setendOPC <= '1';
-			IF FlagsSR(2 downto 0)<IPL_nr OR IPL_nr="111"  OR make_trace='1' OR make_berr='1' THEN
+			-- Base64 change 6: an interrupt waits for the next boundary after br_take
+			IF ((FlagsSR(2 downto 0)<IPL_nr OR IPL_nr="111") AND br_take='0') OR make_trace='1' OR make_berr='1' THEN
 				setinterrupt <= '1';
 			ELSIF stop='0' THEN
 				setopcode <= '1';
@@ -1278,7 +1299,7 @@ PROCESS (clk, IPL, setstate, addrvalue, state, exec_write_back, set_direct_data,
 						ELSE
 							TG68_PC <= addr;
 						END IF;
-					ELSIF (state ="00" OR TG68_PC_brw = '1') AND stop='0'  THEN				
+					ELSIF (state ="00" OR TG68_PC_brw = '1' OR br_take = '1') AND stop='0'  THEN	-- Base64 change 6: br_take
 						TG68_PC <= TG68_PC_add;
 					END IF;	
 				END IF;	
@@ -1329,6 +1350,9 @@ PROCESS (clk, IPL, setstate, addrvalue, state, exec_write_back, set_direct_data,
 							last_opc_read <= data_read(15 downto 0);
 						END IF;
 						last_opc_pc <= tg68_pc;--TH
+					ELSIF br_take='1' THEN		-- Base64 change 6: the target word
+						last_opc_read <= data_in;
+						last_opc_pc <= br_tgt;
 					END IF;	
 					IF setopcode='1' THEN
 						trap_interrupt <= '0';
@@ -1425,7 +1449,10 @@ PROCESS (clk, IPL, setstate, addrvalue, state, exec_write_back, set_direct_data,
 					END IF;	
 					
 					IF setopcode='1' AND berr='0' THEN
-						IF state="00" THEN
+						IF br_take='1' THEN		-- Base64 change 6: the target word, fetched in bra1
+							opcode <= data_in;
+							exe_pc <= br_tgt;
+						ELSIF state="00" THEN
 							opcode <= data_read(15 downto 0);
 							exe_pc <= tg68_pc;--TH
 						ELSE
@@ -1682,6 +1709,7 @@ PROCESS (clk, cpu, OP1out, OP2out, opcode, exe_condition, nextpass, micro_state,
 		check_aligned <='0';
 
 		next_micro_state <= idle;
+		set_brspec <= '0';		-- Base64 change 6
 		build_logical <= '0';
 		build_bcd <= '0';
 		skipFetch <= make_berr;
@@ -2926,6 +2954,10 @@ PROCESS (clk, cpu, OP1out, OP2out, opcode, exe_condition, nextpass, micro_state,
 						ELSE
 							setstate <= "01";
 							next_micro_state <= bra1;
+							-- Base64 change 6: fetch the target in bra1 if taken
+							IF FlagsSR(7 downto 6)="00" AND make_berr='0' THEN
+								set_brspec <= '1';
+							END IF;
 						END IF;
 					END IF;
 				END IF;	
@@ -3443,9 +3475,14 @@ PROCESS (clk, cpu, OP1out, OP2out, opcode, exe_condition, nextpass, micro_state,
 		IF rising_edge(clk) THEN
 	        IF Reset='1' THEN
 				micro_state <= ld_nn;
+				brspec <= '0';		-- Base64 change 6
 			ELSIF clkena_lw='1' THEN
 				trapd <= trapmake;
 				micro_state <= next_micro_state;
+				brspec <= set_brspec;		-- Base64 change 6
+				IF set_brspec='1' THEN
+					br_tgt <= br_tgt_c;
+				END IF;
 			END IF;
 		END IF;
 
@@ -3648,7 +3685,9 @@ PROCESS (clk, cpu, OP1out, OP2out, opcode, exe_condition, nextpass, micro_state,
 					
 ----------------------------------------------------------------------------------------				
 				WHEN bra1 =>		--bra
-					IF exe_condition='1' THEN
+					IF exe_condition='1' AND brspec='1' THEN
+						NULL;	-- Base64 change 6: the target was fetched in this cycle (br_take): decode it
+					ELSIF exe_condition='1' THEN
 						TG68_PC_brw <= '1';	--pc+0000
 						next_micro_state <= nop;
 						if long_start='0' then
